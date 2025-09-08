@@ -1,0 +1,843 @@
+[[1;34mINFO[m] Scanning for projects...
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m--------------< [0;36mcom.filemanager:enterprise-file-manager[0;1m >---------------[m
+[[1;34mINFO[m] [1mBuilding Enterprise File Manager 2.0.0[m
+[[1;34mINFO[m] [1m--------------------------------[ jar ]---------------------------------[m
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m>>> [0;32mspring-boot-maven-plugin:3.2.0:run[m [1m(default-cli)[0;1m > [0;1mtest-compile[m @ [36menterprise-file-manager[0;1m >>>[m
+[[1;33mWARNING[m] The artifact mysql:mysql-connector-java:jar:8.0.33 has been relocated to com.mysql:mysql-connector-j:jar:8.0.33
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m--- [0;32mmaven-resources-plugin:3.3.1:resources[m [1m(default-resources)[m @ [36menterprise-file-manager[0;1m ---[m
+[[1;34mINFO[m] Copying 2 resources from src/main/resources to target/classes
+[[1;34mINFO[m] Copying 0 resource from src/main/resources to target/classes
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m--- [0;32mmaven-compiler-plugin:3.11.0:compile[m [1m(default-compile)[m @ [36menterprise-file-manager[0;1m ---[m
+[[1;34mINFO[m] Nothing to compile - all classes are up to date
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m--- [0;32mmaven-resources-plugin:3.3.1:testResources[m [1m(default-testResources)[m @ [36menterprise-file-manager[0;1m ---[m
+[[1;34mINFO[m] skip non existing resourceDirectory /workspace/backend/src/test/resources
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m--- [0;32mmaven-compiler-plugin:3.11.0:testCompile[m [1m(default-testCompile)[m @ [36menterprise-file-manager[0;1m ---[m
+[[1;34mINFO[m] No sources to compile
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m<<< [0;32mspring-boot-maven-plugin:3.2.0:run[m [1m(default-cli)[0;1m < [0;1mtest-compile[m @ [36menterprise-file-manager[0;1m <<<[m
+[[1;34mINFO[m] 
+[[1;34mINFO[m] 
+[[1;34mINFO[m] [1m--- [0;32mspring-boot-maven-plugin:3.2.0:run[m [1m(default-cli)[m @ [36menterprise-file-manager[0;1m ---[m
+[[1;34mINFO[m] Attaching agents: []
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+ :: Spring Boot ::                (v3.2.0)
+
+2025-09-07T14:56:11.569+08:00  INFO 11243 --- [enterprise-file-manager] [           main] com.filemanager.FileManagerApplication   : Starting FileManagerApplication using Java 17.0.16 with PID 11243 (/workspace/backend/target/classes started by developer in /workspace/backend)
+2025-09-07T14:56:11.575+08:00 DEBUG 11243 --- [enterprise-file-manager] [           main] com.filemanager.FileManagerApplication   : Running with Spring Boot v3.2.0, Spring v6.1.1
+2025-09-07T14:56:11.577+08:00  INFO 11243 --- [enterprise-file-manager] [           main] com.filemanager.FileManagerApplication   : No active profile set, falling back to 1 default profile: "default"
+2025-09-07T14:56:13.733+08:00  INFO 11243 --- [enterprise-file-manager] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Multiple Spring Data modules found, entering strict repository configuration mode
+2025-09-07T14:56:13.735+08:00  INFO 11243 --- [enterprise-file-manager] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2025-09-07T14:56:13.991+08:00  INFO 11243 --- [enterprise-file-manager] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 244 ms. Found 3 JPA repository interfaces.
+2025-09-07T14:56:14.028+08:00  INFO 11243 --- [enterprise-file-manager] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Multiple Spring Data modules found, entering strict repository configuration mode
+2025-09-07T14:56:14.030+08:00  INFO 11243 --- [enterprise-file-manager] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data Redis repositories in DEFAULT mode.
+2025-09-07T14:56:14.068+08:00  INFO 11243 --- [enterprise-file-manager] [           main] .RepositoryConfigurationExtensionSupport : Spring Data Redis - Could not safely identify store assignment for repository candidate interface com.filemanager.repository.FileRepository; If you want this repository to be a Redis repository, consider annotating your entities with one of these annotations: org.springframework.data.redis.core.RedisHash (preferred), or consider extending one of the following types with your repository: org.springframework.data.keyvalue.repository.KeyValueRepository
+2025-09-07T14:56:14.069+08:00  INFO 11243 --- [enterprise-file-manager] [           main] .RepositoryConfigurationExtensionSupport : Spring Data Redis - Could not safely identify store assignment for repository candidate interface com.filemanager.repository.FolderRepository; If you want this repository to be a Redis repository, consider annotating your entities with one of these annotations: org.springframework.data.redis.core.RedisHash (preferred), or consider extending one of the following types with your repository: org.springframework.data.keyvalue.repository.KeyValueRepository
+2025-09-07T14:56:14.069+08:00  INFO 11243 --- [enterprise-file-manager] [           main] .RepositoryConfigurationExtensionSupport : Spring Data Redis - Could not safely identify store assignment for repository candidate interface com.filemanager.repository.UserRepository; If you want this repository to be a Redis repository, consider annotating your entities with one of these annotations: org.springframework.data.redis.core.RedisHash (preferred), or consider extending one of the following types with your repository: org.springframework.data.keyvalue.repository.KeyValueRepository
+2025-09-07T14:56:14.069+08:00  INFO 11243 --- [enterprise-file-manager] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 26 ms. Found 0 Redis repository interfaces.
+2025-09-07T14:56:14.995+08:00  INFO 11243 --- [enterprise-file-manager] [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 8080 (http)
+2025-09-07T14:56:15.007+08:00  INFO 11243 --- [enterprise-file-manager] [           main] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2025-09-07T14:56:15.007+08:00  INFO 11243 --- [enterprise-file-manager] [           main] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.16]
+2025-09-07T14:56:15.070+08:00  INFO 11243 --- [enterprise-file-manager] [           main] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring embedded WebApplicationContext
+2025-09-07T14:56:15.072+08:00  INFO 11243 --- [enterprise-file-manager] [           main] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 3306 ms
+2025-09-07T14:56:15.174+08:00 DEBUG 11243 --- [enterprise-file-manager] [           main] c.f.security.JwtAuthenticationFilter     : Filter 'jwtAuthenticationFilter' configured for use
+2025-09-07T14:56:15.299+08:00  INFO 11243 --- [enterprise-file-manager] [           main] o.hibernate.jpa.internal.util.LogHelper  : HHH000204: Processing PersistenceUnitInfo [name: default]
+2025-09-07T14:56:15.356+08:00  INFO 11243 --- [enterprise-file-manager] [           main] org.hibernate.Version                    : HHH000412: Hibernate ORM core version 6.3.1.Final
+2025-09-07T14:56:15.393+08:00  INFO 11243 --- [enterprise-file-manager] [           main] o.h.c.internal.RegionFactoryInitiator    : HHH000026: Second-level cache disabled
+2025-09-07T14:56:15.674+08:00  INFO 11243 --- [enterprise-file-manager] [           main] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
+2025-09-07T14:56:15.701+08:00  INFO 11243 --- [enterprise-file-manager] [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
+2025-09-07T14:56:15.879+08:00  INFO 11243 --- [enterprise-file-manager] [           main] com.zaxxer.hikari.pool.HikariPool        : HikariPool-1 - Added connection com.mysql.cj.jdbc.ConnectionImpl@3d8d52be
+2025-09-07T14:56:15.881+08:00  INFO 11243 --- [enterprise-file-manager] [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
+2025-09-07T14:56:15.930+08:00  WARN 11243 --- [enterprise-file-manager] [           main] org.hibernate.orm.deprecation            : HHH90000025: MySQL8Dialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
+2025-09-07T14:56:15.931+08:00  WARN 11243 --- [enterprise-file-manager] [           main] org.hibernate.orm.deprecation            : HHH90000026: MySQL8Dialect has been deprecated; use org.hibernate.dialect.MySQLDialect instead
+2025-09-07T14:56:17.231+08:00  INFO 11243 --- [enterprise-file-manager] [           main] o.h.e.t.j.p.i.JtaPlatformInitiator       : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2025-09-07T14:56:17.421+08:00  INFO 11243 --- [enterprise-file-manager] [           main] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
+=== Initializing Admin User ===
+2025-09-07T14:56:18.304+08:00 DEBUG 11243 --- [enterprise-file-manager] [           main] org.hibernate.SQL                        : 
+    select
+        u1_0.id,
+        u1_0.avatar_url,
+        u1_0.create_time,
+        u1_0.display_name,
+        u1_0.email,
+        u1_0.email_verified,
+        u1_0.enabled,
+        u1_0.last_login_ip,
+        u1_0.last_login_time,
+        u1_0.locked,
+        u1_0.login_attempts,
+        u1_0.password,
+        u1_0.password_reset_expiry,
+        u1_0.password_reset_token,
+        u1_0.phone_number,
+        u1_0.quota_limit,
+        u1_0.quota_used,
+        u1_0.role,
+        u1_0.update_time,
+        u1_0.username,
+        u1_0.verification_token 
+    from
+        users u1_0 
+    where
+        u1_0.username=?
+Hibernate: 
+    select
+        u1_0.id,
+        u1_0.avatar_url,
+        u1_0.create_time,
+        u1_0.display_name,
+        u1_0.email,
+        u1_0.email_verified,
+        u1_0.enabled,
+        u1_0.last_login_ip,
+        u1_0.last_login_time,
+        u1_0.locked,
+        u1_0.login_attempts,
+        u1_0.password,
+        u1_0.password_reset_expiry,
+        u1_0.password_reset_token,
+        u1_0.phone_number,
+        u1_0.quota_limit,
+        u1_0.quota_used,
+        u1_0.role,
+        u1_0.update_time,
+        u1_0.username,
+        u1_0.verification_token 
+    from
+        users u1_0 
+    where
+        u1_0.username=?
+Admin user already exists
+2025-09-07T14:56:18.343+08:00 DEBUG 11243 --- [enterprise-file-manager] [           main] org.hibernate.SQL                        : 
+    select
+        u1_0.id,
+        u1_0.avatar_url,
+        u1_0.create_time,
+        u1_0.display_name,
+        u1_0.email,
+        u1_0.email_verified,
+        u1_0.enabled,
+        u1_0.last_login_ip,
+        u1_0.last_login_time,
+        u1_0.locked,
+        u1_0.login_attempts,
+        u1_0.password,
+        u1_0.password_reset_expiry,
+        u1_0.password_reset_token,
+        u1_0.phone_number,
+        u1_0.quota_limit,
+        u1_0.quota_used,
+        u1_0.role,
+        u1_0.update_time,
+        u1_0.username,
+        u1_0.verification_token 
+    from
+        users u1_0 
+    where
+        u1_0.username=?
+Hibernate: 
+    select
+        u1_0.id,
+        u1_0.avatar_url,
+        u1_0.create_time,
+        u1_0.display_name,
+        u1_0.email,
+        u1_0.email_verified,
+        u1_0.enabled,
+        u1_0.last_login_ip,
+        u1_0.last_login_time,
+        u1_0.locked,
+        u1_0.login_attempts,
+        u1_0.password,
+        u1_0.password_reset_expiry,
+        u1_0.password_reset_token,
+        u1_0.phone_number,
+        u1_0.quota_limit,
+        u1_0.quota_used,
+        u1_0.role,
+        u1_0.update_time,
+        u1_0.username,
+        u1_0.verification_token 
+    from
+        users u1_0 
+    where
+        u1_0.username=?
+Current admin password hash: $2a$10$BJD7c7w/JQK3Cy.wNtauiOA4EOAFnIrjMsrHfkbrvP2ACT.OWV3AG
+2025-09-07T14:56:18.496+08:00 DEBUG 11243 --- [enterprise-file-manager] [           main] org.hibernate.SQL                        : 
+    select
+        u1_0.id,
+        u1_0.avatar_url,
+        u1_0.create_time,
+        u1_0.display_name,
+        u1_0.email,
+        u1_0.email_verified,
+        u1_0.enabled,
+        u1_0.last_login_ip,
+        u1_0.last_login_time,
+        u1_0.locked,
+        u1_0.login_attempts,
+        u1_0.password,
+        u1_0.password_reset_expiry,
+        u1_0.password_reset_token,
+        u1_0.phone_number,
+        u1_0.quota_limit,
+        u1_0.quota_used,
+        u1_0.role,
+        u1_0.update_time,
+        u1_0.username,
+        u1_0.verification_token 
+    from
+        users u1_0 
+    where
+        u1_0.username=?
+Hibernate: 
+    select
+        u1_0.id,
+        u1_0.avatar_url,
+        u1_0.create_time,
+        u1_0.display_name,
+        u1_0.email,
+        u1_0.email_verified,
+        u1_0.enabled,
+        u1_0.last_login_ip,
+        u1_0.last_login_time,
+        u1_0.locked,
+        u1_0.login_attempts,
+        u1_0.password,
+        u1_0.password_reset_expiry,
+        u1_0.password_reset_token,
+        u1_0.phone_number,
+        u1_0.quota_limit,
+        u1_0.quota_used,
+        u1_0.role,
+        u1_0.update_time,
+        u1_0.username,
+        u1_0.verification_token 
+    from
+        users u1_0 
+    where
+        u1_0.username=?
+=== Initialization Complete ===
+2025-09-07T14:56:18.838+08:00  INFO 11243 --- [enterprise-file-manager] [           main] o.s.d.j.r.query.QueryEnhancerFactory     : Hibernate is in classpath; If applicable, HQL parser will be used.
+2025-09-07T14:56:19.548+08:00  WARN 11243 --- [enterprise-file-manager] [           main] JpaBaseConfiguration$JpaWebConfiguration : spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
+2025-09-07T14:56:20.066+08:00  INFO 11243 --- [enterprise-file-manager] [           main] o.s.s.web.DefaultSecurityFilterChain     : Will secure any request with [org.springframework.security.web.session.DisableEncodeUrlFilter@612e1c6e, org.springframework.security.web.context.request.async.WebAsyncManagerIntegrationFilter@1cf45f46, org.springframework.security.web.context.SecurityContextHolderFilter@294a150c, org.springframework.security.web.header.HeaderWriterFilter@25d73ca6, org.springframework.web.filter.CorsFilter@15045e40, org.springframework.security.web.authentication.logout.LogoutFilter@2e70d072, com.filemanager.security.JwtAuthenticationFilter@7d0100ea, org.springframework.security.web.savedrequest.RequestCacheAwareFilter@4a0b1701, org.springframework.security.web.servletapi.SecurityContextHolderAwareRequestFilter@7b9661d4, org.springframework.security.web.authentication.AnonymousAuthenticationFilter@34a8a5ad, org.springframework.security.web.session.SessionManagementFilter@23f4aaeb, org.springframework.security.web.access.ExceptionTranslationFilter@7231c423, org.springframework.security.web.access.intercept.AuthorizationFilter@7ba0c0e5]
+2025-09-07T14:56:21.108+08:00  INFO 11243 --- [enterprise-file-manager] [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port 8080 (http) with context path ''
+2025-09-07T14:56:21.126+08:00  INFO 11243 --- [enterprise-file-manager] [           main] com.filemanager.FileManagerApplication   : Started FileManagerApplication in 10.515 seconds (process running for 11.218)
+2025-09-07T14:56:46.945+08:00  INFO 11243 --- [enterprise-file-manager] [nio-8080-exec-1] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
+2025-09-07T14:56:46.945+08:00  INFO 11243 --- [enterprise-file-manager] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
+2025-09-07T14:56:46.947+08:00  INFO 11243 --- [enterprise-file-manager] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 2 ms
+2025-09-07T14:56:46.958+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-1] o.s.security.web.FilterChainProxy        : Securing POST /api/auth/login
+2025-09-07T14:56:46.968+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-1] c.f.security.JwtAuthenticationFilter     : Checking path for JWT filter: /api/auth/login
+2025-09-07T14:56:46.968+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-1] c.f.security.JwtAuthenticationFilter     : Should exclude from JWT filter: true
+2025-09-07T14:56:46.972+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-1] o.s.s.w.a.AnonymousAuthenticationFilter  : Set SecurityContextHolder to anonymous SecurityContext
+2025-09-07T14:56:46.973+08:00  WARN 11243 --- [enterprise-file-manager] [nio-8080-exec-1] o.s.w.s.h.HandlerMappingIntrospector     : Cache miss for REQUEST dispatch to '/api/auth/login' (previous null). Performing MatchableHandlerMapping lookup. This is logged once only at WARN level, and every time at TRACE.
+2025-09-07T14:56:46.986+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-1] o.s.security.web.FilterChainProxy        : Secured POST /api/auth/login
+2025-09-07T14:56:46.987+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-1] c.f.security.JwtAuthenticationFilter     : Checking path for JWT filter: /api/auth/login
+2025-09-07T14:56:46.987+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-1] c.f.security.JwtAuthenticationFilter     : Should exclude from JWT filter: true
+2025-09-07T14:56:47.134+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-1] org.hibernate.SQL                        : 
+    select
+        u1_0.id,
+        u1_0.avatar_url,
+        u1_0.create_time,
+        u1_0.display_name,
+        u1_0.email,
+        u1_0.email_verified,
+        u1_0.enabled,
+        u1_0.last_login_ip,
+        u1_0.last_login_time,
+        u1_0.locked,
+        u1_0.login_attempts,
+        u1_0.password,
+        u1_0.password_reset_expiry,
+        u1_0.password_reset_token,
+        u1_0.phone_number,
+        u1_0.quota_limit,
+        u1_0.quota_used,
+        u1_0.role,
+        u1_0.update_time,
+        u1_0.username,
+        u1_0.verification_token 
+    from
+        users u1_0 
+    where
+        u1_0.username=?
+Hibernate: 
+    select
+        u1_0.id,
+        u1_0.avatar_url,
+        u1_0.create_time,
+        u1_0.display_name,
+        u1_0.email,
+        u1_0.email_verified,
+        u1_0.enabled,
+        u1_0.last_login_ip,
+        u1_0.last_login_time,
+        u1_0.locked,
+        u1_0.login_attempts,
+        u1_0.password,
+        u1_0.password_reset_expiry,
+        u1_0.password_reset_token,
+        u1_0.phone_number,
+        u1_0.quota_limit,
+        u1_0.quota_used,
+        u1_0.role,
+        u1_0.update_time,
+        u1_0.username,
+        u1_0.verification_token 
+    from
+        users u1_0 
+    where
+        u1_0.username=?
+2025-09-07T14:56:47.307+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-1] org.hibernate.SQL                        : 
+    select
+        u1_0.id,
+        u1_0.avatar_url,
+        u1_0.create_time,
+        u1_0.display_name,
+        u1_0.email,
+        u1_0.email_verified,
+        u1_0.enabled,
+        u1_0.last_login_ip,
+        u1_0.last_login_time,
+        u1_0.locked,
+        u1_0.login_attempts,
+        u1_0.password,
+        u1_0.password_reset_expiry,
+        u1_0.password_reset_token,
+        u1_0.phone_number,
+        u1_0.quota_limit,
+        u1_0.quota_used,
+        u1_0.role,
+        u1_0.update_time,
+        u1_0.username,
+        u1_0.verification_token 
+    from
+        users u1_0 
+    where
+        u1_0.username=?
+Hibernate: 
+    select
+        u1_0.id,
+        u1_0.avatar_url,
+        u1_0.create_time,
+        u1_0.display_name,
+        u1_0.email,
+        u1_0.email_verified,
+        u1_0.enabled,
+        u1_0.last_login_ip,
+        u1_0.last_login_time,
+        u1_0.locked,
+        u1_0.login_attempts,
+        u1_0.password,
+        u1_0.password_reset_expiry,
+        u1_0.password_reset_token,
+        u1_0.phone_number,
+        u1_0.quota_limit,
+        u1_0.quota_used,
+        u1_0.role,
+        u1_0.update_time,
+        u1_0.username,
+        u1_0.verification_token 
+    from
+        users u1_0 
+    where
+        u1_0.username=?
+2025-09-07T14:56:47.447+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-1] o.s.s.a.dao.DaoAuthenticationProvider    : Authenticated user
+2025-09-07T14:56:47.612+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-1] org.hibernate.SQL                        : 
+    update
+        users 
+    set
+        avatar_url=?,
+        create_time=?,
+        display_name=?,
+        email=?,
+        email_verified=?,
+        enabled=?,
+        last_login_ip=?,
+        last_login_time=?,
+        locked=?,
+        login_attempts=?,
+        password=?,
+        password_reset_expiry=?,
+        password_reset_token=?,
+        phone_number=?,
+        quota_limit=?,
+        quota_used=?,
+        role=?,
+        update_time=?,
+        username=?,
+        verification_token=? 
+    where
+        id=?
+Hibernate: 
+    update
+        users 
+    set
+        avatar_url=?,
+        create_time=?,
+        display_name=?,
+        email=?,
+        email_verified=?,
+        enabled=?,
+        last_login_ip=?,
+        last_login_time=?,
+        locked=?,
+        login_attempts=?,
+        password=?,
+        password_reset_expiry=?,
+        password_reset_token=?,
+        phone_number=?,
+        quota_limit=?,
+        quota_used=?,
+        role=?,
+        update_time=?,
+        username=?,
+        verification_token=? 
+    where
+        id=?
+2025-09-07T14:56:59.207+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-2] o.s.security.web.FilterChainProxy        : Securing GET /api/files/admin/recycle/bin
+2025-09-07T14:56:59.208+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-2] c.f.security.JwtAuthenticationFilter     : Checking path for JWT filter: /api/files/admin/recycle/bin
+2025-09-07T14:56:59.208+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-2] c.f.security.JwtAuthenticationFilter     : Should exclude from JWT filter: false
+2025-09-07T14:56:59.249+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-2] c.f.security.JwtAuthenticationFilter     : Extracted username from JWT: admin
+2025-09-07T14:56:59.252+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-2] org.hibernate.SQL                        : 
+    select
+        u1_0.id,
+        u1_0.avatar_url,
+        u1_0.create_time,
+        u1_0.display_name,
+        u1_0.email,
+        u1_0.email_verified,
+        u1_0.enabled,
+        u1_0.last_login_ip,
+        u1_0.last_login_time,
+        u1_0.locked,
+        u1_0.login_attempts,
+        u1_0.password,
+        u1_0.password_reset_expiry,
+        u1_0.password_reset_token,
+        u1_0.phone_number,
+        u1_0.quota_limit,
+        u1_0.quota_used,
+        u1_0.role,
+        u1_0.update_time,
+        u1_0.username,
+        u1_0.verification_token 
+    from
+        users u1_0 
+    where
+        u1_0.username=?
+Hibernate: 
+    select
+        u1_0.id,
+        u1_0.avatar_url,
+        u1_0.create_time,
+        u1_0.display_name,
+        u1_0.email,
+        u1_0.email_verified,
+        u1_0.enabled,
+        u1_0.last_login_ip,
+        u1_0.last_login_time,
+        u1_0.locked,
+        u1_0.login_attempts,
+        u1_0.password,
+        u1_0.password_reset_expiry,
+        u1_0.password_reset_token,
+        u1_0.phone_number,
+        u1_0.quota_limit,
+        u1_0.quota_used,
+        u1_0.role,
+        u1_0.update_time,
+        u1_0.username,
+        u1_0.verification_token 
+    from
+        users u1_0 
+    where
+        u1_0.username=?
+2025-09-07T14:56:59.258+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-2] c.f.security.JwtAuthenticationFilter     : Set authentication for user: admin
+2025-09-07T14:56:59.258+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-2] c.f.security.JwtAuthenticationFilter     : User authorities: [ROLE_ADMIN]
+2025-09-07T14:56:59.266+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-2] o.s.security.web.FilterChainProxy        : Secured GET /api/files/admin/recycle/bin
+2025-09-07T14:56:59.266+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-2] c.f.security.JwtAuthenticationFilter     : Checking path for JWT filter: /api/files/admin/recycle/bin
+2025-09-07T14:56:59.266+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-2] c.f.security.JwtAuthenticationFilter     : Should exclude from JWT filter: false
+2025-09-07T14:56:59.275+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-2] o.s.security.web.FilterChainProxy        : Securing GET /error
+2025-09-07T14:56:59.279+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-2] o.s.s.w.a.AnonymousAuthenticationFilter  : Set SecurityContextHolder to anonymous SecurityContext
+2025-09-07T14:56:59.280+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-2] o.s.s.w.a.Http403ForbiddenEntryPoint     : Pre-authenticated entry point called. Rejecting access
+2025-09-07T14:57:15.229+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-4] o.s.security.web.FilterChainProxy        : Securing GET /api/files/admin/recycle/bin
+2025-09-07T14:57:15.229+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-4] c.f.security.JwtAuthenticationFilter     : Checking path for JWT filter: /api/files/admin/recycle/bin
+2025-09-07T14:57:15.229+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-4] c.f.security.JwtAuthenticationFilter     : Should exclude from JWT filter: false
+2025-09-07T14:57:15.232+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-4] c.f.security.JwtAuthenticationFilter     : Extracted username from JWT: admin
+2025-09-07T14:57:15.236+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-4] org.hibernate.SQL                        : 
+    select
+        u1_0.id,
+        u1_0.avatar_url,
+        u1_0.create_time,
+        u1_0.display_name,
+        u1_0.email,
+        u1_0.email_verified,
+        u1_0.enabled,
+        u1_0.last_login_ip,
+        u1_0.last_login_time,
+        u1_0.locked,
+        u1_0.login_attempts,
+        u1_0.password,
+        u1_0.password_reset_expiry,
+        u1_0.password_reset_token,
+        u1_0.phone_number,
+        u1_0.quota_limit,
+        u1_0.quota_used,
+        u1_0.role,
+        u1_0.update_time,
+        u1_0.username,
+        u1_0.verification_token 
+    from
+        users u1_0 
+    where
+        u1_0.username=?
+Hibernate: 
+    select
+        u1_0.id,
+        u1_0.avatar_url,
+        u1_0.create_time,
+        u1_0.display_name,
+        u1_0.email,
+        u1_0.email_verified,
+        u1_0.enabled,
+        u1_0.last_login_ip,
+        u1_0.last_login_time,
+        u1_0.locked,
+        u1_0.login_attempts,
+        u1_0.password,
+        u1_0.password_reset_expiry,
+        u1_0.password_reset_token,
+        u1_0.phone_number,
+        u1_0.quota_limit,
+        u1_0.quota_used,
+        u1_0.role,
+        u1_0.update_time,
+        u1_0.username,
+        u1_0.verification_token 
+    from
+        users u1_0 
+    where
+        u1_0.username=?
+2025-09-07T14:57:15.243+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-4] c.f.security.JwtAuthenticationFilter     : Set authentication for user: admin
+2025-09-07T14:57:15.243+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-4] c.f.security.JwtAuthenticationFilter     : User authorities: [ROLE_ADMIN]
+2025-09-07T14:57:15.248+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-4] o.s.security.web.FilterChainProxy        : Secured GET /api/files/admin/recycle/bin
+2025-09-07T14:57:15.248+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-4] c.f.security.JwtAuthenticationFilter     : Checking path for JWT filter: /api/files/admin/recycle/bin
+2025-09-07T14:57:15.248+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-4] c.f.security.JwtAuthenticationFilter     : Should exclude from JWT filter: false
+2025-09-07T14:57:15.255+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-4] o.s.security.web.FilterChainProxy        : Securing GET /error
+2025-09-07T14:57:15.259+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-4] o.s.s.w.a.AnonymousAuthenticationFilter  : Set SecurityContextHolder to anonymous SecurityContext
+2025-09-07T14:57:15.259+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-4] o.s.s.w.a.Http403ForbiddenEntryPoint     : Pre-authenticated entry point called. Rejecting access
+2025-09-07T15:15:38.334+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-5] o.s.security.web.FilterChainProxy        : Securing POST /api/auth/login
+2025-09-07T15:15:38.334+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-5] c.f.security.JwtAuthenticationFilter     : Checking path for JWT filter: /api/auth/login
+2025-09-07T15:15:38.334+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-5] c.f.security.JwtAuthenticationFilter     : Should exclude from JWT filter: true
+2025-09-07T15:15:38.334+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-5] o.s.s.w.a.AnonymousAuthenticationFilter  : Set SecurityContextHolder to anonymous SecurityContext
+2025-09-07T15:15:38.335+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-5] o.s.security.web.FilterChainProxy        : Secured POST /api/auth/login
+2025-09-07T15:15:38.335+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-5] c.f.security.JwtAuthenticationFilter     : Checking path for JWT filter: /api/auth/login
+2025-09-07T15:15:38.335+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-5] c.f.security.JwtAuthenticationFilter     : Should exclude from JWT filter: true
+2025-09-07T15:15:38.339+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-5] org.hibernate.SQL                        : 
+    select
+        u1_0.id,
+        u1_0.avatar_url,
+        u1_0.create_time,
+        u1_0.display_name,
+        u1_0.email,
+        u1_0.email_verified,
+        u1_0.enabled,
+        u1_0.last_login_ip,
+        u1_0.last_login_time,
+        u1_0.locked,
+        u1_0.login_attempts,
+        u1_0.password,
+        u1_0.password_reset_expiry,
+        u1_0.password_reset_token,
+        u1_0.phone_number,
+        u1_0.quota_limit,
+        u1_0.quota_used,
+        u1_0.role,
+        u1_0.update_time,
+        u1_0.username,
+        u1_0.verification_token 
+    from
+        users u1_0 
+    where
+        u1_0.username=?
+Hibernate: 
+    select
+        u1_0.id,
+        u1_0.avatar_url,
+        u1_0.create_time,
+        u1_0.display_name,
+        u1_0.email,
+        u1_0.email_verified,
+        u1_0.enabled,
+        u1_0.last_login_ip,
+        u1_0.last_login_time,
+        u1_0.locked,
+        u1_0.login_attempts,
+        u1_0.password,
+        u1_0.password_reset_expiry,
+        u1_0.password_reset_token,
+        u1_0.phone_number,
+        u1_0.quota_limit,
+        u1_0.quota_used,
+        u1_0.role,
+        u1_0.update_time,
+        u1_0.username,
+        u1_0.verification_token 
+    from
+        users u1_0 
+    where
+        u1_0.username=?
+2025-09-07T15:15:38.347+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-5] org.hibernate.SQL                        : 
+    select
+        u1_0.id,
+        u1_0.avatar_url,
+        u1_0.create_time,
+        u1_0.display_name,
+        u1_0.email,
+        u1_0.email_verified,
+        u1_0.enabled,
+        u1_0.last_login_ip,
+        u1_0.last_login_time,
+        u1_0.locked,
+        u1_0.login_attempts,
+        u1_0.password,
+        u1_0.password_reset_expiry,
+        u1_0.password_reset_token,
+        u1_0.phone_number,
+        u1_0.quota_limit,
+        u1_0.quota_used,
+        u1_0.role,
+        u1_0.update_time,
+        u1_0.username,
+        u1_0.verification_token 
+    from
+        users u1_0 
+    where
+        u1_0.username=?
+Hibernate: 
+    select
+        u1_0.id,
+        u1_0.avatar_url,
+        u1_0.create_time,
+        u1_0.display_name,
+        u1_0.email,
+        u1_0.email_verified,
+        u1_0.enabled,
+        u1_0.last_login_ip,
+        u1_0.last_login_time,
+        u1_0.locked,
+        u1_0.login_attempts,
+        u1_0.password,
+        u1_0.password_reset_expiry,
+        u1_0.password_reset_token,
+        u1_0.phone_number,
+        u1_0.quota_limit,
+        u1_0.quota_used,
+        u1_0.role,
+        u1_0.update_time,
+        u1_0.username,
+        u1_0.verification_token 
+    from
+        users u1_0 
+    where
+        u1_0.username=?
+2025-09-07T15:15:38.481+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-5] o.s.s.a.dao.DaoAuthenticationProvider    : Authenticated user
+2025-09-07T15:15:38.484+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-5] org.hibernate.SQL                        : 
+    update
+        users 
+    set
+        avatar_url=?,
+        create_time=?,
+        display_name=?,
+        email=?,
+        email_verified=?,
+        enabled=?,
+        last_login_ip=?,
+        last_login_time=?,
+        locked=?,
+        login_attempts=?,
+        password=?,
+        password_reset_expiry=?,
+        password_reset_token=?,
+        phone_number=?,
+        quota_limit=?,
+        quota_used=?,
+        role=?,
+        update_time=?,
+        username=?,
+        verification_token=? 
+    where
+        id=?
+Hibernate: 
+    update
+        users 
+    set
+        avatar_url=?,
+        create_time=?,
+        display_name=?,
+        email=?,
+        email_verified=?,
+        enabled=?,
+        last_login_ip=?,
+        last_login_time=?,
+        locked=?,
+        login_attempts=?,
+        password=?,
+        password_reset_expiry=?,
+        password_reset_token=?,
+        phone_number=?,
+        quota_limit=?,
+        quota_used=?,
+        role=?,
+        update_time=?,
+        username=?,
+        verification_token=? 
+    where
+        id=?
+2025-09-07T15:16:10.806+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-7] o.s.security.web.FilterChainProxy        : Securing GET /api/files/admin/recycle/bin
+2025-09-07T15:16:10.806+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-7] c.f.security.JwtAuthenticationFilter     : Checking path for JWT filter: /api/files/admin/recycle/bin
+2025-09-07T15:16:10.806+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-7] c.f.security.JwtAuthenticationFilter     : Should exclude from JWT filter: false
+2025-09-07T15:16:10.807+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-7] c.f.security.JwtAuthenticationFilter     : Extracted username from JWT: admin
+2025-09-07T15:16:10.810+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-7] org.hibernate.SQL                        : 
+    select
+        u1_0.id,
+        u1_0.avatar_url,
+        u1_0.create_time,
+        u1_0.display_name,
+        u1_0.email,
+        u1_0.email_verified,
+        u1_0.enabled,
+        u1_0.last_login_ip,
+        u1_0.last_login_time,
+        u1_0.locked,
+        u1_0.login_attempts,
+        u1_0.password,
+        u1_0.password_reset_expiry,
+        u1_0.password_reset_token,
+        u1_0.phone_number,
+        u1_0.quota_limit,
+        u1_0.quota_used,
+        u1_0.role,
+        u1_0.update_time,
+        u1_0.username,
+        u1_0.verification_token 
+    from
+        users u1_0 
+    where
+        u1_0.username=?
+Hibernate: 
+    select
+        u1_0.id,
+        u1_0.avatar_url,
+        u1_0.create_time,
+        u1_0.display_name,
+        u1_0.email,
+        u1_0.email_verified,
+        u1_0.enabled,
+        u1_0.last_login_ip,
+        u1_0.last_login_time,
+        u1_0.locked,
+        u1_0.login_attempts,
+        u1_0.password,
+        u1_0.password_reset_expiry,
+        u1_0.password_reset_token,
+        u1_0.phone_number,
+        u1_0.quota_limit,
+        u1_0.quota_used,
+        u1_0.role,
+        u1_0.update_time,
+        u1_0.username,
+        u1_0.verification_token 
+    from
+        users u1_0 
+    where
+        u1_0.username=?
+2025-09-07T15:16:10.816+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-7] c.f.security.JwtAuthenticationFilter     : Set authentication for user: admin
+2025-09-07T15:16:10.816+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-7] c.f.security.JwtAuthenticationFilter     : User authorities: [ROLE_ADMIN]
+2025-09-07T15:16:10.818+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-7] o.s.security.web.FilterChainProxy        : Secured GET /api/files/admin/recycle/bin
+2025-09-07T15:16:10.818+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-7] c.f.security.JwtAuthenticationFilter     : Checking path for JWT filter: /api/files/admin/recycle/bin
+2025-09-07T15:16:10.819+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-7] c.f.security.JwtAuthenticationFilter     : Should exclude from JWT filter: false
+2025-09-07T15:16:10.820+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-7] o.s.security.web.FilterChainProxy        : Securing GET /error
+2025-09-07T15:16:10.822+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-7] o.s.s.w.a.AnonymousAuthenticationFilter  : Set SecurityContextHolder to anonymous SecurityContext
+2025-09-07T15:16:10.822+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-7] o.s.s.w.a.Http403ForbiddenEntryPoint     : Pre-authenticated entry point called. Rejecting access
+2025-09-07T15:17:04.922+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-8] o.s.security.web.FilterChainProxy        : Securing GET /api/files/admin/recycle/bin
+2025-09-07T15:17:04.922+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-8] c.f.security.JwtAuthenticationFilter     : Checking path for JWT filter: /api/files/admin/recycle/bin
+2025-09-07T15:17:04.923+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-8] c.f.security.JwtAuthenticationFilter     : Should exclude from JWT filter: false
+2025-09-07T15:17:04.924+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-8] c.f.security.JwtAuthenticationFilter     : Extracted username from JWT: admin
+2025-09-07T15:17:04.926+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-8] org.hibernate.SQL                        : 
+    select
+        u1_0.id,
+        u1_0.avatar_url,
+        u1_0.create_time,
+        u1_0.display_name,
+        u1_0.email,
+        u1_0.email_verified,
+        u1_0.enabled,
+        u1_0.last_login_ip,
+        u1_0.last_login_time,
+        u1_0.locked,
+        u1_0.login_attempts,
+        u1_0.password,
+        u1_0.password_reset_expiry,
+        u1_0.password_reset_token,
+        u1_0.phone_number,
+        u1_0.quota_limit,
+        u1_0.quota_used,
+        u1_0.role,
+        u1_0.update_time,
+        u1_0.username,
+        u1_0.verification_token 
+    from
+        users u1_0 
+    where
+        u1_0.username=?
+Hibernate: 
+    select
+        u1_0.id,
+        u1_0.avatar_url,
+        u1_0.create_time,
+        u1_0.display_name,
+        u1_0.email,
+        u1_0.email_verified,
+        u1_0.enabled,
+        u1_0.last_login_ip,
+        u1_0.last_login_time,
+        u1_0.locked,
+        u1_0.login_attempts,
+        u1_0.password,
+        u1_0.password_reset_expiry,
+        u1_0.password_reset_token,
+        u1_0.phone_number,
+        u1_0.quota_limit,
+        u1_0.quota_used,
+        u1_0.role,
+        u1_0.update_time,
+        u1_0.username,
+        u1_0.verification_token 
+    from
+        users u1_0 
+    where
+        u1_0.username=?
+2025-09-07T15:17:04.931+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-8] c.f.security.JwtAuthenticationFilter     : Set authentication for user: admin
+2025-09-07T15:17:04.931+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-8] c.f.security.JwtAuthenticationFilter     : User authorities: [ROLE_ADMIN]
+2025-09-07T15:17:04.933+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-8] o.s.security.web.FilterChainProxy        : Secured GET /api/files/admin/recycle/bin
+2025-09-07T15:17:04.933+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-8] c.f.security.JwtAuthenticationFilter     : Checking path for JWT filter: /api/files/admin/recycle/bin
+2025-09-07T15:17:04.933+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-8] c.f.security.JwtAuthenticationFilter     : Should exclude from JWT filter: false
+2025-09-07T15:17:04.935+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-8] o.s.security.web.FilterChainProxy        : Securing GET /error
+2025-09-07T15:17:04.937+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-8] o.s.s.w.a.AnonymousAuthenticationFilter  : Set SecurityContextHolder to anonymous SecurityContext
+2025-09-07T15:17:04.937+08:00 DEBUG 11243 --- [enterprise-file-manager] [nio-8080-exec-8] o.s.s.w.a.Http403ForbiddenEntryPoint     : Pre-authenticated entry point called. Rejecting access
+2025-09-07T15:49:30.778+08:00  INFO 11243 --- [enterprise-file-manager] [ionShutdownHook] j.LocalContainerEntityManagerFactoryBean : Closing JPA EntityManagerFactory for persistence unit 'default'
+2025-09-07T15:49:30.780+08:00  INFO 11243 --- [enterprise-file-manager] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown initiated...
+2025-09-07T15:49:30.787+08:00  INFO 11243 --- [enterprise-file-manager] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown completed.

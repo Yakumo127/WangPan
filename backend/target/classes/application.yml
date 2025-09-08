@@ -1,0 +1,73 @@
+spring:
+  application:
+    name: enterprise-file-manager
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3306/enterprise_file_manager?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    username: filemanager
+    password: filemanager_password
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.MySQL8Dialect
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+logging:
+  level:
+    com.filemanager: DEBUG
+    org.springframework.security: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+
+file:
+  storage:
+    path: /tmp/cunchu
+    default-location: /tmp/cunchu
+    default-path: /tmp/cunchu
+    max-file-size: 10485760  # 10MB
+    chunk-size: 1048576     # 1MB
+    temp-dir: /app/temp
+
+jwt:
+  secret: enterpriseFileManagerSecretKey2024
+  expiration: 86400000    # 24小时
+
+  redis:
+    host: localhost
+    port: 6379
+    password: 
+    database: 0
+
+  cache:
+    type: redis
+    redis:
+      time-to-live: 600000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,env
+    base-path: /actuator
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+  health:
+    redis:
+      enabled: true
+    db:
+      enabled: true

@@ -1,0 +1,126 @@
+// 全局样式
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  font-size: $font-size-base;
+  line-height: 1.5;
+  color: #333;
+  background-color: #f5f5f5;
+}
+
+#app {
+  height: 100%;
+}
+
+// 滚动条样式
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+// 通用样式
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.text-center {
+  text-align: center;
+}
+
+.text-right {
+  text-align: right;
+}
+
+.text-left {
+  text-align: left;
+}
+
+// 间距类
+.m-1 { margin: $spacing-base; }
+.m-2 { margin: $spacing-large; }
+.mt-1 { margin-top: $spacing-base; }
+.mb-1 { margin-bottom: $spacing-base; }
+.ml-1 { margin-left: $spacing-base; }
+.mr-1 { margin-right: $spacing-base; }
+
+.p-1 { padding: $spacing-base; }
+.p-2 { padding: $spacing-large; }
+.pt-1 { padding-top: $spacing-base; }
+.pb-1 { padding-bottom: $spacing-base; }
+.pl-1 { padding-left: $spacing-base; }
+.pr-1 { padding-right: $spacing-base; }
+
+// 卡片样式
+.card {
+  background: white;
+  border-radius: $border-radius-base;
+  box-shadow: $box-shadow-base;
+  padding: $spacing-large;
+}
+
+// 按钮样式
+.btn-group {
+  display: flex;
+  gap: $spacing-base;
+}
+
+// 表格样式
+.table-container {
+  background: white;
+  border-radius: $border-radius-base;
+  box-shadow: $box-shadow-base;
+  padding: $spacing-large;
+}
+
+// 表单样式
+.form-container {
+  background: white;
+  border-radius: $border-radius-base;
+  box-shadow: $box-shadow-base;
+  padding: $spacing-large;
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+// 页面容器
+.page-container {
+  padding: $spacing-large;
+  min-height: calc(100vh - #{$header-height});
+}
+
+// 响应式
+@media (max-width: $breakpoint-md) {
+  .hide-on-mobile {
+    display: none;
+  }
+}

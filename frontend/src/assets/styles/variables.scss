@@ -1,0 +1,36 @@
+// 全局变量
+$primary-color: #409EFF;
+$success-color: #67C23A;
+$warning-color: #E6A23C;
+$danger-color: #F56C6C;
+$info-color: #909399;
+
+// 布局
+$header-height: 60px;
+$sidebar-width: 200px;
+$sidebar-collapsed-width: 64px;
+
+// 间距
+$spacing-base: 8px;
+$spacing-small: 4px;
+$spacing-large: 16px;
+
+// 字体
+$font-size-base: 14px;
+$font-size-small: 12px;
+$font-size-large: 16px;
+
+// 圆角
+$border-radius-base: 4px;
+$border-radius-small: 2px;
+$border-radius-large: 8px;
+
+// 阴影
+$box-shadow-base: 0 2px 4px rgba(0, 0, 0, 0.12), 0 0 6px rgba(0, 0, 0, 0.04);
+$box-shadow-light: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+
+// 断点
+$breakpoint-sm: 768px;
+$breakpoint-md: 992px;
+$breakpoint-lg: 1200px;
+$breakpoint-xl: 1920px;

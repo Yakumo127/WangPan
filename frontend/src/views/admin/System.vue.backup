@@ -1,0 +1,150 @@
+<template>
+  <div class="system-container">
+    <el-card class="box-card">
+      <template #header>
+        <div class="card-header">
+          <span>系统设置</span>
+        </div>
+      </template>
+      
+      <el-form :model="systemConfig" label-width="120px">
+        <el-form-item label="系统名称">
+          <el-input v-model="systemConfig.systemName" />
+        </el-form-item>
+        
+        <el-form-item label="文件存储路径">
+          <el-input v-model="systemConfig.storagePath" />
+        </el-form-item>
+        
+        <el-form-item label="最大文件大小">
+          <el-input-number v-model="systemConfig.maxFileSize" :min="1" :max="1000" />
+          <span class="unit">MB</span>
+        </el-form-item>
+        
+        <el-form-item label="允许的文件类型">
+          <el-select v-model="systemConfig.allowedTypes" multiple placeholder="选择允许的文件类型">
+            <el-option label="图片" value="image" />
+            <el-option label="文档" value="document" />
+            <el-option label="视频" value="video" />
+            <el-option label="音频" value="audio" />
+            <el-option label="压缩包" value="archive" />
+          </el-select>
+        </el-form-item>
+        
+        <el-form-item label="会话超时">
+          <el-input-number v-model="systemConfig.sessionTimeout" :min="1" :max="1440" />
+          <span class="unit">分钟</span>
+        </el-form-item>
+        
+        <el-form-item label="启用日志">
+          <el-switch v-model="systemConfig.enableLogging" />
+        </el-form-item>
+        
+        <el-form-item label="日志级别">
+          <el-select v-model="systemConfig.logLevel" placeholder="选择日志级别">
+            <el-option label="DEBUG" value="DEBUG" />
+            <el-option label="INFO" value="INFO" />
+            <el-option label="WARN" value="WARN" />
+            <el-option label="ERROR" value="ERROR" />
+          </el-select>
+        </el-form-item>
+        
+        <el-form-item>
+          <el-button type="primary" @click="saveConfig">保存设置</el-button>
+          <el-button @click="resetConfig">重置</el-button>
+        </el-form-item>
+      </el-form>
+    </el-card>
+    
+    <el-card class="box-card" style="margin-top: 20px;">
+      <template #header>
+        <div class="card-header">
+          <span>系统信息</span>
+        </div>
+      </template>
+      
+      <el-descriptions :column="2" border>
+        <el-descriptions-item label="系统版本">{{ systemInfo.version }}</el-descriptions-item>
+        <el-descriptions-item label="构建时间">{{ systemInfo.buildTime }}</el-descriptions-item>
+        <el-descriptions-item label="Java版本">{{ systemInfo.javaVersion }}</el-descriptions-item>
+        <el-descriptions-item label="数据库版本">{{ systemInfo.databaseVersion }}</el-descriptions-item>
+        <el-descriptions-item label="运行时间">{{ systemInfo.uptime }}</el-descriptions-item>
+        <el-descriptions-item label="内存使用">{{ systemInfo.memoryUsage }}</el-descriptions-item>
+      </el-descriptions>
+    </el-card>
+  </div>
+</template>
+
+<script>
+import { ref, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
+
+export default {
+  name: 'System',
+  setup() {
+    const systemConfig = ref({
+      systemName: '企业文件管理系统',
+      storagePath: '/app/storage',
+      maxFileSize: 100,
+      allowedTypes: ['image', 'document', 'video', 'audio', 'archive'],
+      sessionTimeout: 30,
+      enableLogging: true,
+      logLevel: 'INFO'
+    })
+    
+    const systemInfo = ref({
+      version: '2.0.0',
+      buildTime: '2024-01-01 12:00:00',
+      javaVersion: '17.0.2',
+      databaseVersion: '8.0.35',
+      uptime: '2天 3小时 45分钟',
+      memoryUsage: '256MB / 1024MB'
+    })
+    
+    const saveConfig = () => {
+      ElMessage.success('设置保存成功')
+    }
+    
+    const resetConfig = () => {
+      systemConfig.value = {
+        systemName: '企业文件管理系统',
+        storagePath: '/app/storage',
+        maxFileSize: 100,
+        allowedTypes: ['image', 'document', 'video', 'audio', 'archive'],
+        sessionTimeout: 30,
+        enableLogging: true,
+        logLevel: 'INFO'
+      }
+      ElMessage.info('设置已重置')
+    }
+    
+    onMounted(() => {
+      // 这里可以加载实际的系统配置
+    })
+    
+    return {
+      systemConfig,
+      systemInfo,
+      saveConfig,
+      resetConfig
+    }
+  }
+}
+</script>
+
+<style scoped>
+.system-container {
+  padding: 20px;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.unit {
+  margin-left: 10px;
+  color: #666;
+}
+</style>

@@ -1,0 +1,2 @@
+"use strict";(self["webpackChunkenterprise_file_manager_frontend"]=self["webpackChunkenterprise_file_manager_frontend"]||[]).push([[628],{9628:function(n,e,r){r.r(e),r.d(e,{default:function(){return o}});var a=r(6768);const t={class:"dashboard-container"};function s(n,e,r,s,u,c){return(0,a.uX)(),(0,a.CE)("div",t,[...e[0]||(e[0]=[(0,a.Lk)("h1",null,"仪表盘",-1),(0,a.Lk)("p",null,"欢迎使用企业文件管理系统",-1)])])}var u={name:"Dashboard"},c=r(1241);const d=(0,c.A)(u,[["render",s],["__scopeId","data-v-24ab6c9b"]]);var o=d}}]);
+//# sourceMappingURL=628.5acc7e90.js.map

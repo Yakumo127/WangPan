@@ -1,0 +1,119 @@
+spring:
+  application:
+    name: enterprise-file-manager
+  main:
+    allow-circular-references: true
+  
+  # 文件存储配置
+  servlet:
+    multipart:
+      max-file-size: 1GB
+      max-request-size: 1GB
+  
+  
+  datasource:
+    url: jdbc:mysql://localhost:3306/enterprise_file_manager?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8&allowPublicKeyRetrieval=true
+    username: filemanager
+    password: filemanager_password
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  
+  jpa:
+    hibernate:
+      ddl-auto: update
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQL8Dialect
+        format_sql: true
+    
+  redis:
+    host: localhost
+    port: 6379
+    password: redispassword
+    database: 0
+    lettuce:
+      pool:
+        max-active: 8
+        max-idle: 8
+        min-idle: 0
+        max-wait: -1ms
+      shutdown-timeout: 100ms
+
+  cache:
+    type: redis
+    redis:
+      time-to-live: 600000
+      cache-null-values: false
+
+server:
+  port: 8080
+
+# JWT配置
+jwt:
+  secret: enterpriseFileManagerSecretKey2024
+  expiration: 86400000  # 24小时
+
+# 文件存储配置
+file:
+  storage:
+    path: /app/storage
+    default-path: /app/storage
+    chunk-size: 10485760  # 10MB
+    max-file-size: 1073741824  # 1GB
+    temp-dir: /app/temp
+    allowed-types: >
+      image/jpeg,image/png,image/gif,image/webp,
+      application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,
+      application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,
+      application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,
+      text/plain,application/zip,application/x-rar-compressed,application/x-7z-compressed,
+      video/mp4,video/avi,video/mov,video/x-msvideo,
+      audio/mpeg,audio/wav,audio/mp3
+
+# 日志配置
+logging:
+  level:
+    com.filemanager: DEBUG
+    org.springframework.security: DEBUG
+    org.springframework.web: DEBUG
+  file:
+    name: /app/logs/file-manager.log
+  logback:
+    rollingpolicy:
+      max-file-size: 10MB
+      max-history: 30
+
+# 管理员配置
+admin:
+  default-username: admin
+  default-password: admin123
+  default-email: admin@example.com
+
+# 系统配置
+system:
+  default-user-quota: 1073741824  # 1GB
+  max-file-size: 1073741824  # 1GB
+  enable-registration: true
+  enable-email-verification: false
+
+# 监控配置
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,env
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+  health:
+    redis:
+      enabled: true
+    db:
+      enabled: true
+    mail:
+      enabled: false

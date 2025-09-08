@@ -1,0 +1,173 @@
+package com.filemanager.controller;
+
+import com.filemanager.dto.UserLoginDTO;
+import com.filemanager.dto.UserRegisterDTO;
+import com.filemanager.entity.User;
+import com.filemanager.service.CaptchaService;
+import com.filemanager.service.UserService;
+import com.filemanager.security.JwtUtils;
+import com.filemanager.repository.UserRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.awt.image.BufferedImage;
+import java.util.HashMap;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api/auth")
+public class AuthController {
+    
+    @Autowired
+    private CaptchaService captchaService;
+    
+    @Autowired
+    @Lazy
+    private UserService userService;
+    
+    @Autowired
+    private JwtUtils jwtUtils;
+    
+    @Autowired
+    private UserRepository userRepository;
+    
+    @PostMapping("/register")
+    public ResponseEntity<Map<String, String>> register(@RequestBody UserRegisterDTO registerDTO) {
+        System.out.println("=== AuthController.register() called ===");
+        System.out.println("Received registration request for: " + registerDTO.getUsername());
+        try {
+            userService.register(registerDTO);
+            return ResponseEntity.ok(Map.of("message", "注册成功"));
+        } catch (Exception e) {
+            System.out.println("Registration failed: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+    
+    @PostMapping("/login")
+    public ResponseEntity<Map<String, String>> login(@RequestBody UserLoginDTO loginDTO) {
+        try {
+            String token = userService.login(loginDTO);
+            return ResponseEntity.ok(Map.of("token", token, "message", "登录成功"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+    
+    @PostMapping("/admin-login")
+    public ResponseEntity<Map<String, String>> adminLogin(@RequestBody UserLoginDTO loginDTO) {
+        try {
+            System.out.println("Admin login attempt for user: " + loginDTO.getUsername());
+            // 临时管理员登录，跳过验证码验证
+            String token = userService.adminLogin(loginDTO);
+            System.out.println("Admin login successful for user: " + loginDTO.getUsername());
+            return ResponseEntity.ok(Map.of("token", token, "message", "登录成功"));
+        } catch (Exception e) {
+            System.out.println("Admin login failed for user " + loginDTO.getUsername() + ": " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+    
+    @GetMapping("/userinfo")
+    public ResponseEntity<Map<String, Object>> getUserInfo(@RequestHeader("Authorization") String token) {
+        try {
+            // 从token中提取用户名
+            String username = jwtUtils.extractUsername(token.substring(7)); // 去掉"Bearer "前缀
+            
+            User user = userRepository.findByUsername(username)
+                    .orElseThrow(() -> new RuntimeException("用户不存在"));
+            
+            Map<String, Object> userInfo = new HashMap<>();
+            userInfo.put("id", user.getId());
+            userInfo.put("username", user.getUsername());
+            userInfo.put("email", user.getEmail());
+            userInfo.put("displayName", user.getDisplayName());
+            userInfo.put("role", user.getRole().name());
+            userInfo.put("quotaLimit", user.getQuotaLimit());
+            userInfo.put("quotaUsed", user.getQuotaUsed());
+            userInfo.put("createTime", user.getCreateTime());
+            userInfo.put("lastLoginTime", user.getLastLoginTime());
+            
+            return ResponseEntity.ok(userInfo);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+    
+    @PutMapping("/profile")
+    public ResponseEntity<Map<String, String>> updateProfile(
+            @RequestHeader("Authorization") String token,
+            @RequestBody Map<String, Object> profileData) {
+        try {
+            String username = jwtUtils.extractUsername(token.substring(7));
+            User user = userRepository.findByUsername(username)
+                    .orElseThrow(() -> new RuntimeException("用户不存在"));
+            
+            // 更新用户信息
+            if (profileData.containsKey("displayName")) {
+                user.setDisplayName((String) profileData.get("displayName"));
+            }
+            if (profileData.containsKey("email")) {
+                user.setEmail((String) profileData.get("email"));
+            }
+            if (profileData.containsKey("avatarUrl")) {
+                user.setAvatarUrl((String) profileData.get("avatarUrl"));
+            }
+            
+            userService.updateUserProfile(user);
+            
+            return ResponseEntity.ok(Map.of("message", "个人信息更新成功"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+    
+    @PostMapping("/change-password")
+    public ResponseEntity<Map<String, String>> changePassword(
+            @RequestHeader("Authorization") String token,
+            @RequestBody Map<String, String> passwordData) {
+        try {
+            String username = jwtUtils.extractUsername(token.substring(7));
+            String oldPassword = passwordData.get("oldPassword");
+            String newPassword = passwordData.get("newPassword");
+            
+            if (oldPassword == null || newPassword == null) {
+                throw new RuntimeException("密码不能为空");
+            }
+            
+            userService.changePassword(username, oldPassword, newPassword);
+            
+            return ResponseEntity.ok(Map.of("message", "密码修改成功"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+    
+    @GetMapping("/captcha")
+    public ResponseEntity<byte[]> getCaptcha() {
+        String captchaText = captchaService.generateCaptcha();
+        BufferedImage image = captchaService.createCaptchaImage(captchaText);
+        
+        try {
+            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+            javax.imageio.ImageIO.write(image, "png", baos);
+            byte[] imageBytes = baos.toByteArray();
+            
+            // 添加缓存控制头，防止浏览器缓存验证码
+            return ResponseEntity.ok()
+                    .contentType(MediaType.IMAGE_PNG)
+                    .header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+                    .header("Pragma", "no-cache")
+                    .header("Expires", "0")
+                    .body(imageBytes);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+}

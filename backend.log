@@ -1,0 +1,4 @@
+[[1;31mERROR[m] Error executing Maven.
+[[1;31mERROR[m] 1 problem was encountered while building the effective settings
+[FATAL] Non-readable settings /usr/share/maven/conf/settings.xml: input contained no data @ /usr/share/maven/conf/settings.xml
+
