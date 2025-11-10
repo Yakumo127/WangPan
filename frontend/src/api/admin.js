@@ -37,10 +37,7 @@ export function importUsers(file) {
   return request({
     url: "/admin/users/import",
     method: "post",
-    data: formData,
-    headers: {
-      "Content-Type": "multipart/form-data"
-    }
+    data: formData
   })
 }
 

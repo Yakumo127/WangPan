@@ -61,6 +61,9 @@ public class AdminController {
         byte[] excelData = userService.exportUsersToExcel();
         return ResponseEntity.ok()
                 .header("Content-Disposition", "attachment; filename=users.xlsx")
+                .header("Cache-Control", "no-cache")
+                .contentType(org.springframework.http.MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                 .body(excelData);
     }
 }

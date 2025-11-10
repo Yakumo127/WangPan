@@ -21,8 +21,8 @@
         </el-input>
         <el-button type="primary" @click="handleSearch">搜索</el-button>
         <el-button type="success" @click="handleAdd">添加用户</el-button>
-        <el-button v-if="enableImportExport" type="warning" @click="handleImport">导入</el-button>
-        <el-button v-if="enableImportExport" type="info" @click="handleExport">导出</el-button>
+        <el-button type="warning" @click="handleImport">导入</el-button>
+        <el-button type="info" @click="handleExport">导出</el-button>
       </div>
 
       <!-- 用户表格 -->
@@ -112,7 +112,6 @@
 
     <!-- 导入对话框 -->
     <el-dialog
-      v-if="enableImportExport"
       v-model="importDialogVisible"
       title="导入用户"
       width="400px"
@@ -154,7 +153,6 @@ import { getUserList, createUser, updateUser, deleteUser, importUsers, exportUse
 
 // 数据定义
 const userList = ref([])
-const enableImportExport = false
 const loading = ref(false)
 const searchKeyword = ref('')
 const currentPage = ref(1)
@@ -339,7 +337,7 @@ const handleImportSubmit = async () => {
 const handleExport = async () => {
   try {
     const response = await exportUsers()
-    const blob = new Blob([response], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const blob = new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
