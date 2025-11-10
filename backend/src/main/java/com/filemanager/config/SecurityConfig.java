@@ -44,7 +44,6 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(authz -> authz
                 .requestMatchers("/api/auth/**").permitAll()
-                .requestMatchers("/api/files/download/**").permitAll()
                 .requestMatchers("/api/files/thumbnail/**").permitAll()
                 .requestMatchers("/actuator/**").permitAll()
                 .requestMatchers("/api/files/admin/**").hasAuthority("ROLE_ADMIN")
