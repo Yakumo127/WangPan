@@ -44,12 +44,12 @@ jwt:
   secret: enterpriseFileManagerSecretKey2024
   expiration: 86400000    # 24小时
 
+spring:
   redis:
     host: localhost
     port: 6379
     password: 
     database: 0
-
   cache:
     type: redis
     redis:

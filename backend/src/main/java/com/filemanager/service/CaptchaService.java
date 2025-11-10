@@ -22,18 +22,20 @@ public class CaptchaService {
         }
         
         String captchaText = captcha.toString();
-        captchaCache.put(captchaText, captchaText);
+        String key = captchaText.toLowerCase();
+        captchaCache.put(key, key);
         
         // 5分钟后清除验证码
         new Thread(() -> {
             try {
                 Thread.sleep(5 * 60 * 1000);
-                captchaCache.remove(captchaText);
+                captchaCache.remove(key);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
         }).start();
         
+        // 返回用于绘制图片的原始文本；校验采用不区分大小写
         return captchaText;
     }
     
@@ -87,9 +89,10 @@ public class CaptchaService {
             return false;
         }
         
-        boolean isValid = captchaCache.containsKey(captcha.toLowerCase());
+        String key = captcha.toLowerCase();
+        boolean isValid = captchaCache.containsKey(key);
         if (isValid) {
-            captchaCache.remove(captcha.toLowerCase());
+            captchaCache.remove(key);
         }
         
         return isValid;
