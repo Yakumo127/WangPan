@@ -4,6 +4,7 @@ import com.filemanager.entity.File;
 import com.filemanager.entity.Folder;
 import com.filemanager.entity.User;
 import com.filemanager.repository.FileRepository;
+import com.filemanager.repository.UserRepository;
 import com.filemanager.repository.FolderRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,8 +36,15 @@ public class FileService {
     
     private final FileRepository fileRepository;
     private final FolderRepository folderRepository;
+    private final UserRepository userRepository;
     
     public File uploadFile(MultipartFile file, Long userId, Long folderId) throws IOException {
+        // 配额校验
+        User userEntity = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("用户不存在"));
+        if (!userEntity.hasEnoughQuota(file.getSize())) {
+            throw new RuntimeException("存储空间不足，无法上传该文件");
+        }
         // 创建存储目录
         Path uploadPath = Paths.get(storagePath, "user_" + userId);
         if (!Files.exists(uploadPath)) {
@@ -55,9 +63,8 @@ public class FileService {
         // 计算文件哈希
         String fileHash = calculateFileHash(filePath);
         
-        // 查找用户
-        User user = new User();
-        user.setId(userId);
+        // 查找用户（实体）
+        User user = userEntity;
         
         // 查找文件夹
         Folder folder = null;
@@ -82,7 +89,11 @@ public class FileService {
                 .downloadCount(0)
                 .build();
         
-        return fileRepository.save(fileEntity);
+        File saved = fileRepository.save(fileEntity);
+        // 扣减配额
+        user.useQuota(file.getSize());
+        userRepository.save(user);
+        return saved;
     }
     
     public File getFile(Long fileId, Long userId) {
@@ -128,6 +139,12 @@ public class FileService {
     
     public File copyFile(Long fileId, Long userId, Long targetFolderId) {
         File originalFile = getFile(fileId, userId);
+        // 配额校验：复制占用同等大小
+        User userEntity = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("用户不存在"));
+        if (!userEntity.hasEnoughQuota(originalFile.getSize())) {
+            throw new RuntimeException("存储空间不足，无法复制该文件");
+        }
         
         // 复制文件
         Path sourcePath = Paths.get(originalFile.getFilePath());
@@ -147,8 +164,7 @@ public class FileService {
         }
         
         // 创建新文件记录
-        User user = new User();
-        user.setId(userId);
+        User user = userEntity;
         
         File newFile = File.builder()
                 .filename(targetPath.getFileName().toString())
@@ -165,7 +181,11 @@ public class FileService {
                 .downloadCount(0)
                 .build();
         
-        return fileRepository.save(newFile);
+        File saved = fileRepository.save(newFile);
+        // 扣减配额
+        user.useQuota(originalFile.getSize());
+        userRepository.save(user);
+        return saved;
     }
     
     public Path getFilePath(Long fileId, Long userId) {
@@ -207,6 +227,16 @@ public class FileService {
             System.err.println("物理文件删除失败: " + file.getFilePath());
         }
         
+        // 释放配额
+        try {
+            Long ownerId = file.getUser() != null ? file.getUser().getId() : null;
+            if (ownerId != null) {
+                userRepository.findById(ownerId).ifPresent(u -> {
+                    u.releaseQuota(file.getSize());
+                    userRepository.save(u);
+                });
+            }
+        } catch (Exception ignore) {}
         fileRepository.delete(file);
     }
     
@@ -222,7 +252,43 @@ public class FileService {
                 System.err.println("物理文件删除失败: " + file.getFilePath());
             }
         }
+        // 释放配额
+        for (File file : files) {
+            try {
+                Long ownerId = file.getUser() != null ? file.getUser().getId() : null;
+                if (ownerId != null) {
+                    userRepository.findById(ownerId).ifPresent(u -> {
+                        u.releaseQuota(file.getSize());
+                        userRepository.save(u);
+                    });
+                }
+            } catch (Exception ignore) {}
+        }
         fileRepository.deleteAll(files);
+    }
+
+    // 用户回收站：彻底删除文件（包含物理删除）
+    public void permanentDeleteFile(Long fileId, Long userId) {
+        File file = fileRepository.findByIdAndUserIdAndDeletedTrue(fileId, userId)
+                .orElseThrow(() -> new RuntimeException("回收站中不存在该文件"));
+
+        // 删除物理文件
+        try {
+            Files.deleteIfExists(Paths.get(file.getFilePath()));
+            if (file.getThumbnailPath() != null) {
+                Files.deleteIfExists(Paths.get(file.getThumbnailPath()));
+            }
+        } catch (IOException e) {
+            System.err.println("物理文件删除失败: " + file.getFilePath());
+        }
+
+        // 释放配额
+        userRepository.findById(userId).ifPresent(u -> {
+            u.releaseQuota(file.getSize());
+            userRepository.save(u);
+        });
+
+        fileRepository.delete(file);
     }
     public List<File> getUserRecycleBinFiles(Long userId) {
         return fileRepository.findByUserIdAndDeletedTrueOrderByDeleteTimeDesc(userId);

@@ -29,7 +29,7 @@
             </div>
             <div class="stat-item">
               <div class="stat-label">已用存储</div>
-              <div class="stat-value">{{ formatStorage(userStats.usedStorage || 0) }}</div>
+              <div class="stat-value">{{ formatStorage((user?.quotaUsed) || 0) }}</div>
             </div>
           </div>
         </el-card>
@@ -178,13 +178,14 @@ const formatDateTime = (datetime) => {
   return new Date(datetime).toLocaleString()
 }
 
-// 加载用户统计信息
+// 加载用户统计信息（使用后端 userinfo 的 quotaUsed）
 const loadUserStats = async () => {
   try {
-    const response = await getFileList()
-    const files = response || []
+    if (!authStore.user && authStore.isAuthenticated) {
+      await authStore.fetchUserInfo()
+    }
     userStats.value = {
-      usedStorage: files.reduce((sum, file) => sum + (file.size || 0), 0)
+      usedStorage: (authStore.user && authStore.user.quotaUsed) ? authStore.user.quotaUsed : 0
     }
   } catch (error) {
     console.error('加载用户统计信息失败:', error)
