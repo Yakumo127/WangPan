@@ -26,4 +26,7 @@ public interface FileRepository extends JpaRepository<File, Long> {
     List<File> findByDeletedTrueOrderByDeleteTimeDesc();
     
     Optional<File> findByIdAndDeletedTrue(Long fileId);
+
+    // 新增：按ID查询非删除文件（用于公开缩略图等场景）
+    Optional<File> findByIdAndDeletedFalse(Long fileId);
 }

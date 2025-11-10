@@ -241,6 +241,69 @@ public class FileController {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }
     }
+    
+    // 用户回收站：恢复文件
+    @PutMapping("/{fileId}/restore")
+    public ResponseEntity<Map<String, String>> restoreFile(@PathVariable Long fileId) {
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            String username = auth.getName();
+            Long userId = userService.getUserIdByUsername(username);
+
+            fileService.restoreFile(fileId, userId);
+            return ResponseEntity.ok(Map.of("message", "文件恢复成功"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    // 用户回收站：彻底删除文件
+    @DeleteMapping("/recycle/bin/{fileId}")
+    public ResponseEntity<Map<String, String>> permanentDeleteFile(@PathVariable Long fileId) {
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            String username = auth.getName();
+            Long userId = userService.getUserIdByUsername(username);
+
+            fileService.permanentDeleteFile(fileId, userId);
+            return ResponseEntity.ok(Map.of("message", "文件彻底删除成功"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    // 用户回收站：清空回收站
+    @DeleteMapping("/recycle/bin/empty")
+    public ResponseEntity<Map<String, String>> emptyRecycleBin() {
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            String username = auth.getName();
+            Long userId = userService.getUserIdByUsername(username);
+
+            fileService.emptyRecycleBin(userId);
+            return ResponseEntity.ok(Map.of("message", "回收站已清空"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    // 公开获取缩略图
+    @GetMapping("/thumbnail/{fileId}")
+    public ResponseEntity<Resource> getThumbnail(@PathVariable Long fileId) {
+        try {
+            Path thumbPath = fileService.getThumbnailPathPublic(fileId);
+            Resource resource = new UrlResource(thumbPath.toUri());
+            if (!resource.exists() || !resource.isReadable()) {
+                return ResponseEntity.notFound().build();
+            }
+            return ResponseEntity.ok()
+                    .contentType(MediaType.IMAGE_JPEG)
+                    .header(HttpHeaders.CACHE_CONTROL, "public, max-age=3600")
+                    .body(resource);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().build();
+        }
+    }
 
     @DeleteMapping("/admin/recycle/bin/empty")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")

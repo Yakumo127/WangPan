@@ -20,6 +20,11 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
+import javax.imageio.ImageIO;
+import java.awt.Graphics2D;
+import java.awt.Image;
+import java.awt.image.BufferedImage;
+
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -225,6 +230,123 @@ public class FileService {
 
     public List<File> searchFiles(Long userId, String keyword) {
         return fileRepository.findByUserIdAndOriginalFilenameContainingAndDeletedFalseOrderByCreateTimeDesc(userId, keyword);
+    }
+
+    // 用户回收站：恢复文件
+    public void restoreFile(Long fileId, Long userId) {
+        File file = fileRepository.findByIdAndUserIdAndDeletedTrue(fileId, userId)
+                .orElseThrow(() -> new RuntimeException("回收站中不存在该文件"));
+        file.setDeleted(false);
+        file.setDeleteTime(null);
+        file.setUpdateTime(LocalDateTime.now());
+        fileRepository.save(file);
+    }
+
+    // 用户回收站：彻底删除文件（包含物理删除）
+    public void permanentDeleteFile(Long fileId, Long userId) {
+        File file = fileRepository.findByIdAndUserIdAndDeletedTrue(fileId, userId)
+                .orElseThrow(() -> new RuntimeException("回收站中不存在该文件"));
+
+        // 删除物理文件
+        try {
+            Files.deleteIfExists(Paths.get(file.getFilePath()));
+            if (file.getThumbnailPath() != null) {
+                Files.deleteIfExists(Paths.get(file.getThumbnailPath()));
+            }
+        } catch (IOException e) {
+            System.err.println("物理文件删除失败: " + file.getFilePath());
+        }
+
+        fileRepository.delete(file);
+    }
+
+    // 用户回收站：清空回收站
+    public void emptyRecycleBin(Long userId) {
+        List<File> files = fileRepository.findByUserIdAndDeletedTrueOrderByDeleteTimeDesc(userId);
+        for (File file : files) {
+            try {
+                Files.deleteIfExists(Paths.get(file.getFilePath()));
+                if (file.getThumbnailPath() != null) {
+                    Files.deleteIfExists(Paths.get(file.getThumbnailPath()));
+                }
+            } catch (IOException e) {
+                System.err.println("物理文件删除失败: " + file.getFilePath());
+            }
+        }
+        fileRepository.deleteAll(files);
+    }
+
+    // 缩略图：公开获取缩略图路径（若无则生成）
+    public Path getThumbnailPathPublic(Long fileId) {
+        File file = fileRepository.findByIdAndDeletedFalse(fileId)
+                .orElseThrow(() -> new RuntimeException("文件不存在"));
+
+        // 仅为图片类型生成缩略图
+        if (!isImageType(file.getContentType(), file.getOriginalFilename())) {
+            throw new RuntimeException("不支持为该文件生成缩略图");
+        }
+
+        try {
+            return ensureThumbnail(file);
+        } catch (IOException e) {
+            throw new RuntimeException("生成缩略图失败", e);
+        }
+    }
+
+    private boolean isImageType(String contentType, String filename) {
+        if (contentType != null && contentType.toLowerCase().startsWith("image/")) {
+            return true;
+        }
+        String name = filename == null ? "" : filename.toLowerCase();
+        return name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png") || name.endsWith(".gif") || name.endsWith(".webp");
+    }
+
+    private Path ensureThumbnail(File file) throws IOException {
+        // 目标目录：{storagePath}/thumbnails/user_{userId}
+        Long userId = file.getUser() != null ? file.getUser().getId() : null;
+        Path thumbDir = Paths.get(storagePath, "thumbnails", userId != null ? ("user_" + userId) : "common");
+        if (!Files.exists(thumbDir)) {
+            Files.createDirectories(thumbDir);
+        }
+
+        // 已有缩略图则返回（存在性检查）
+        if (file.getThumbnailPath() != null) {
+            Path existed = Paths.get(file.getThumbnailPath());
+            if (Files.exists(existed)) {
+                return existed;
+            }
+        }
+
+        // 读取原图
+        Path source = Paths.get(file.getFilePath());
+        BufferedImage original = ImageIO.read(source.toFile());
+        if (original == null) {
+            throw new IOException("无法读取原始图片");
+        }
+
+        // 计算缩放尺寸（最长边 256）
+        int maxSize = 256;
+        int ow = original.getWidth();
+        int oh = original.getHeight();
+        double scale = Math.min(1.0 * maxSize / Math.max(ow, oh), 1.0);
+        int nw = Math.max(1, (int) Math.round(ow * scale));
+        int nh = Math.max(1, (int) Math.round(oh * scale));
+
+        Image scaled = original.getScaledInstance(nw, nh, Image.SCALE_SMOOTH);
+        BufferedImage thumbnail = new BufferedImage(nw, nh, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g2d = thumbnail.createGraphics();
+        g2d.drawImage(scaled, 0, 0, null);
+        g2d.dispose();
+
+        Path target = thumbDir.resolve("thumb_" + file.getId() + ".jpg");
+        ImageIO.write(thumbnail, "jpg", target.toFile());
+
+        // 更新记录
+        file.setThumbnailPath(target.toString());
+        file.setUpdateTime(LocalDateTime.now());
+        fileRepository.save(file);
+
+        return target;
     }
     
     private String getFileExtension(String filename) {
