@@ -19,6 +19,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.filemanager.security.JwtUtils;
 import java.util.List;
+import org.springframework.web.multipart.MultipartFile;
+import java.io.InputStream;
+import java.io.ByteArrayOutputStream;
+import java.time.format.DateTimeFormatter;
+
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 
 @Service
 @RequiredArgsConstructor
@@ -198,5 +206,127 @@ public class UserService implements UserDetailsService {
     // 管理员方法：删除用户
     public void deleteUser(Long userId) {
         userRepository.deleteById(userId);
+    }
+
+    // 导入用户（支持 .xlsx/.xls）
+    public String importUsers(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new RuntimeException("导入文件不能为空");
+        }
+        String filename = file.getOriginalFilename() != null ? file.getOriginalFilename() : "";
+        boolean xlsx = filename.toLowerCase().endsWith(".xlsx");
+        int created = 0, skipped = 0, updated = 0, failed = 0;
+        try (InputStream is = file.getInputStream(); Workbook wb = xlsx ? new XSSFWorkbook(is) : new HSSFWorkbook(is)) {
+            Sheet sheet = wb.getSheetAt(0);
+            if (sheet == null) {
+                throw new RuntimeException("Excel 内容为空");
+            }
+            // 头部约定：username | email | displayName | password | role | enabled
+            boolean header = true;
+            for (Row row : sheet) {
+                if (row == null) continue;
+                if (header) { header = false; continue; }
+                String username = getCellString(row, 0);
+                String email = getCellString(row, 1);
+                String displayName = getCellString(row, 2);
+                String password = getCellString(row, 3);
+                String roleStr = getCellString(row, 4);
+                String enabledStr = getCellString(row, 5);
+
+                if (username == null || username.isBlank() || email == null || email.isBlank()) {
+                    failed++; continue;
+                }
+
+                User.Role role = normalizeRole(roleStr);
+                boolean enabled = enabledStr == null || enabledStr.isBlank() || Boolean.parseBoolean(enabledStr.trim());
+
+                try {
+                    User existing = userRepository.findByUsername(username).orElse(null);
+                    if (existing == null) {
+                        if (password == null || password.isBlank()) {
+                            failed++; continue; // 新用户必须提供密码
+                        }
+                        User u = User.builder()
+                                .username(username)
+                                .password(passwordEncoder.encode(password))
+                                .email(email)
+                                .displayName(displayName)
+                                .enabled(enabled)
+                                .locked(false)
+                                .loginAttempts(0)
+                                .role(role)
+                                .build();
+                        userRepository.save(u);
+                        created++;
+                    } else {
+                        // 更新基本字段（不强制要求提供密码）
+                        if (displayName != null && !displayName.isBlank()) existing.setDisplayName(displayName);
+                        if (email != null && !email.isBlank()) existing.setEmail(email);
+                        existing.setEnabled(enabled);
+                        existing.setRole(role);
+                        if (password != null && !password.isBlank()) {
+                            existing.setPassword(passwordEncoder.encode(password));
+                        }
+                        userRepository.save(existing);
+                        updated++;
+                    }
+                } catch (Exception ex) {
+                    failed++;
+                }
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("导入失败: " + e.getMessage(), e);
+        }
+        return String.format("导入完成：新增 %d，更新 %d，跳过 %d，失败 %d", created, updated, skipped, failed);
+    }
+
+    // 导出用户为 Excel (.xlsx)
+    public byte[] exportUsersToExcel() {
+        List<User> users = userRepository.findAll();
+        try (Workbook wb = new XSSFWorkbook(); ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+            Sheet sheet = wb.createSheet("Users");
+            int r = 0;
+            // header
+            Row h = sheet.createRow(r++);
+            String[] headers = new String[]{"ID","Username","Email","DisplayName","Role","Enabled","Locked","CreateTime","LastLoginTime"};
+            for (int i=0; i<headers.length; i++) { h.createCell(i).setCellValue(headers[i]); }
+
+            DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+            for (User u : users) {
+                Row row = sheet.createRow(r++);
+                int c = 0;
+                row.createCell(c++).setCellValue(u.getId() == null ? 0 : u.getId());
+                row.createCell(c++).setCellValue(nullToEmpty(u.getUsername()));
+                row.createCell(c++).setCellValue(nullToEmpty(u.getEmail()));
+                row.createCell(c++).setCellValue(nullToEmpty(u.getDisplayName()));
+                row.createCell(c++).setCellValue(u.getRole() == null ? "" : u.getRole().toString());
+                row.createCell(c++).setCellValue(Boolean.TRUE.equals(u.getEnabled()));
+                row.createCell(c++).setCellValue(Boolean.TRUE.equals(u.getLocked()));
+                row.createCell(c++).setCellValue(u.getCreateTime() == null ? "" : fmt.format(u.getCreateTime()));
+                row.createCell(c++).setCellValue(u.getLastLoginTime() == null ? "" : fmt.format(u.getLastLoginTime()));
+            }
+            for (int i=0; i<headers.length; i++) { sheet.autoSizeColumn(i); }
+            wb.write(bos);
+            return bos.toByteArray();
+        } catch (Exception e) {
+            throw new RuntimeException("导出失败: " + e.getMessage(), e);
+        }
+    }
+
+    private String nullToEmpty(String s) { return s == null ? "" : s; }
+
+    private String getCellString(Row row, int idx) {
+        Cell cell = row.getCell(idx);
+        if (cell == null) return null;
+        cell.setCellType(CellType.STRING);
+        String v = cell.getStringCellValue();
+        return v != null ? v.trim() : null;
+    }
+
+    private User.Role normalizeRole(String roleStr) {
+        if (roleStr == null) return User.Role.USER;
+        String r = roleStr.trim().toUpperCase();
+        if ("ADMIN".equals(r) || "ROLE_ADMIN".equals(r)) return User.Role.ROLE_ADMIN;
+        return User.Role.USER;
     }
 }

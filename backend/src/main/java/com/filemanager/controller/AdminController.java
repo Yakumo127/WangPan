@@ -50,18 +50,17 @@ public class AdminController {
         return ResponseEntity.ok(Map.of("message", "用户删除成功"));
     }
     
-    // 导入导出功能暂时禁用
-    // @PostMapping("/users/import")
-    // public ResponseEntity<Map<String, String>> importUsers(@RequestParam("file") MultipartFile file) {
-    //     userService.importUsers(file);
-    //     return ResponseEntity.ok(Map.of("message", "用户导入成功"));
-    // }
-    // 
-    // @GetMapping("/users/export")
-    // public ResponseEntity<byte[]> exportUsers() {
-    //     byte[] excelData = userService.exportUsersToExcel();
-    //     return ResponseEntity.ok()
-    //             .header("Content-Disposition", "attachment; filename=users.xlsx")
-    //             .body(excelData);
-    // }
+    @PostMapping("/users/import")
+    public ResponseEntity<Map<String, String>> importUsers(@RequestParam("file") MultipartFile file) {
+        String summary = userService.importUsers(file);
+        return ResponseEntity.ok(Map.of("message", summary));
+    }
+    
+    @GetMapping("/users/export")
+    public ResponseEntity<byte[]> exportUsers() {
+        byte[] excelData = userService.exportUsersToExcel();
+        return ResponseEntity.ok()
+                .header("Content-Disposition", "attachment; filename=users.xlsx")
+                .body(excelData);
+    }
 }
