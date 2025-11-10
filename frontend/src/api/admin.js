@@ -57,3 +57,11 @@ export function searchUsers(keyword) {
     params: { keyword }
   })
 }
+
+export function downloadUsersImportTemplate() {
+  return request({
+    url: "/admin/users/import/template",
+    method: "get",
+    responseType: "blob"
+  })
+}

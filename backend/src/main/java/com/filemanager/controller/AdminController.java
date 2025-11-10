@@ -66,4 +66,15 @@ public class AdminController {
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                 .body(excelData);
     }
+
+    @GetMapping("/users/import/template")
+    public ResponseEntity<byte[]> downloadUsersImportTemplate() {
+        byte[] data = userService.generateUsersImportTemplate();
+        return ResponseEntity.ok()
+                .header("Content-Disposition", "attachment; filename=users_import_template.xlsx")
+                .header("Cache-Control", "no-cache")
+                .contentType(org.springframework.http.MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(data);
+    }
 }

@@ -116,6 +116,9 @@
       title="导入用户"
       width="400px"
     >
+      <div style="margin-bottom: 10px;">
+        <el-button type="info" @click="handleDownloadTemplate">下载模板</el-button>
+      </div>
       <el-upload
         ref="uploadRef"
         class="upload-demo"
@@ -149,7 +152,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, UploadFilled } from '@element-plus/icons-vue'
-import { getUserList, createUser, updateUser, deleteUser, importUsers, exportUsers } from '@/api/admin'
+import { getUserList, createUser, updateUser, deleteUser, importUsers, exportUsers, downloadUsersImportTemplate } from '@/api/admin'
 
 // 数据定义
 const userList = ref([])
@@ -330,6 +333,23 @@ const handleImportSubmit = async () => {
     await loadUserList()
   } catch (error) {
     ElMessage.error('导入失败：' + error.message)
+  }
+}
+
+// 下载导入模板
+const handleDownloadTemplate = async () => {
+  try {
+    const response = await downloadUsersImportTemplate()
+    const blob = new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'users_import_template.xlsx'
+    a.click()
+    window.URL.revokeObjectURL(url)
+    ElMessage.success('模板下载成功')
+  } catch (error) {
+    ElMessage.error('模板下载失败：' + error.message)
   }
 }
 

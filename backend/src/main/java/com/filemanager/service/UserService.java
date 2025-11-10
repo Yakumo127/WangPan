@@ -329,4 +329,40 @@ public class UserService implements UserDetailsService {
         if ("ADMIN".equals(r) || "ROLE_ADMIN".equals(r)) return User.Role.ROLE_ADMIN;
         return User.Role.USER;
     }
+
+    // 生成导入模板（xlsx）
+    public byte[] generateUsersImportTemplate() {
+        try (Workbook wb = new XSSFWorkbook(); ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+            Sheet sheet = wb.createSheet("ImportTemplate");
+            int r = 0;
+            // header
+            Row h = sheet.createRow(r++);
+            String[] headers = new String[]{
+                    "username","email","displayName","password","role","enabled"
+            };
+            for (int i=0; i<headers.length; i++) { h.createCell(i).setCellValue(headers[i]); }
+            // 示例行1（新建管理员）
+            Row s1 = sheet.createRow(r++);
+            s1.createCell(0).setCellValue("admin2");
+            s1.createCell(1).setCellValue("admin2@example.com");
+            s1.createCell(2).setCellValue("管理员2");
+            s1.createCell(3).setCellValue("Admin@123");
+            s1.createCell(4).setCellValue("ROLE_ADMIN");
+            s1.createCell(5).setCellValue("true");
+            // 示例行2（新建普通用户）
+            Row s2 = sheet.createRow(r++);
+            s2.createCell(0).setCellValue("user2");
+            s2.createCell(1).setCellValue("user2@example.com");
+            s2.createCell(2).setCellValue("普通用户2");
+            s2.createCell(3).setCellValue("User@123");
+            s2.createCell(4).setCellValue("USER");
+            s2.createCell(5).setCellValue("true");
+
+            for (int i=0; i<headers.length; i++) { sheet.autoSizeColumn(i); }
+            wb.write(bos);
+            return bos.toByteArray();
+        } catch (Exception e) {
+            throw new RuntimeException("生成模板失败: " + e.getMessage(), e);
+        }
+    }
 }
