@@ -88,7 +88,7 @@ public class AuthController {
             userInfo.put("username", user.getUsername());
             userInfo.put("email", user.getEmail());
             userInfo.put("displayName", user.getDisplayName());
-            userInfo.put("role", user.getRole().toString());
+            userInfo.put("role", "ROLE_" + user.getRole().name());
             userInfo.put("quotaLimit", user.getQuotaLimit());
             userInfo.put("quotaUsed", user.getQuotaUsed());
             userInfo.put("createTime", user.getCreateTime());

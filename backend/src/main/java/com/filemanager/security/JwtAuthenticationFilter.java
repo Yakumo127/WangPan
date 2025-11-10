@@ -22,8 +22,8 @@ import java.util.List;
 
 @Component
 @RequiredArgsConstructor
-@Slf4j
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(JwtAuthenticationFilter.class);
     
     // 不需要JWT验证的路径
     private static final List<String> EXCLUDE_PATHS = Arrays.asList(

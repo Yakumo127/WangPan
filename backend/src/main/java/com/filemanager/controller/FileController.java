@@ -11,6 +11,11 @@ import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -51,6 +56,75 @@ public class FileController {
             ));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    // 管理员：分页获取全量文件（支持关键字和状态筛选）
+    @GetMapping("/admin/list")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    public ResponseEntity<?> adminListFiles(
+            @RequestParam(value = "page", defaultValue = "0") int page,
+            @RequestParam(value = "size", defaultValue = "20") int size,
+            @RequestParam(value = "keyword", required = false) String keyword,
+            @RequestParam(value = "status", defaultValue = "active") String status
+    ) {
+        Pageable pageable = PageRequest.of(Math.max(page,0), Math.max(size,1), Sort.by(Sort.Direction.DESC, "createTime"));
+        Page<com.filemanager.entity.File> pageData;
+        boolean hasKeyword = keyword != null && !keyword.trim().isEmpty();
+        String s = status == null ? "active" : status.trim().toLowerCase();
+
+        if (hasKeyword) {
+            if ("deleted".equals(s)) {
+                pageData = fileService.searchDeleted(keyword.trim(), pageable);
+            } else if ("all".equals(s)) {
+                pageData = fileService.searchAll(keyword.trim(), pageable);
+            } else { // active
+                pageData = fileService.searchActive(keyword.trim(), pageable);
+            }
+        } else {
+            if ("deleted".equals(s)) {
+                pageData = fileService.listDeleted(pageable);
+            } else if ("all".equals(s)) {
+                pageData = fileService.listAll(pageable);
+            } else { // active
+                pageData = fileService.listActive(pageable);
+            }
+        }
+
+        java.util.List<com.filemanager.dto.AdminFileDTO> content = pageData.getContent().stream().map(f -> {
+            com.filemanager.dto.AdminFileDTO dto = new com.filemanager.dto.AdminFileDTO();
+            dto.setId(f.getId());
+            dto.setOriginalFilename(f.getOriginalFilename());
+            dto.setSize(f.getSize());
+            dto.setContentType(f.getContentType());
+            dto.setDownloadCount(f.getDownloadCount());
+            dto.setCreateTime(f.getCreateTime());
+            dto.setDeleted(Boolean.TRUE.equals(f.getDeleted()));
+            dto.setOwnerUsername(f.getUser() != null ? f.getUser().getUsername() : null);
+            return dto;
+        }).toList();
+
+        Page<com.filemanager.dto.AdminFileDTO> dtoPage = new PageImpl<>(content, pageable, pageData.getTotalElements());
+        return ResponseEntity.ok(dtoPage);
+    }
+
+    // 管理员：下载任意文件（忽略归属）
+    @GetMapping("/admin/download/{fileId}")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    public ResponseEntity<Resource> adminDownload(@PathVariable Long fileId) {
+        try {
+            com.filemanager.entity.File file = fileService.getFileByIdForAdmin(fileId);
+            Path filePath = Path.of(file.getFilePath());
+            Resource resource = new UrlResource(filePath.toUri());
+            if (!resource.exists() || !resource.isReadable()) {
+                return ResponseEntity.notFound().build();
+            }
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType(file.getContentType() == null ? "application/octet-stream" : file.getContentType()))
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + file.getOriginalFilename() + "\"")
+                    .body(resource);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
         }
     }
     

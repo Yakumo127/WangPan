@@ -31,7 +31,7 @@ public class DataInitializer {
             admin.setPassword(passwordEncoder.encode("admin123")); // 设置管理员密码
             admin.setEmail("admin@example.com");
             admin.setDisplayName("系统管理员");
-            admin.setRole(User.Role.ROLE_ADMIN);
+            admin.setRole(User.Role.ADMIN);
             admin.setEnabled(true);
             admin.setLocked(false);
             admin.setLoginAttempts(0);

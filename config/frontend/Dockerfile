@@ -9,8 +9,8 @@ COPY package*.json ./
 # 设置 npm 源为淘宝源
 RUN npm config set registry https://registry.npmmirror.com
 
-# 安装依赖
-RUN npm ci --only=production
+# 安装依赖（包含构建所需的开发依赖）
+RUN npm ci
 
 # 复制源代码
 COPY . .
@@ -31,8 +31,7 @@ RUN addgroup -g 1001 -S appuser && \
 # 从构建阶段复制构建结果
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# 复制 Nginx 配置
-COPY docker/nginx/default.conf /etc/nginx/conf.d/default.conf
+# 使用镜像自带的默认 Nginx 配置提供静态文件服务
 
 # 创建必要的目录
 RUN mkdir -p /var/cache/nginx /var/log/nginx /var/lib/nginx/tmp && \

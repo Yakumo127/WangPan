@@ -49,6 +49,7 @@ public class File {
     
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "folder_id")
+    @JsonIgnore
     private Folder folder;
     
     @CreationTimestamp
@@ -71,4 +72,38 @@ public class File {
     public enum FileType {
         IMAGE, DOCUMENT, VIDEO, AUDIO, ARCHIVE, OTHER
     }
+
+    // Manual getters/setters to avoid Lombok dependency at build time
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
+    public String getFilename() { return filename; }
+    public void setFilename(String filename) { this.filename = filename; }
+    public String getOriginalFilename() { return originalFilename; }
+    public void setOriginalFilename(String originalFilename) { this.originalFilename = originalFilename; }
+    public String getContentType() { return contentType; }
+    public void setContentType(String contentType) { this.contentType = contentType; }
+    public Long getSize() { return size; }
+    public void setSize(Long size) { this.size = size; }
+    public String getFilePath() { return filePath; }
+    public void setFilePath(String filePath) { this.filePath = filePath; }
+    public String getThumbnailPath() { return thumbnailPath; }
+    public void setThumbnailPath(String thumbnailPath) { this.thumbnailPath = thumbnailPath; }
+    public String getFileHash() { return fileHash; }
+    public void setFileHash(String fileHash) { this.fileHash = fileHash; }
+    public User getUser() { return user; }
+    public void setUser(User user) { this.user = user; }
+    public Folder getFolder() { return folder; }
+    public void setFolder(Folder folder) { this.folder = folder; }
+    public LocalDateTime getCreateTime() { return createTime; }
+    public void setCreateTime(LocalDateTime createTime) { this.createTime = createTime; }
+    public LocalDateTime getUpdateTime() { return updateTime; }
+    public void setUpdateTime(LocalDateTime updateTime) { this.updateTime = updateTime; }
+    public LocalDateTime getDeleteTime() { return deleteTime; }
+    public void setDeleteTime(LocalDateTime deleteTime) { this.deleteTime = deleteTime; }
+    public Boolean getDeleted() { return deleted; }
+    public void setDeleted(Boolean deleted) { this.deleted = deleted; }
+    public Integer getDownloadCount() { return downloadCount; }
+    public void setDownloadCount(Integer downloadCount) { this.downloadCount = downloadCount; }
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
 }

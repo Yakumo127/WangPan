@@ -10,24 +10,44 @@
         </div>
       </template>
       
+      <div style="margin-bottom:12px; display:flex; gap:8px; align-items:center;">
+        <el-input v-model="keyword" placeholder="搜索文件名" style="max-width:240px;" clearable />
+        <el-select v-model="status" placeholder="状态" style="width:140px;">
+          <el-option label="未删除" value="active" />
+          <el-option label="已删除" value="deleted" />
+          <el-option label="全部" value="all" />
+        </el-select>
+        <el-button type="primary" @click="loadFiles">查询</el-button>
+        <el-button @click="() => { keyword=''; status='active'; loadFiles(); }">重置</el-button>
+      </div>
+
       <el-table :data="files" style="width: 100%">
-        <el-table-column prop="fileName" label="文件名" width="200" />
-        <el-table-column prop="fileSize" label="文件大小" width="120">
+        <el-table-column prop="originalFilename" label="文件名" width="240" />
+        <el-table-column prop="size" label="文件大小" width="140">
           <template #default="scope">
-            {{ formatFileSize(scope.row.fileSize) }}
+            {{ formatFileSize(scope.row.size) }}
           </template>
         </el-table-column>
-        <el-table-column prop="contentType" label="文件类型" width="120" />
+        <el-table-column prop="contentType" label="文件类型" width="160" />
         <el-table-column prop="downloadCount" label="下载次数" width="100" />
         <el-table-column prop="createTime" label="创建时间" width="180">
           <template #default="scope">
             {{ formatDate(scope.row.createTime) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200">
+        <el-table-column prop="ownerUsername" label="上传者" width="160" />
+        <el-table-column prop="deleted" label="状态" width="100">
+          <template #default="scope">
+            <el-tag :type="scope.row.deleted ? 'warning' : 'success'">{{ scope.row.deleted ? '已删除' : '正常' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="280">
           <template #default="scope">
             <el-button size="small" @click="downloadFile(scope.row)">
               下载
+            </el-button>
+            <el-button size="small" type="success" v-if="scope.row.deleted" @click="async () => { await adminRestoreFile(scope.row.id); ElMessage.success('已恢复'); loadFiles(); }">
+              恢复
             </el-button>
             <el-button size="small" type="danger" @click="deleteFile(scope.row)">
               删除
@@ -73,7 +93,7 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
-import { getFiles, deleteFile as deleteFileApi } from '@/api/file'
+import { getAdminFileList as getFiles, adminDownloadFile, deleteFile as deleteFileApi, adminRestoreFile, adminPermanentDeleteFile } from '@/api/file'
 import { getToken } from '@/utils/auth'
 
 export default {
@@ -87,19 +107,24 @@ export default {
     const pageSize = ref(20)
     const total = ref(0)
     const showUploadDialog = ref(false)
+    const keyword = ref('')
+    const status = ref('active') // active | deleted | all
     
     const uploadHeaders = {
       'Authorization': `Bearer ${getToken()}`
     }
     
-    const loadFiles = async () => {
-      try {
+	    const loadFiles = async () => {
+	      try {
         const response = await getFiles({
           page: currentPage.value - 1,
-          size: pageSize.value
+          size: pageSize.value,
+          keyword: keyword.value || undefined,
+          status: status.value
         })
-        files.value = response.data.content
-        total.value = response.data.totalElements
+        // Page response
+        files.value = response.content || []
+        total.value = response.totalElements || 0
       } catch (error) {
         ElMessage.error('加载文件列表失败')
       }
@@ -115,8 +140,16 @@ export default {
       loadFiles()
     }
     
-    const downloadFile = (file) => {
-      window.open(`/api/files/download/${file.id}`, '_blank')
+    const downloadFile = async (file) => {
+      // 管理员下载使用 admin 接口
+      const res = await adminDownloadFile(file.id)
+      const blob = new Blob([res.data], { type: res.headers['content-type'] || 'application/octet-stream' })
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = file.originalFilename || 'download'
+      a.click()
+      window.URL.revokeObjectURL(url)
     }
     
     const deleteFile = async (file) => {
@@ -126,8 +159,8 @@ export default {
           cancelButtonText: '取消',
           type: 'warning'
         })
-        
-        await deleteFileApi(file.id)
+        // 管理员彻底删除（回收站也有专用接口，这里按需求用管理员永久删除）
+        await adminPermanentDeleteFile(file.id)
         ElMessage.success('删除成功')
         loadFiles()
       } catch (error) {
@@ -186,7 +219,9 @@ export default {
       handleUploadSuccess,
       handleUploadError,
       formatFileSize,
-      formatDate
+      formatDate,
+      keyword,
+      status
     }
   }
 }

@@ -25,6 +25,8 @@ import javax.imageio.ImageIO;
 import java.awt.Graphics2D;
 import java.awt.Image;
 import java.awt.image.BufferedImage;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 @Service
 @RequiredArgsConstructor
@@ -73,21 +75,20 @@ public class FileService {
                     .orElseThrow(() -> new RuntimeException("文件夹不存在"));
         }
         
-        // 创建文件记录
-        File fileEntity = File.builder()
-                .filename(newFilename)
-                .originalFilename(originalFilename)
-                .contentType(file.getContentType())
-                .size(file.getSize())
-                .filePath(filePath.toString())
-                .fileHash(fileHash)
-                .user(user)
-                .folder(folder)
-                .createTime(LocalDateTime.now())
-                .updateTime(LocalDateTime.now())
-                .deleted(false)
-                .downloadCount(0)
-                .build();
+        // 创建文件记录（避免依赖 Lombok builder）
+        File fileEntity = new File();
+        fileEntity.setFilename(newFilename);
+        fileEntity.setOriginalFilename(originalFilename);
+        fileEntity.setContentType(file.getContentType());
+        fileEntity.setSize(file.getSize());
+        fileEntity.setFilePath(filePath.toString());
+        fileEntity.setFileHash(fileHash);
+        fileEntity.setUser(user);
+        fileEntity.setFolder(folder);
+        fileEntity.setCreateTime(LocalDateTime.now());
+        fileEntity.setUpdateTime(LocalDateTime.now());
+        fileEntity.setDeleted(false);
+        fileEntity.setDownloadCount(0);
         
         File saved = fileRepository.save(fileEntity);
         // 扣减配额
@@ -125,13 +126,15 @@ public class FileService {
     
     public File moveFile(Long fileId, Long userId, Long targetFolderId) {
         File file = getFile(fileId, userId);
-        
+
         Folder targetFolder = null;
         if (targetFolderId != null) {
-            targetFolder = folderRepository.findById(targetFolderId)
-                    .orElseThrow(() -> new RuntimeException("目标文件夹不存在"));
+            targetFolder = folderRepository.findByIdAndUserIdAndDeletedFalse(targetFolderId, userId);
+            if (targetFolder == null) {
+                throw new RuntimeException("目标文件夹不存在");
+            }
         }
-        
+
         file.setFolder(targetFolder);
         file.setUpdateTime(LocalDateTime.now());
         return fileRepository.save(file);
@@ -159,27 +162,28 @@ public class FileService {
         // 查找目标文件夹
         Folder targetFolder = null;
         if (targetFolderId != null) {
-            targetFolder = folderRepository.findById(targetFolderId)
-                    .orElseThrow(() -> new RuntimeException("目标文件夹不存在"));
+            targetFolder = folderRepository.findByIdAndUserIdAndDeletedFalse(targetFolderId, userId);
+            if (targetFolder == null) {
+                throw new RuntimeException("目标文件夹不存在");
+            }
         }
         
         // 创建新文件记录
         User user = userEntity;
         
-        File newFile = File.builder()
-                .filename(targetPath.getFileName().toString())
-                .originalFilename(originalFile.getOriginalFilename())
-                .contentType(originalFile.getContentType())
-                .size(originalFile.getSize())
-                .filePath(targetPath.toString())
-                .fileHash(originalFile.getFileHash())
-                .user(user)
-                .folder(targetFolder)
-                .createTime(LocalDateTime.now())
-                .updateTime(LocalDateTime.now())
-                .deleted(false)
-                .downloadCount(0)
-                .build();
+        File newFile = new File();
+        newFile.setFilename(targetPath.getFileName().toString());
+        newFile.setOriginalFilename(originalFile.getOriginalFilename());
+        newFile.setContentType(originalFile.getContentType());
+        newFile.setSize(originalFile.getSize());
+        newFile.setFilePath(targetPath.toString());
+        newFile.setFileHash(originalFile.getFileHash());
+        newFile.setUser(user);
+        newFile.setFolder(targetFolder);
+        newFile.setCreateTime(LocalDateTime.now());
+        newFile.setUpdateTime(LocalDateTime.now());
+        newFile.setDeleted(false);
+        newFile.setDownloadCount(0);
         
         File saved = fileRepository.save(newFile);
         // 扣减配额
@@ -196,6 +200,20 @@ public class FileService {
         fileRepository.save(file);
         
         return Paths.get(file.getFilePath());
+    }
+
+    // 管理员分页查询封装
+    public Page<File> listActive(Pageable pageable) { return fileRepository.findByDeletedFalse(pageable); }
+    public Page<File> listDeleted(Pageable pageable) { return fileRepository.findByDeletedTrue(pageable); }
+    public Page<File> listAll(Pageable pageable) { return (pageable == null) ? Page.empty() :
+            ( (org.springframework.data.domain.Page<File>) fileRepository.findByOriginalFilenameContaining("", pageable) ); }
+    public Page<File> searchActive(String keyword, Pageable pageable) { return fileRepository.findByOriginalFilenameContainingAndDeletedFalse(keyword, pageable); }
+    public Page<File> searchDeleted(String keyword, Pageable pageable) { return fileRepository.findByOriginalFilenameContainingAndDeletedTrue(keyword, pageable); }
+    public Page<File> searchAll(String keyword, Pageable pageable) { return fileRepository.findByOriginalFilenameContaining(keyword, pageable); }
+
+    public File getFileByIdForAdmin(Long fileId) {
+        return fileRepository.findByIdAndDeletedFalse(fileId)
+                .orElseThrow(() -> new RuntimeException("文件不存在"));
     }
     
     // 回收站相关方法
@@ -306,24 +324,6 @@ public class FileService {
         file.setDeleteTime(null);
         file.setUpdateTime(LocalDateTime.now());
         fileRepository.save(file);
-    }
-
-    // 用户回收站：彻底删除文件（包含物理删除）
-    public void permanentDeleteFile(Long fileId, Long userId) {
-        File file = fileRepository.findByIdAndUserIdAndDeletedTrue(fileId, userId)
-                .orElseThrow(() -> new RuntimeException("回收站中不存在该文件"));
-
-        // 删除物理文件
-        try {
-            Files.deleteIfExists(Paths.get(file.getFilePath()));
-            if (file.getThumbnailPath() != null) {
-                Files.deleteIfExists(Paths.get(file.getThumbnailPath()));
-            }
-        } catch (IOException e) {
-            System.err.println("物理文件删除失败: " + file.getFilePath());
-        }
-
-        fileRepository.delete(file);
     }
 
     // 用户回收站：清空回收站

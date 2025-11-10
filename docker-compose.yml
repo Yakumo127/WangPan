@@ -46,8 +46,8 @@ services:
   # 后端应用
   filemanager-backend:
     build:
-      context: ./config/backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: config/backend/Dockerfile
     container_name: filemanager-backend
     restart: unless-stopped
     environment:
@@ -57,7 +57,6 @@ services:
       - "8080:8080"
     volumes:
       - ./logs:/app/logs
-      - ./config/backend/src/main/resources:/app/config/backend/src/main/resources
     depends_on:
       filemanager-mysql:
         condition: service_healthy

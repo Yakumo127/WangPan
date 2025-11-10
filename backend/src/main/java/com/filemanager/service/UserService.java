@@ -47,7 +47,7 @@ public class UserService implements UserDetailsService {
         return org.springframework.security.core.userdetails.User
                 .withUsername(user.getUsername())
                 .password(user.getPassword())
-                .authorities(List.of(new SimpleGrantedAuthority(user.getRole().toString())))
+                .authorities(List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name())))
                 .accountExpired(false)
                 .accountLocked(user.getLocked())
                 .credentialsExpired(false)
@@ -71,17 +71,16 @@ public class UserService implements UserDetailsService {
             throw new RuntimeException("邮箱已被使用");
         }
         
-        // 创建用户
-        User user = User.builder()
-                .username(registerDTO.getUsername())
-                .password(passwordEncoder.encode(registerDTO.getPassword()))
-                .email(registerDTO.getEmail())
-                .phoneNumber(registerDTO.getPhone())
-                .enabled(true)
-                .locked(false)
-                .loginAttempts(0)
-                .role(User.Role.USER)
-                .build();
+        // 创建用户（避免依赖 Lombok builder）
+        User user = new User();
+        user.setUsername(registerDTO.getUsername());
+        user.setPassword(passwordEncoder.encode(registerDTO.getPassword()));
+        user.setEmail(registerDTO.getEmail());
+        user.setPhoneNumber(registerDTO.getPhone());
+        user.setEnabled(true);
+        user.setLocked(false);
+        user.setLoginAttempts(0);
+        user.setRole(User.Role.USER);
         
         return userRepository.save(user);
     }
@@ -156,7 +155,7 @@ public class UserService implements UserDetailsService {
                 .orElseThrow(() -> new RuntimeException("用户名或密码错误"));
         
         // 检查是否为管理员
-        if (user.getRole() != User.Role.ROLE_ADMIN) {
+        if (user.getRole() != User.Role.ADMIN) {
             throw new RuntimeException("权限不足");
         }
         
@@ -246,16 +245,15 @@ public class UserService implements UserDetailsService {
                         if (password == null || password.isBlank()) {
                             failed++; continue; // 新用户必须提供密码
                         }
-                        User u = User.builder()
-                                .username(username)
-                                .password(passwordEncoder.encode(password))
-                                .email(email)
-                                .displayName(displayName)
-                                .enabled(enabled)
-                                .locked(false)
-                                .loginAttempts(0)
-                                .role(role)
-                                .build();
+                        User u = new User();
+                        u.setUsername(username);
+                        u.setPassword(passwordEncoder.encode(password));
+                        u.setEmail(email);
+                        u.setDisplayName(displayName);
+                        u.setEnabled(enabled);
+                        u.setLocked(false);
+                        u.setLoginAttempts(0);
+                        u.setRole(role);
                         userRepository.save(u);
                         created++;
                     } else {
@@ -326,7 +324,7 @@ public class UserService implements UserDetailsService {
     private User.Role normalizeRole(String roleStr) {
         if (roleStr == null) return User.Role.USER;
         String r = roleStr.trim().toUpperCase();
-        if ("ADMIN".equals(r) || "ROLE_ADMIN".equals(r)) return User.Role.ROLE_ADMIN;
+        if ("ADMIN".equals(r) || "ROLE_ADMIN".equals(r)) return User.Role.ADMIN;
         return User.Role.USER;
     }
 

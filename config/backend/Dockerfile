@@ -3,22 +3,13 @@ FROM maven:3.8.3-openjdk-17 AS builder
 
 WORKDIR /app
 
-# 复制 Maven 配置文件
-COPY pom.xml .
-COPY .mvn .mvn
-COPY mvnw .
+# 复制 Maven 配置文件与源码（从仓库根中的 backend/）
+COPY backend/pom.xml ./pom.xml
+COPY backend/src ./src
 
-# 安装 Maven Wrapper (如果存在)
-RUN chmod +x mvnw
-
-# 下载依赖
-RUN ./mvnw dependency:go-offline -B
-
-# 复制源代码
-COPY src ./src
-
-# 构建应用
-RUN ./mvnw clean package -DskipTests -B
+# 下载依赖并构建应用
+RUN mvn -B -e -DskipTests dependency:go-offline \
+ && mvn -B -DskipTests clean package
 
 # 运行阶段
 FROM openjdk:17-jre-slim
@@ -41,8 +32,7 @@ RUN mkdir -p /app/storage /app/logs /app/temp && \
 # 从构建阶段复制 JAR 文件
 COPY --from=builder /app/target/*.jar app.jar
 
-# 复制配置文件
-COPY --chown=appuser:appuser docker/app/application-docker.yml /app/src/main/resources/application-docker.yml
+# 配置文件使用打包进 JAR 的 application-docker.yml（源于 backend/src/main/resources）
 
 # 创建存储目录
 RUN mkdir -p /cunchu && chown appuser:appuser /cunchu
@@ -53,7 +43,7 @@ ENV SPRING_PROFILES_ACTIVE=docker
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=30s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8080/api/actuator/health || exit 1
+    CMD curl -f http://localhost:8080/actuator/health || exit 1
 
 # 切换到非root用户
 USER appuser

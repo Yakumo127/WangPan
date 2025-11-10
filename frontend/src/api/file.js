@@ -8,6 +8,15 @@ export function getFileList(params) {
   })
 }
 
+// 管理员：分页获取全量文件
+export function getAdminFileList(params) {
+  return request({
+    url: "/files/admin/list",
+    method: "get",
+    params
+  })
+}
+
 export function uploadFile(data, onUploadProgress) {
   return request({
     url: "/files/upload",
@@ -21,6 +30,15 @@ export function uploadFile(data, onUploadProgress) {
 export function downloadFile(id) {
   return request({
     url: `/files/download/${id}`,
+    method: "get",
+    responseType: "blob"
+  })
+}
+
+// 管理员下载任意文件
+export function adminDownloadFile(id) {
+  return request({
+    url: `/files/admin/download/${id}`,
     method: "get",
     responseType: "blob"
   })

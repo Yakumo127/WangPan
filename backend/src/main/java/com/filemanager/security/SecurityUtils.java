@@ -42,6 +42,6 @@ public class SecurityUtils {
         
         String username = auth.getName();
         User user = userService.getCurrentUser(username);
-        return user.getRole() == User.Role.ROLE_ADMIN;
+        return user.getRole() == User.Role.ADMIN;
     }
 }

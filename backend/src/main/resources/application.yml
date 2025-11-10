@@ -18,6 +18,15 @@ spring:
     multipart:
       max-file-size: 100MB
       max-request-size: 100MB
+  redis:
+    host: localhost
+    port: 6379
+    password: 
+    database: 0
+  cache:
+    type: redis
+    redis:
+      time-to-live: 600000
 
 server:
   port: 8080
@@ -44,23 +53,12 @@ jwt:
   secret: enterpriseFileManagerSecretKey2024
   expiration: 86400000    # 24小时
 
-spring:
-  redis:
-    host: localhost
-    port: 6379
-    password: 
-    database: 0
-  cache:
-    type: redis
-    redis:
-      time-to-live: 600000
-
 management:
   endpoints:
     web:
       exposure:
         include: health,info,metrics,env
-    base-path: /actuator
+      base-path: /actuator
   endpoint:
     health:
       show-details: always
