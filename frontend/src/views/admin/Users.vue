@@ -21,8 +21,8 @@
         </el-input>
         <el-button type="primary" @click="handleSearch">搜索</el-button>
         <el-button type="success" @click="handleAdd">添加用户</el-button>
-        <el-button type="warning" @click="handleImport">导入</el-button>
-        <el-button type="info" @click="handleExport">导出</el-button>
+        <el-button v-if="enableImportExport" type="warning" @click="handleImport">导入</el-button>
+        <el-button v-if="enableImportExport" type="info" @click="handleExport">导出</el-button>
       </div>
 
       <!-- 用户表格 -->
@@ -32,8 +32,8 @@
         <el-table-column prop="displayName" label="显示名称" width="120" />
         <el-table-column prop="role" label="角色" width="100">
           <template #default="{ row }">
-            <el-tag :type="row.role === 'ADMIN' ? 'danger' : 'primary'">
-              {{ row.role === 'ADMIN' ? '管理员' : '用户' }}
+            <el-tag :type="row.role === 'ROLE_ADMIN' ? 'danger' : 'primary'">
+              {{ row.role === 'ROLE_ADMIN' ? '管理员' : '用户' }}
             </el-tag>
           </template>
         </el-table-column>
@@ -95,7 +95,7 @@
         <el-form-item label="角色" prop="role">
           <el-select v-model="userForm.role" style="width: 100%">
             <el-option label="用户" value="USER" />
-            <el-option label="管理员" value="ADMIN" />
+            <el-option label="管理员" value="ROLE_ADMIN" />
           </el-select>
         </el-form-item>
         <el-form-item label="状态" prop="enabled">
@@ -112,6 +112,7 @@
 
     <!-- 导入对话框 -->
     <el-dialog
+      v-if="enableImportExport"
       v-model="importDialogVisible"
       title="导入用户"
       width="400px"
@@ -153,6 +154,7 @@ import { getUserList, createUser, updateUser, deleteUser, importUsers, exportUse
 
 // 数据定义
 const userList = ref([])
+const enableImportExport = false
 const loading = ref(false)
 const searchKeyword = ref('')
 const currentPage = ref(1)

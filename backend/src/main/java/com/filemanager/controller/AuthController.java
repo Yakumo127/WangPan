@@ -88,10 +88,7 @@ public class AuthController {
             userInfo.put("username", user.getUsername());
             userInfo.put("email", user.getEmail());
             userInfo.put("displayName", user.getDisplayName());
-            userInfo.put("role", "ROLE_ADMIN");
-            System.out.println("Debug: User role from database: " + user.getRole());
-            System.out.println("Debug: User role name(): " + user.getRole().name());
-            System.out.println("Debug: User role toString(): " + "ROLE_ADMIN");
+            userInfo.put("role", user.getRole().toString());
             userInfo.put("quotaLimit", user.getQuotaLimit());
             userInfo.put("quotaUsed", user.getQuotaUsed());
             userInfo.put("createTime", user.getCreateTime());
