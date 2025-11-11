@@ -89,8 +89,14 @@ public class UserService implements UserDetailsService {
     
     public String login(UserLoginDTO loginDTO) {
         long start = System.currentTimeMillis();
-        User user = userRepository.findByUsername(loginDTO.getUsername())
-                .orElseThrow(() -> new RuntimeException("用户名或密码错误"));
+        java.util.Optional<User> opt = userRepository.findByUsername(loginDTO.getUsername());
+        if (opt.isEmpty()) {
+            try { auditLogService.logSystemFailure(com.filemanager.entity.UserLog.ACTION_LOGIN,
+                    com.filemanager.entity.UserLog.RESOURCE_USER, null, loginDTO.getUsername(),
+                    "登录失败：用户不存在", "用户不存在", System.currentTimeMillis() - start); } catch (Exception ignore) {}
+            throw new RuntimeException("用户名或密码错误");
+        }
+        User user = opt.get();
 
         // 账户状态检查
         if (!Boolean.TRUE.equals(user.getEnabled())) {
@@ -180,8 +186,14 @@ public class UserService implements UserDetailsService {
     // 管理员登录方法（与普通登录一致的验证码策略）
     public String adminLogin(UserLoginDTO loginDTO) {
         long start = System.currentTimeMillis();
-        User user = userRepository.findByUsername(loginDTO.getUsername())
-                .orElseThrow(() -> new RuntimeException("用户名或密码错误"));
+        java.util.Optional<User> opt = userRepository.findByUsername(loginDTO.getUsername());
+        if (opt.isEmpty()) {
+            try { auditLogService.logSystemFailure(com.filemanager.entity.UserLog.ACTION_LOGIN,
+                    com.filemanager.entity.UserLog.RESOURCE_USER, null, loginDTO.getUsername(),
+                    "管理员登录失败：用户不存在", "用户不存在", System.currentTimeMillis() - start); } catch (Exception ignore) {}
+            throw new RuntimeException("用户名或密码错误");
+        }
+        User user = opt.get();
 
         if (user.getRole() != User.Role.ADMIN) {
             RuntimeException ex = new RuntimeException("权限不足");

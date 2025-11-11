@@ -4,6 +4,7 @@ import com.filemanager.entity.UserLog;
 import com.filemanager.repository.UserLogRepository;
 import lombok.RequiredArgsConstructor;
 import com.filemanager.metrics.AuditMetricsService;
+import com.filemanager.service.AuditLogService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -20,6 +21,7 @@ public class AuditLogPurgeScheduler {
 
     private final UserLogRepository userLogRepository;
     private final AuditMetricsService metrics;
+    private final AuditLogService auditLogService;
 
     @Value("${audit.retention-days:180}")
     private int retentionDays;
@@ -45,5 +47,16 @@ public class AuditLogPurgeScheduler {
             if (page.getNumberOfElements() < batchSize) break;
         }
         metrics.incPurged(total);
+        try {
+            String desc = "日志过期清理：删除" + total + "条（保留期=" + Math.max(1, retentionDays) + "天）";
+            auditLogService.logSystemSuccess(
+                    com.filemanager.entity.UserLog.ACTION_ADMIN_PURGE_EXPIRED,
+                    "SYSTEM",
+                    null,
+                    "audit.purge",
+                    desc,
+                    0L
+            );
+        } catch (Exception ignore) {}
     }
 }

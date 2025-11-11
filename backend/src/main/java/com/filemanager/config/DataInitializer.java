@@ -75,5 +75,23 @@ public class DataInitializer {
         }
         
         System.out.println("=== Initialization Complete ===");
+
+        // 确保存在系统级用户（用于系统级审计日志归属）
+        if (!userRepository.findByUsername("system").isPresent()) {
+            User sys = new User();
+            sys.setUsername("system");
+            sys.setPassword(passwordEncoder.encode("system@local"));
+            sys.setEmail("system@example.com");
+            sys.setDisplayName("系统");
+            sys.setRole(User.Role.ADMIN);
+            // 禁用并锁定，避免登陆
+            sys.setEnabled(false);
+            sys.setLocked(true);
+            sys.setLoginAttempts(0);
+            sys.setQuotaLimit(0L);
+            sys.setQuotaUsed(0L);
+            userRepository.save(sys);
+            System.out.println("System user created for auditing");
+        }
     }
 }

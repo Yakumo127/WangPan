@@ -47,6 +47,30 @@ public class AuditLogService {
                 UserLog.STATUS_FAILED, errorMessage, execMs);
     }
 
+    @Async
+    public void logSystemSuccess(String actionType,
+                                 String resourceType,
+                                 Long resourceId,
+                                 String resourceName,
+                                 String description,
+                                 Long execMs) {
+        save(null, actionType, resourceType, resourceId, resourceName, description, UserLog.STATUS_SUCCESS, null, execMs);
+    }
+
+    @Async
+    public void logSystemFailure(String actionType,
+                                 String resourceType,
+                                 Long resourceId,
+                                 String resourceName,
+                                 String description,
+                                 String errorMessage,
+                                 Long execMs) {
+        if (errorMessage != null && errorMessage.length() > 1000) {
+            errorMessage = errorMessage.substring(0, 1000);
+        }
+        save(null, actionType, resourceType, resourceId, resourceName, description, UserLog.STATUS_FAILED, errorMessage, execMs);
+    }
+
     private void save(Long userId,
                       String actionType,
                       String resourceType,
@@ -57,14 +81,8 @@ public class AuditLogService {
                       String errorMessage,
                       Long execMs) {
         try {
-            User user = null;
-            if (userId != null) {
-                user = userRepository.findById(userId).orElse(null);
-            }
-            if (user == null) {
-                // 无法归属用户时，不写入（当前表 user_id 非空约束）
-                return;
-            }
+            User user = resolveUserForAudit(userId);
+            if (user == null) return;
             UserLog log = new UserLog();
             log.setUser(user);
             log.setActionType(actionType);
@@ -82,5 +100,15 @@ public class AuditLogService {
         } catch (Exception ignore) {
             // 审计日志失败不影响主流程
         }
+    }
+
+    private User resolveUserForAudit(Long userId) {
+        if (userId != null) {
+            return userRepository.findById(userId).orElse(null);
+        }
+        // 系统级日志：尝试使用 system 用户；若不存在，降级使用 admin
+        User sys = userRepository.findByUsername("system").orElse(null);
+        if (sys != null) return sys;
+        return userRepository.findByUsername("admin").orElse(null);
     }
 }

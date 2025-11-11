@@ -184,7 +184,8 @@ public class AdminLogController {
                 com.filemanager.entity.UserLog.RESOURCE_FILE,
                 com.filemanager.entity.UserLog.RESOURCE_FOLDER,
                 com.filemanager.entity.UserLog.RESOURCE_USER,
-                "API"
+                "API",
+                "SYSTEM"
         );
         java.util.List<String> statuses = java.util.List.of(
                 com.filemanager.entity.UserLog.STATUS_SUCCESS,
