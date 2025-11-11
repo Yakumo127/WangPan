@@ -23,8 +23,10 @@ public class AdminSystemController {
     @GetMapping("/recycle")
     public Map<String, Object> getRecycleSettings() {
         boolean manualEnabled = systemSettingService.isManualPurgeEnabled();
+        int retentionDays = systemSettingService.getRetentionDaysOrDefault(15);
         return Map.of(
-                "manualPurgeEnabled", manualEnabled
+                "manualPurgeEnabled", manualEnabled,
+                "retentionDays", retentionDays
         );
     }
 
@@ -33,10 +35,18 @@ public class AdminSystemController {
     public Map<String, Object> updateRecycleSettings(@RequestBody Map<String, Object> body) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         Long adminId = userService.getUserIdByUsername(auth.getName());
-        boolean manualEnabled = Boolean.TRUE.equals(body.get("manualPurgeEnabled"));
-        systemSettingService.setBoolean(SystemSettingService.KEY_RECYCLE_MANUAL_PURGE_ENABLED, manualEnabled,
-                userService.getUserById(adminId));
-        return Map.of("message", "设置已更新", "manualPurgeEnabled", manualEnabled);
+        boolean manualEnabled = body.get("manualPurgeEnabled") != null && Boolean.TRUE.equals(body.get("manualPurgeEnabled"));
+        Integer retentionDays = null;
+        try { Object v = body.get("retentionDays"); if (v != null) retentionDays = Integer.valueOf(v.toString()); } catch (Exception ignore) {}
+
+        if (body.containsKey("manualPurgeEnabled")) {
+            systemSettingService.setBoolean(SystemSettingService.KEY_RECYCLE_MANUAL_PURGE_ENABLED, manualEnabled,
+                    userService.getUserById(adminId));
+        }
+        if (retentionDays != null && retentionDays > 0) {
+            systemSettingService.setInt(SystemSettingService.KEY_RECYCLE_RETENTION_DAYS, retentionDays,
+                    "回收站保留期（天）", userService.getUserById(adminId));
+        }
+        return Map.of("message", "设置已更新", "manualPurgeEnabled", manualEnabled, "retentionDays", retentionDays);
     }
 }
-

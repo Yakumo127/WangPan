@@ -10,7 +10,7 @@
             </div>
           </template>
           
-          <el-form :model="systemConfig" label-width="120px">
+          <el-form :model="systemConfig" label-width="180px">
             <el-form-item label="系统名称">
               <el-input v-model="systemConfig.systemName" />
             </el-form-item>
@@ -41,6 +41,10 @@
             
             <el-form-item label="启用日志">
               <el-switch v-model="systemConfig.enableLogging" />
+            </el-form-item>
+            
+            <el-form-item label="系统回收站保留期(天)">
+              <el-input-number v-model="systemConfig.retentionDays" :min="1" :max="365" @change="val => updateRecycleSettings({ retentionDays: val })" />
             </el-form-item>
             
             <el-form-item label="允许手动清理到期文件">
@@ -411,8 +415,25 @@ export default {
           }
         )
         
-        await adminPermanentDeleteFile(item.id)
-        ElMessage.success("文件已彻底删除")
+        // 第一次确认：警告
+        await ElMessageBox.confirm(
+          `此操作将发起彻底删除并进入保留期，期间可恢复，到期自动删除且不可恢复。`,
+          "警告",
+          { confirmButtonText: "继续", cancelButtonText: "取消", type: "warning" }
+        )
+        const { value: reason } = await ElMessageBox.prompt(
+          `删除后文件进入保留期${systemConfig.value.retentionDays || 15}天，可在此期间恢复；到期自动删除且不可恢复。`,
+          "确认并填写理由",
+          {
+            confirmButtonText: "确定",
+            cancelButtonText: "取消",
+            inputPlaceholder: "请输入删除理由（必填）",
+            inputValidator: (val) => !!val && val.trim().length > 0,
+            type: "warning"
+          }
+        )
+        await adminScheduleDeleteFile(item.id, reason)
+        ElMessage.success(`已发起彻底删除（进入保留期${systemConfig.value.retentionDays || 15}天）`)
         await loadRecycleBinData()
       } catch (error) {
         if (error !== "cancel") {
@@ -489,12 +510,23 @@ export default {
         
         batchDeleting.value = true
         
-        // 批量删除
+        const { value: reason } = await ElMessageBox.prompt(
+          `删除后文件进入保留期${systemConfig.value.retentionDays || 15}天，可在此期间恢复；到期自动删除且不可恢复。`,
+          "确认并填写理由",
+          {
+            confirmButtonText: "确定",
+            cancelButtonText: "取消",
+            inputPlaceholder: "请输入删除理由（必填）",
+            inputValidator: (val) => !!val && val.trim().length > 0,
+            type: "warning"
+          }
+        )
+        // 批量发起
         for (const item of selectedItems.value) {
-          await adminPermanentDeleteFile(item.id)
+          await adminScheduleDeleteFile(item.id, reason)
         }
         
-        ElMessage.success(`成功彻底删除 ${selectedItems.value.length} 个文件`)
+        ElMessage.success(`已发起彻底删除（${selectedItems.value.length} 项，保留期${systemConfig.value.retentionDays || 15}天）`)
         selectedItems.value = []
         await loadRecycleBinData()
       } catch (error) {
@@ -558,6 +590,7 @@ export default {
         allowedTypes: ["image", "document", "video", "audio", "archive"],
         sessionTimeout: 30,
         enableLogging: true,
+        manualPurgeEnabled: false,
         logLevel: "INFO"
       }
       ElMessage.info("设置已重置")
@@ -567,6 +600,7 @@ export default {
       try {
         const cfg = await getRecycleSettings()
         systemConfig.value.manualPurgeEnabled = !!cfg.manualPurgeEnabled
+        if (cfg.retentionDays) systemConfig.value.retentionDays = cfg.retentionDays
       } catch (e) {}
       nextTick(() => { loadRecycleBinData() })
     })

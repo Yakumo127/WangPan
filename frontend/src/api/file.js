@@ -136,10 +136,11 @@ export function adminRestoreFile(id) {
   })
 }
 
-export function adminPermanentDeleteFile(id) {
+export function adminScheduleDeleteFile(id, reason) {
   return request({
-    url: `/files/admin/recycle/bin/${id}`,
-    method: "delete"
+    url: `/files/admin/recycle/bin/${id}/schedule-delete`,
+    method: "post",
+    data: { reason }
   })
 }
 

@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 public class SystemSettingService {
     public static final String KEY_RECYCLE_MANUAL_PURGE_ENABLED = "recycle.manual.purge.enabled";
+    public static final String KEY_RECYCLE_RETENTION_DAYS = "recycle.admin.retention.days";
 
     private final SystemConfigRepository systemConfigRepository;
 
@@ -20,6 +21,14 @@ public class SystemSettingService {
 
     public boolean isManualPurgeEnabled() {
         return getBoolean(KEY_RECYCLE_MANUAL_PURGE_ENABLED, manualPurgeDefault);
+    }
+
+    public int getRetentionDaysOrDefault(int defDays) {
+        return systemConfigRepository.findByConfigKey(KEY_RECYCLE_RETENTION_DAYS)
+                .map(cfg -> {
+                    try { return Integer.parseInt(cfg.getConfigValue()); } catch (Exception e) { return defDays; }
+                })
+                .orElse(defDays);
     }
 
     public boolean getBoolean(String key, boolean def) {
@@ -40,9 +49,20 @@ public class SystemSettingService {
         systemConfigRepository.save(cfg);
     }
 
+    public void setInt(String key, int value, String description, com.filemanager.entity.User updatedBy) {
+        SystemConfig cfg = systemConfigRepository.findByConfigKey(key).orElseGet(SystemConfig::new);
+        cfg.setConfigKey(key);
+        cfg.setConfigValue(Integer.toString(value));
+        cfg.setConfigType("INTEGER");
+        cfg.setDescription(description);
+        cfg.setIsSystem(true);
+        cfg.setIsActive(true);
+        cfg.setUpdatedBy(updatedBy);
+        systemConfigRepository.save(cfg);
+    }
+
     private static boolean toBoolean(SystemConfig cfg) {
         if (cfg == null || cfg.getConfigValue() == null) return false;
         return Boolean.parseBoolean(cfg.getConfigValue());
     }
 }
-

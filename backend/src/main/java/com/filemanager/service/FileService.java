@@ -55,6 +55,7 @@ public class FileService {
     private final FileRepository fileRepository;
     private final FolderRepository folderRepository;
     private final UserRepository userRepository;
+    private final SystemSettingService systemSettingService;
     private final AuditLogService auditLogService;
     
     public File uploadFile(MultipartFile file, Long userId, Long folderId) throws IOException {
@@ -354,7 +355,8 @@ public class FileService {
         file.setAdminDeleteScheduled(true);
         file.setAdminDeleteRequestTime(LocalDateTime.now());
         file.setAdminDeleteReason(reason);
-        LocalDateTime execTime = LocalDateTime.now().plusDays(adminRetentionDays);
+        int days = Math.max(1, systemSettingService.getRetentionDaysOrDefault(adminRetentionDays));
+        LocalDateTime execTime = LocalDateTime.now().plusDays(days);
         file.setAdminDeleteExecuteTime(execTime);
         fileRepository.save(file);
         return execTime;
