@@ -45,6 +45,7 @@
             
             <el-form-item label="系统回收站保留期(天)">
               <el-input-number v-model="systemConfig.retentionDays" :min="1" :max="365" @change="val => updateRecycleSettings({ retentionDays: val })" />
+              <span class="tip">（仅对新发起的彻底删除生效）</span>
             </el-form-item>
             
             <el-form-item label="允许手动清理到期文件">
@@ -146,6 +147,21 @@
                   </template>
                 </el-input>
               </el-col>
+              <el-col :span="8">
+                <el-input
+                  v-model="reasonKeyword"
+                  placeholder="搜索删除理由..."
+                  clearable
+                  @keyup.enter="searchRecycleBin"
+                >
+                  <template #prefix>
+                    <el-icon><Search /></el-icon>
+                  </template>
+                </el-input>
+              </el-col>
+              <el-col :span="4" class="align-center">
+                <el-checkbox v-model="onlyScheduled" @change="searchRecycleBin">仅显示保留期中</el-checkbox>
+              </el-col>
               <el-col :span="4">
                 <el-button @click="searchRecycleBin">搜索</el-button>
               </el-col>
@@ -167,7 +183,7 @@
               @selection-change="handleSelectionChange"
             >
               <el-table-column type="selection" width="55" />
-              <el-table-column label="文件信息" min-width="300">
+              <el-table-column label="文件信息" min-width="300" sortable>
                 <template #default="{ row }">
                   <div class="item-info">
                     <el-icon class="item-icon">
@@ -186,18 +202,23 @@
           </div>
         </template>
       </el-table-column>
-              <el-table-column prop="deleteTime" label="删除时间" width="180">
+              <el-table-column prop="deleteTime" label="删除时间" width="180" sortable>
                 <template #default="{ row }">
                   {{ formatDateTime(row.deleteTime) }}
                 </template>
               </el-table-column>
-              <el-table-column prop="ownerUsername" label="所属用户" width="120" />
-              <el-table-column prop="adminDeleteExecuteTime" label="到期时间" width="180">
+              <el-table-column prop="ownerUsername" label="所属用户" width="120" sortable />
+              <el-table-column prop="adminDeleteExecuteTime" label="到期时间" width="180" sortable>
                 <template #default="{ row }">
                   {{ row.adminDeleteExecuteTime ? formatDateTime(row.adminDeleteExecuteTime) : '-' }}
                 </template>
               </el-table-column>
-              <el-table-column prop="adminDeleteReason" label="删除理由" min-width="200" show-overflow-tooltip />
+              <el-table-column prop="adminDeleteReason" label="删除理由" min-width="200" show-overflow-tooltip sortable />
+              <el-table-column label="剩余时间" width="140">
+                <template #default="{ row }">
+                  {{ formatRemaining(row.adminDeleteExecuteTime) }}
+                </template>
+              </el-table-column>
               <el-table-column label="操作" width="200">
                 <template #default="{ row }">
                   <el-button-group>
@@ -271,7 +292,10 @@ export default {
     const batchRestoring = ref(false)
     const batchDeleting = ref(false)
     const recycleItems = ref([])
+    const recycleRawItems = ref([])
     const searchKeyword = ref("")
+    const reasonKeyword = ref("")
+    const onlyScheduled = ref(false)
     const selectedItems = ref([])
     
     const systemConfig = ref({
@@ -321,6 +345,18 @@ export default {
       return new Date(datetime).toLocaleString()
     }
     
+    // 格式化剩余时间
+    const formatRemaining = (execTime) => {
+      if (!execTime) return '-'
+      const end = new Date(execTime).getTime()
+      const now = Date.now()
+      const diff = end - now
+      if (diff <= 0) return '已到期'
+      const d = Math.floor(diff / (24*3600*1000))
+      const h = Math.floor((diff % (24*3600*1000)) / (3600*1000))
+      return d > 0 ? `${d}天${h}小时` : `${h}小时`
+    }
+    
     // 处理选择变化
     const handleSelectionChange = (selection) => {
       selectedItems.value = selection
@@ -332,13 +368,14 @@ export default {
       try {
         // 使用管理员API获取所有用户的回收站文件
         const response = await getAllRecycleBinFiles()
-        recycleItems.value = response || []
+        recycleRawItems.value = response || []
+        recycleItems.value = [...recycleRawItems.value]
         
         // 使用nextTick确保DOM更新后再更新统计信息
         await nextTick()
         
         // 更新统计信息
-        const uniqueUsers = new Set(recycleItems.value.map(item => item.username))
+        const uniqueUsers = new Set(recycleItems.value.map(item => item.ownerUsername || item.username))
         recycleStats.value = {
           totalItems: recycleItems.value.length,
           userCount: uniqueUsers.size,
@@ -361,18 +398,15 @@ export default {
     
     // 搜索回收站
     const searchRecycleBin = () => {
-      if (!searchKeyword.value.trim()) {
-        loadRecycleBinData()
-        return
-      }
-      
-      const keyword = searchKeyword.value.toLowerCase()
-      recycleItems.value = recycleItems.value.filter(item => 
-        (item.originalFilename && item.originalFilename.toLowerCase().includes(keyword)) ||
-        (item.username && item.username.toLowerCase().includes(keyword))
-      )
-      
-      ElMessage.success(`找到 ${recycleItems.value.length} 个匹配项目`)
+      const k1 = (searchKeyword.value || '').toLowerCase().trim()
+      const k2 = (reasonKeyword.value || '').toLowerCase().trim()
+      const scheduledOnly = !!onlyScheduled.value
+      recycleItems.value = (recycleRawItems.value || []).filter(item => {
+        const nameMatch = !k1 || (item.originalFilename && item.originalFilename.toLowerCase().includes(k1)) || (item.ownerUsername && item.ownerUsername.toLowerCase().includes(k1))
+        const reasonMatch = !k2 || (item.adminDeleteReason && item.adminDeleteReason.toLowerCase().includes(k2))
+        const scheduledMatch = !scheduledOnly || item.adminDeleteScheduled
+        return nameMatch && reasonMatch && scheduledMatch
+      })
     }
     
     // 恢复单个文件
