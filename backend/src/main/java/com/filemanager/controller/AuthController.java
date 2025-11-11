@@ -15,6 +15,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.awt.image.BufferedImage;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -174,6 +175,27 @@ public class AuthController {
                     .body(imageBytes);
         } catch (Exception e) {
             return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    // 新：获取带key的验证码（推荐）
+    @GetMapping("/captcha/new")
+    public ResponseEntity<Map<String, Object>> getCaptchaNew() {
+        try {
+            var pair = captchaService.generateCaptchaPair(); // key, text
+            String key = pair.getKey();
+            String text = pair.getValue();
+            BufferedImage image = captchaService.createCaptchaImage(text);
+            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+            javax.imageio.ImageIO.write(image, "png", baos);
+            String base64 = Base64.getEncoder().encodeToString(baos.toByteArray());
+            Map<String, Object> resp = new HashMap<>();
+            resp.put("key", key);
+            resp.put("imageBase64", "data:image/png;base64," + base64);
+            resp.put("expiresIn", 300);
+            return ResponseEntity.ok(resp);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("message", "生成验证码失败"));
         }
     }
 }

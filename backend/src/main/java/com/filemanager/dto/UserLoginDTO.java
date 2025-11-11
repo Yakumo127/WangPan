@@ -12,6 +12,7 @@ public class UserLoginDTO {
     private String password;
     
     private String captcha;
+    private String captchaKey;
     
     // 手动添加getter和setter方法以确保编译通过
     public String getUsername() { return username; }
@@ -22,4 +23,6 @@ public class UserLoginDTO {
     
     public String getCaptcha() { return captcha; }
     public void setCaptcha(String captcha) { this.captcha = captcha; }
+    public String getCaptchaKey() { return captchaKey; }
+    public void setCaptchaKey(String captchaKey) { this.captchaKey = captchaKey; }
 }

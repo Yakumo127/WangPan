@@ -5,27 +5,28 @@ import org.springframework.stereotype.Service;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.util.Random;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class CaptchaService {
-    
+    // key -> answerLowerCase
     private final ConcurrentHashMap<String, String> captchaCache = new ConcurrentHashMap<>();
     private final Random random = new Random();
-    
-    public String generateCaptcha() {
+
+    // 生成带key的验证码，返回 key 与 文本
+    public java.util.Map.Entry<String, String> generateCaptchaPair() {
         String chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
         StringBuilder captcha = new StringBuilder();
-        
         for (int i = 0; i < 6; i++) {
             captcha.append(chars.charAt(random.nextInt(chars.length())));
         }
-        
         String captchaText = captcha.toString();
-        String key = captchaText.toLowerCase();
-        captchaCache.put(key, key);
-        
-        // 5分钟后清除验证码
+        String answer = captchaText.toLowerCase();
+        String key = UUID.randomUUID().toString();
+        captchaCache.put(key, answer);
+
+        // TTL 5分钟
         new Thread(() -> {
             try {
                 Thread.sleep(5 * 60 * 1000);
@@ -34,11 +35,15 @@ public class CaptchaService {
                 Thread.currentThread().interrupt();
             }
         }).start();
-        
-        // 返回用于绘制图片的原始文本；校验采用不区分大小写
-        return captchaText;
+
+        return new java.util.AbstractMap.SimpleEntry<>(key, captchaText);
     }
-    
+
+    // 兼容：旧逻辑仅生成文本（不建议新代码使用）
+    public String generateCaptcha() {
+        return generateCaptchaPair().getValue();
+    }
+
     public BufferedImage createCaptchaImage(String captchaText) {
         int width = 120;
         int height = 40;
@@ -84,17 +89,17 @@ public class CaptchaService {
         return image;
     }
     
-    public boolean validateCaptcha(String captcha) {
-        if (captcha == null || captcha.trim().isEmpty()) {
+    // 新：带key校验（一次性）
+    public boolean validateCaptcha(String key, String captcha) {
+        if (key == null || key.isBlank() || captcha == null || captcha.trim().isEmpty()) {
             return false;
         }
-        
-        String key = captcha.toLowerCase();
-        boolean isValid = captchaCache.containsKey(key);
-        if (isValid) {
-            captchaCache.remove(key);
+        String answer = captchaCache.get(key);
+        if (answer == null) {
+            return false;
         }
-        
-        return isValid;
+        boolean ok = answer.equals(captcha.toLowerCase());
+        if (ok) captchaCache.remove(key);
+        return ok;
     }
 }

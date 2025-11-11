@@ -38,6 +38,7 @@ public class UserService implements UserDetailsService {
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final JwtUtils jwtUtils;
+    private final CaptchaService captchaService;
     
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
@@ -88,41 +89,54 @@ public class UserService implements UserDetailsService {
     public String login(UserLoginDTO loginDTO) {
         User user = userRepository.findByUsername(loginDTO.getUsername())
                 .orElseThrow(() -> new RuntimeException("用户名或密码错误"));
-        
-        // 检查用户状态
-        if (!user.getEnabled()) {
+
+        // 账户状态检查
+        if (!Boolean.TRUE.equals(user.getEnabled())) {
             throw new RuntimeException("用户已被禁用");
         }
-        
-        if (user.getLocked()) {
+        if (Boolean.TRUE.equals(user.getLocked())) {
             throw new RuntimeException("用户已被锁定");
         }
-        
-        // 验证密码
+
+        // 验证码：3次失败后强制校验；否则若提供则校验
+        boolean needCaptcha = user.getLoginAttempts() != null && user.getLoginAttempts() >= 3;
+        String key = loginDTO.getCaptchaKey();
+        String code = loginDTO.getCaptcha();
+        if (needCaptcha) {
+            if (key == null || key.isBlank() || code == null || code.isBlank()) {
+                throw new RuntimeException("请先输入验证码");
+            }
+            if (!captchaService.validateCaptcha(key, code)) {
+                throw new RuntimeException("验证码错误或已过期");
+            }
+        } else {
+            if (key != null && !key.isBlank() && code != null && !code.isBlank()) {
+                if (!captchaService.validateCaptcha(key, code)) {
+                    throw new RuntimeException("验证码错误或已过期");
+                }
+            }
+        }
+
+        // 密码认证
         try {
             Authentication authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(loginDTO.getUsername(), loginDTO.getPassword())
             );
-            
-            // 重置登录尝试次数
+
+            // 成功：重置尝试次数
             user.setLoginAttempts(0);
             user.setLastLoginTime(java.time.LocalDateTime.now());
             userRepository.save(user);
-            
-            // 生成JWT token
+
             return jwtUtils.generateToken((UserDetails) authentication.getPrincipal());
-            
         } catch (Exception e) {
-            // 增加登录尝试次数
-            user.setLoginAttempts(user.getLoginAttempts() + 1);
-            
-            // 如果尝试次数超过5次，锁定账户
+            // 失败：累加尝试次数，5次锁定
+            user.setLoginAttempts((user.getLoginAttempts() == null ? 0 : user.getLoginAttempts()) + 1);
             if (user.getLoginAttempts() >= 5) {
                 user.setLocked(true);
                 userRepository.save(user);
                 throw new RuntimeException("账户已被锁定，请联系管理员");
             }
-            
             userRepository.save(user);
             throw new RuntimeException("用户名或密码错误");
         }
@@ -149,27 +163,55 @@ public class UserService implements UserDetailsService {
         userRepository.save(user);
     }
     
-    // 管理员登录方法
+    // 管理员登录方法（与普通登录一致的验证码策略）
     public String adminLogin(UserLoginDTO loginDTO) {
         User user = userRepository.findByUsername(loginDTO.getUsername())
                 .orElseThrow(() -> new RuntimeException("用户名或密码错误"));
-        
-        // 检查是否为管理员
+
         if (user.getRole() != User.Role.ADMIN) {
             throw new RuntimeException("权限不足");
         }
-        
-        // 验证密码
+        if (!Boolean.TRUE.equals(user.getEnabled())) {
+            throw new RuntimeException("用户已被禁用");
+        }
+        if (Boolean.TRUE.equals(user.getLocked())) {
+            throw new RuntimeException("用户已被锁定");
+        }
+
+        boolean needCaptcha = user.getLoginAttempts() != null && user.getLoginAttempts() >= 3;
+        String key = loginDTO.getCaptchaKey();
+        String code = loginDTO.getCaptcha();
+        if (needCaptcha) {
+            if (key == null || key.isBlank() || code == null || code.isBlank()) {
+                throw new RuntimeException("请先输入验证码");
+            }
+            if (!captchaService.validateCaptcha(key, code)) {
+                throw new RuntimeException("验证码错误或已过期");
+            }
+        } else {
+            if (key != null && !key.isBlank() && code != null && !code.isBlank()) {
+                if (!captchaService.validateCaptcha(key, code)) {
+                    throw new RuntimeException("验证码错误或已过期");
+                }
+            }
+        }
+
         if (!passwordEncoder.matches(loginDTO.getPassword(), user.getPassword())) {
+            // 失败：累加尝试并可能锁定
+            user.setLoginAttempts((user.getLoginAttempts() == null ? 0 : user.getLoginAttempts()) + 1);
+            if (user.getLoginAttempts() >= 5) {
+                user.setLocked(true);
+                userRepository.save(user);
+                throw new RuntimeException("账户已被锁定，请联系管理员");
+            }
+            userRepository.save(user);
             throw new RuntimeException("用户名或密码错误");
         }
-        
-        // 重置登录尝试次数
+
         user.setLoginAttempts(0);
         user.setLastLoginTime(java.time.LocalDateTime.now());
         userRepository.save(user);
-        
-        // 生成JWT token
+
         UserDetails userDetails = loadUserByUsername(user.getUsername());
         return jwtUtils.generateToken(userDetails);
     }

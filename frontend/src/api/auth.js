@@ -23,3 +23,9 @@ export function getUserInfo() {
   })
 }
 
+export function getCaptchaNew() {
+  return request({
+    url: '/auth/captcha/new',
+    method: 'get'
+  })
+}
