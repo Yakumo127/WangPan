@@ -65,10 +65,17 @@ public class UserLog {
     public static final String ACTION_MOVE = "MOVE";
     public static final String ACTION_COPY = "COPY";
     public static final String ACTION_RENAME = "RENAME";
+    public static final String ACTION_RESTORE = "RESTORE";
     public static final String ACTION_CREATE_FOLDER = "CREATE_FOLDER";
     public static final String ACTION_DELETE_FOLDER = "DELETE_FOLDER";
     public static final String ACTION_CHANGE_PASSWORD = "CHANGE_PASSWORD";
     public static final String ACTION_UPDATE_PROFILE = "UPDATE_PROFILE";
+    // 扩展：管理员/回收站场景
+    public static final String ACTION_ADMIN_SCHEDULE_DELETE = "ADMIN_SCHEDULE_DELETE";
+    public static final String ACTION_ADMIN_RESTORE = "ADMIN_RESTORE";
+    public static final String ACTION_ADMIN_PURGE_EXPIRED = "ADMIN_PURGE_EXPIRED";
+    public static final String ACTION_RECYCLE_REMOVE = "RECYCLE_REMOVE";
+    public static final String ACTION_RECYCLE_EMPTY = "RECYCLE_EMPTY";
     
     // 资源类型常量
     public static final String RESOURCE_FILE = "FILE";

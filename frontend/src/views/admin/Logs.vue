@@ -66,16 +66,13 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getLogs, exportLogs } from '@/api/logs'
+import { getLogs, exportLogs, getLogDictionaries } from '@/api/logs'
 
-const actionOptions = [
-  'LOGIN','UPLOAD','DOWNLOAD','DELETE','COPY','RESTORE','MOVE','RENAME',
-  'CREATE_FOLDER','DELETE_FOLDER','ADMIN_SCHEDULE_DELETE','ADMIN_RESTORE','ADMIN_PURGE_EXPIRED','RECYCLE_REMOVE','RECYCLE_EMPTY'
-]
-const resourceTypeOptions = ['FILE','FOLDER','USER','API']
+const actionOptions = ref([])
+const resourceTypeOptions = ref([])
 
 const filters = reactive({
-  actions: ['LOGIN','UPLOAD','DOWNLOAD','DELETE','COPY'],
+  actions: [],
   resourceTypes: [],
   status: '',
   range: [],
@@ -117,7 +114,7 @@ const load = async () => {
 }
 
 const resetFilters = () => {
-  filters.actions = ['LOGIN','UPLOAD','DOWNLOAD','DELETE','COPY']
+  filters.actions = []
   filters.resourceTypes = []
   filters.status = ''
   filters.range = []
@@ -145,7 +142,18 @@ const doExport = async (fmt) => {
   }
 }
 
-onMounted(load)
+onMounted(async () => {
+  try {
+    const dict = await getLogDictionaries()
+    actionOptions.value = dict.actions || []
+    resourceTypeOptions.value = dict.resourceTypes || []
+  } catch (e) {
+    // 回退默认
+    actionOptions.value = ['LOGIN','UPLOAD','DOWNLOAD','DELETE','COPY','RESTORE','MOVE','RENAME','CREATE_FOLDER','DELETE_FOLDER','ADMIN_SCHEDULE_DELETE','ADMIN_RESTORE','ADMIN_PURGE_EXPIRED','RECYCLE_REMOVE','RECYCLE_EMPTY']
+    resourceTypeOptions.value = ['FILE','FOLDER','USER','API']
+  }
+  await load()
+})
 </script>
 
 <style scoped>
@@ -155,4 +163,3 @@ onMounted(load)
 .mt-12 { margin-top: 12px; }
 .flex-center { display: flex; justify-content: center; }
 </style>
-

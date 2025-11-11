@@ -158,4 +158,42 @@ public class AdminLogController {
         if (csv == null || csv.isBlank()) return null;
         return new HashSet<>(Arrays.asList(csv.split(",")));
     }
+
+    @GetMapping("/actions")
+    public java.util.Map<String, java.util.List<String>> listActions() {
+        java.util.List<String> actions = java.util.List.of(
+                com.filemanager.entity.UserLog.ACTION_LOGIN,
+                com.filemanager.entity.UserLog.ACTION_UPLOAD,
+                com.filemanager.entity.UserLog.ACTION_DOWNLOAD,
+                com.filemanager.entity.UserLog.ACTION_DELETE,
+                com.filemanager.entity.UserLog.ACTION_COPY,
+                com.filemanager.entity.UserLog.ACTION_MOVE,
+                com.filemanager.entity.UserLog.ACTION_RENAME,
+                com.filemanager.entity.UserLog.ACTION_RESTORE,
+                com.filemanager.entity.UserLog.ACTION_CREATE_FOLDER,
+                com.filemanager.entity.UserLog.ACTION_DELETE_FOLDER,
+                com.filemanager.entity.UserLog.ACTION_UPDATE_PROFILE,
+                com.filemanager.entity.UserLog.ACTION_CHANGE_PASSWORD,
+                com.filemanager.entity.UserLog.ACTION_ADMIN_SCHEDULE_DELETE,
+                com.filemanager.entity.UserLog.ACTION_ADMIN_RESTORE,
+                com.filemanager.entity.UserLog.ACTION_ADMIN_PURGE_EXPIRED,
+                com.filemanager.entity.UserLog.ACTION_RECYCLE_REMOVE,
+                com.filemanager.entity.UserLog.ACTION_RECYCLE_EMPTY
+        );
+        java.util.List<String> resourceTypes = java.util.List.of(
+                com.filemanager.entity.UserLog.RESOURCE_FILE,
+                com.filemanager.entity.UserLog.RESOURCE_FOLDER,
+                com.filemanager.entity.UserLog.RESOURCE_USER,
+                "API"
+        );
+        java.util.List<String> statuses = java.util.List.of(
+                com.filemanager.entity.UserLog.STATUS_SUCCESS,
+                com.filemanager.entity.UserLog.STATUS_FAILED
+        );
+        return java.util.Map.of(
+                "actions", actions,
+                "resourceTypes", resourceTypes,
+                "statuses", statuses
+        );
+    }
 }

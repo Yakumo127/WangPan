@@ -338,7 +338,7 @@ public class FileService {
         file.setQuotaReleased(false);
         file.setUpdateTime(LocalDateTime.now());
         fileRepository.save(file);
-        try { auditLogService.logSuccess(adminId, com.filemanager.entity.UserLog.ACTION_RESTORE,
+        try { auditLogService.logSuccess(adminId, com.filemanager.entity.UserLog.ACTION_ADMIN_RESTORE,
                 com.filemanager.entity.UserLog.RESOURCE_FILE, file.getId(), file.getOriginalFilename(),
                 "管理员恢复到管理员网盘：" + file.getOriginalFilename(), System.currentTimeMillis() - start); } catch (Exception ignore) {}
     }
@@ -376,7 +376,7 @@ public class FileService {
         file.setOwnerHidden(true);
         file.setUpdateTime(LocalDateTime.now());
         fileRepository.save(file);
-        try { auditLogService.logSuccess(userId, com.filemanager.entity.UserLog.ACTION_DELETE,
+        try { auditLogService.logSuccess(userId, com.filemanager.entity.UserLog.ACTION_RECYCLE_REMOVE,
                 com.filemanager.entity.UserLog.RESOURCE_FILE, file.getId(), file.getOriginalFilename(),
                 "从用户回收站移除：" + file.getOriginalFilename(), System.currentTimeMillis() - start); } catch (Exception ignore) {}
     }
@@ -416,7 +416,7 @@ public class FileService {
         file.setAdminDeleteReason(null);
         file.setUpdateTime(LocalDateTime.now());
         fileRepository.save(file);
-        try { auditLogService.logSuccess(userId, com.filemanager.entity.UserLog.ACTION_RENAME,
+        try { auditLogService.logSuccess(userId, com.filemanager.entity.UserLog.ACTION_RESTORE,
                 com.filemanager.entity.UserLog.RESOURCE_FILE, file.getId(), file.getOriginalFilename(),
                 "恢复文件：" + file.getOriginalFilename(), System.currentTimeMillis() - start); } catch (Exception ignore) {}
     }
@@ -430,7 +430,7 @@ public class FileService {
             file.setUpdateTime(LocalDateTime.now());
         }
         fileRepository.saveAll(files);
-        try { auditLogService.logSuccess(userId, com.filemanager.entity.UserLog.ACTION_DELETE,
+        try { auditLogService.logSuccess(userId, com.filemanager.entity.UserLog.ACTION_RECYCLE_EMPTY,
                 com.filemanager.entity.UserLog.RESOURCE_FILE, null, null,
                 "清空用户回收站（仅隐藏）：共" + files.size() + "项", System.currentTimeMillis() - start); } catch (Exception ignore) {}
     }

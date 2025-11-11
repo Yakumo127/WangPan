@@ -17,3 +17,9 @@ export function exportLogs(params, format = 'csv') {
   })
 }
 
+export function getLogDictionaries() {
+  return request({
+    url: "/admin/logs/actions",
+    method: "get"
+  })
+}
