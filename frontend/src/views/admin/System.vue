@@ -148,6 +148,16 @@
                 </el-input>
               </el-col>
               <el-col :span="8">
+                <el-date-picker
+                  v-model="execRange"
+                  type="datetimerange"
+                  range-separator="至"
+                  start-placeholder="到期开始时间"
+                  end-placeholder="到期结束时间"
+                  value-format="YYYY-MM-DDTHH:mm:ss"
+                />
+              </el-col>
+              <el-col :span="8">
                 <el-input
                   v-model="reasonKeyword"
                   placeholder="搜索删除理由..."
@@ -296,6 +306,7 @@ export default {
     const searchKeyword = ref("")
     const reasonKeyword = ref("")
     const onlyScheduled = ref(false)
+    const execRange = ref([])
     const selectedItems = ref([])
     
     const systemConfig = ref({
@@ -401,11 +412,15 @@ export default {
       const k1 = (searchKeyword.value || '').toLowerCase().trim()
       const k2 = (reasonKeyword.value || '').toLowerCase().trim()
       const scheduledOnly = !!onlyScheduled.value
+      const hasExecRange = Array.isArray(execRange.value) && execRange.value.length === 2 && execRange.value[0] && execRange.value[1]
+      const startTs = hasExecRange ? new Date(execRange.value[0]).getTime() : null
+      const endTs = hasExecRange ? new Date(execRange.value[1]).getTime() : null
       recycleItems.value = (recycleRawItems.value || []).filter(item => {
         const nameMatch = !k1 || (item.originalFilename && item.originalFilename.toLowerCase().includes(k1)) || (item.ownerUsername && item.ownerUsername.toLowerCase().includes(k1))
         const reasonMatch = !k2 || (item.adminDeleteReason && item.adminDeleteReason.toLowerCase().includes(k2))
         const scheduledMatch = !scheduledOnly || item.adminDeleteScheduled
-        return nameMatch && reasonMatch && scheduledMatch
+        const execMatch = !hasExecRange || (item.adminDeleteExecuteTime && (() => { const t = new Date(item.adminDeleteExecuteTime).getTime(); return t >= startTs && t <= endTs })())
+        return nameMatch && reasonMatch && scheduledMatch && execMatch
       })
     }
     
