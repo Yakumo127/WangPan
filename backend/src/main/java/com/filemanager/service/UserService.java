@@ -222,6 +222,12 @@ public class UserService implements UserDetailsService {
                 .map(User::getId)
                 .orElseThrow(() -> new RuntimeException("用户不存在: " + username));
     }
+
+    // 根据用户ID获取用户实体
+    public User getUserById(Long userId) {
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("用户不存在: " + userId));
+    }
     
     // 管理员方法：获取所有用户
     public List<User> getAllUsers() {

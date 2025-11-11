@@ -59,6 +59,12 @@ jwt:
   secret: enterpriseFileManagerSecretKey2024
   expiration: 86400000    # 24小时
 
+recycle:
+  admin:
+    retention-days: 15
+  purge:
+    fixed-delay-ms: 3600000   # 1小时
+
 management:
   endpoints:
     web:

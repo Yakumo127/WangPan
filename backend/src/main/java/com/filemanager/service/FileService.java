@@ -49,6 +49,8 @@ public class FileService {
     private boolean imageIoUseCache;
     @Value("${file.storage.temp-dir:}")
     private String tempDir;
+    @Value("${recycle.admin.retention-days:15}")
+    private int adminRetentionDays;
     
     private final FileRepository fileRepository;
     private final FolderRepository folderRepository;
@@ -128,6 +130,14 @@ public class FileService {
         File file = getFile(fileId, userId);
         file.setDeleted(true);
         file.setDeleteTime(LocalDateTime.now());
+        // 用户删除后立即释放容量（仅一次）
+        userRepository.findById(userId).ifPresent(u -> {
+            if (!Boolean.TRUE.equals(file.getQuotaReleased())) {
+                u.releaseQuota(file.getSize());
+                userRepository.save(u);
+                file.setQuotaReleased(true);
+            }
+        });
         fileRepository.save(file);
     }
     
@@ -237,112 +247,166 @@ public class FileService {
     }
     
     // 管理员恢复文件
-    public void adminRestoreFile(Long fileId) {
+    public void adminRestoreFile(Long fileId, Long adminId) {
         File file = fileRepository.findByIdAndDeletedTrue(fileId)
                 .orElseThrow(() -> new RuntimeException("回收站中不存在该文件"));
+
+        // 管理员实体与容量校验
+        User admin = userRepository.findById(adminId)
+                .orElseThrow(() -> new RuntimeException("管理员不存在"));
+        if (!admin.hasEnoughQuota(file.getSize())) {
+            throw new RuntimeException("管理员存储空间不足，无法恢复该文件");
+        }
+
+        // 若历史数据未释放过原属主配额，则先释放，避免原用户继续占用
+        Long oldOwnerId = file.getUser() != null ? file.getUser().getId() : null;
+        if (oldOwnerId != null && !Boolean.TRUE.equals(file.getQuotaReleased())) {
+            userRepository.findById(oldOwnerId).ifPresent(u -> {
+                u.releaseQuota(file.getSize());
+                userRepository.save(u);
+            });
+            file.setQuotaReleased(true);
+        }
+
+        // 目标目录：管理员用户空间
+        Path adminDir = Paths.get(storagePath, "user_" + adminId);
+        try {
+            if (!Files.exists(adminDir)) {
+                Files.createDirectories(adminDir);
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("创建管理员存储目录失败", e);
+        }
+
+        // 生成新文件名并移动物理文件
+        String ext = getFileExtension(file.getOriginalFilename());
+        String newName = java.util.UUID.randomUUID().toString() + ext;
+        Path src = Paths.get(file.getFilePath());
+        Path dst = adminDir.resolve(newName);
+        try {
+            if (Files.exists(src)) {
+                Files.move(src, dst, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            } else {
+                throw new RuntimeException("源文件不存在，无法恢复");
+            }
+        } catch (IOException ioe) {
+            throw new RuntimeException("移动文件失败", ioe);
+        }
+
+        // 删除旧缩略图并清空缩略图路径（恢复后按需重新生成）
+        try {
+            if (file.getThumbnailPath() != null) {
+                Files.deleteIfExists(Paths.get(file.getThumbnailPath()));
+            }
+        } catch (IOException ignore) {}
+        file.setThumbnailPath(null);
+
+        // 扣除管理员配额（文件归属转移给管理员）
+        admin.useQuota(file.getSize());
+        userRepository.save(admin);
+
+        // 更新文件信息为管理员归属 + 清理删除/排期状态
+        file.setUser(admin);
+        file.setFolder(null);
+        file.setFilename(newName);
+        file.setFilePath(dst.toString());
         file.setDeleted(false);
         file.setDeleteTime(null);
+        file.setOwnerHidden(false);
+        file.setAdminDeleteScheduled(false);
+        file.setAdminDeleteRequestTime(null);
+        file.setAdminDeleteExecuteTime(null);
+        file.setAdminDeleteReason(null);
+        // 标记为未释放（因为现在由管理员占用配额），以匹配后续用户/管理员删除逻辑
+        file.setQuotaReleased(false);
         file.setUpdateTime(LocalDateTime.now());
         fileRepository.save(file);
     }
     
-    // 管理员彻底删除文件
+    // 管理员：为已删除文件排期彻底删除（进入冷静期）。旧的“立即彻删”改为调度删除。
     public void adminPermanentDeleteFile(Long fileId) {
+        adminScheduleDeleteFile(fileId, "管理员删除");
+    }
+
+    public LocalDateTime adminScheduleDeleteFile(Long fileId, String reason) {
         File file = fileRepository.findByIdAndDeletedTrue(fileId)
                 .orElseThrow(() -> new RuntimeException("回收站中不存在该文件"));
-        
-        // 删除物理文件
-        try {
-            Files.deleteIfExists(Paths.get(file.getFilePath()));
-        } catch (IOException e) {
-            // 物理文件删除失败，只删除数据库记录
-            System.err.println("物理文件删除失败: " + file.getFilePath());
-        }
-        
-        // 释放配额
-        try {
-            Long ownerId = file.getUser() != null ? file.getUser().getId() : null;
-            if (ownerId != null) {
-                userRepository.findById(ownerId).ifPresent(u -> {
-                    u.releaseQuota(file.getSize());
-                    userRepository.save(u);
-                });
-            }
-        } catch (Exception ignore) {}
-        fileRepository.delete(file);
+        file.setAdminDeleteScheduled(true);
+        file.setAdminDeleteRequestTime(LocalDateTime.now());
+        file.setAdminDeleteReason(reason);
+        LocalDateTime execTime = LocalDateTime.now().plusDays(adminRetentionDays);
+        file.setAdminDeleteExecuteTime(execTime);
+        fileRepository.save(file);
+        return execTime;
     }
     
-    // 管理员清空所有回收站
+    // 保留旧实现但不再对外暴露接口（危险操作）。
     public void adminEmptyAllRecycleBin() {
         List<File> files = fileRepository.findByDeletedTrue();
         for (File file : files) {
-            // 删除物理文件
-            try {
-                Files.deleteIfExists(Paths.get(file.getFilePath()));
-            } catch (IOException e) {
-                // 物理文件删除失败，只删除数据库记录
-                System.err.println("物理文件删除失败: " + file.getFilePath());
-            }
+            adminScheduleDeleteFile(file.getId(), "批量清空");
         }
-        // 释放配额
-        for (File file : files) {
-            try {
-                Long ownerId = file.getUser() != null ? file.getUser().getId() : null;
-                if (ownerId != null) {
-                    userRepository.findById(ownerId).ifPresent(u -> {
-                        u.releaseQuota(file.getSize());
-                        userRepository.save(u);
-                    });
-                }
-            } catch (Exception ignore) {}
-        }
-        fileRepository.deleteAll(files);
     }
 
-    // 用户回收站：彻底删除文件（包含物理删除）
+    // 用户回收站：彻底删除（对用户隐藏，不物理删除，不改配额）
     public void permanentDeleteFile(Long fileId, Long userId) {
         File file = fileRepository.findByIdAndUserIdAndDeletedTrue(fileId, userId)
                 .orElseThrow(() -> new RuntimeException("回收站中不存在该文件"));
-
-        // 删除物理文件
-        try {
-            Files.deleteIfExists(Paths.get(file.getFilePath()));
-            if (file.getThumbnailPath() != null) {
-                Files.deleteIfExists(Paths.get(file.getThumbnailPath()));
-            }
-        } catch (IOException e) {
-            System.err.println("物理文件删除失败: " + file.getFilePath());
-        }
-
-        // 释放配额
-        userRepository.findById(userId).ifPresent(u -> {
-            u.releaseQuota(file.getSize());
-            userRepository.save(u);
-        });
-
-        fileRepository.delete(file);
+        file.setOwnerHidden(true);
+        file.setUpdateTime(LocalDateTime.now());
+        fileRepository.save(file);
     }
     public List<File> getUserRecycleBinFiles(Long userId) {
-        return fileRepository.findByUserIdAndDeletedTrueOrderByDeleteTimeDesc(userId);
+        return fileRepository.findByUserIdAndDeletedTrueAndOwnerHiddenFalseOrderByDeleteTimeDesc(userId);
     }
 
     public List<File> searchFiles(Long userId, String keyword) {
         return fileRepository.findByUserIdAndOriginalFilenameContainingAndDeletedFalseOrderByCreateTimeDesc(userId, keyword);
     }
 
-    // 用户回收站：恢复文件
+    // 用户回收站：恢复文件（若之前释放过配额，需要回加并校验剩余容量）
     public void restoreFile(Long fileId, Long userId) {
         File file = fileRepository.findByIdAndUserIdAndDeletedTrue(fileId, userId)
                 .orElseThrow(() -> new RuntimeException("回收站中不存在该文件"));
+
+        // 如之前释放过配额，需要回加
+        userRepository.findById(userId).ifPresent(u -> {
+            if (Boolean.TRUE.equals(file.getQuotaReleased())) {
+                if (!u.hasEnoughQuota(file.getSize())) {
+                    throw new RuntimeException("存储空间不足，无法恢复该文件");
+                }
+                u.useQuota(file.getSize());
+                userRepository.save(u);
+                file.setQuotaReleased(false);
+            }
+        });
+
         file.setDeleted(false);
         file.setDeleteTime(null);
+        file.setOwnerHidden(false);
+        // 清理管理员排期状态
+        file.setAdminDeleteScheduled(false);
+        file.setAdminDeleteRequestTime(null);
+        file.setAdminDeleteExecuteTime(null);
+        file.setAdminDeleteReason(null);
         file.setUpdateTime(LocalDateTime.now());
         fileRepository.save(file);
     }
 
-    // 用户回收站：清空回收站
+    // 用户回收站：清空回收站（仅对用户隐藏，不物理删除，不改配额）
     public void emptyRecycleBin(Long userId) {
-        List<File> files = fileRepository.findByUserIdAndDeletedTrueOrderByDeleteTimeDesc(userId);
+        List<File> files = fileRepository.findByUserIdAndDeletedTrueAndOwnerHiddenFalseOrderByDeleteTimeDesc(userId);
+        for (File file : files) {
+            file.setOwnerHidden(true);
+            file.setUpdateTime(LocalDateTime.now());
+        }
+        fileRepository.saveAll(files);
+    }
+
+    // 管理员：清理到期的排期删除项（物理删除 -> 兜底释放配额 -> 删除记录）
+    public int purgeExpiredScheduledDeletions() {
+        List<File> files = fileRepository.findByAdminDeleteScheduledTrueAndAdminDeleteExecuteTimeBefore(LocalDateTime.now());
+        int count = 0;
         for (File file : files) {
             try {
                 Files.deleteIfExists(Paths.get(file.getFilePath()));
@@ -352,8 +416,21 @@ public class FileService {
             } catch (IOException e) {
                 System.err.println("物理文件删除失败: " + file.getFilePath());
             }
+            // 兜底释放配额（兼容历史数据）
+            try {
+                Long ownerId = file.getUser() != null ? file.getUser().getId() : null;
+                if (ownerId != null && !Boolean.TRUE.equals(file.getQuotaReleased())) {
+                    userRepository.findById(ownerId).ifPresent(u -> {
+                        u.releaseQuota(file.getSize());
+                        userRepository.save(u);
+                    });
+                }
+            } catch (Exception ignore) {}
+
+            fileRepository.delete(file);
+            count++;
         }
-        fileRepository.deleteAll(files);
+        return count;
     }
 
     // 缩略图：公开获取缩略图路径（若无则生成）

@@ -9,6 +9,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 @Repository
@@ -29,6 +30,10 @@ public interface FileRepository extends JpaRepository<File, Long> {
     @Query("SELECT f FROM File f WHERE f.user.id = :userId AND f.deleted = true ORDER BY f.deleteTime DESC")
     List<File> findByUserIdAndDeletedTrueOrderByDeleteTimeDesc(@Param("userId") Long userId);
 
+    // 用户回收站：仅展示未对用户隐藏的已删除文件
+    @Query("SELECT f FROM File f WHERE f.user.id = :userId AND f.deleted = true AND (f.ownerHidden = false OR f.ownerHidden IS NULL) ORDER BY f.deleteTime DESC")
+    List<File> findByUserIdAndDeletedTrueAndOwnerHiddenFalseOrderByDeleteTimeDesc(@Param("userId") Long userId);
+
     @Query("SELECT f FROM File f WHERE f.id = :fileId AND f.user.id = :userId AND f.deleted = true")
     Optional<File> findByIdAndUserIdAndDeletedTrue(@Param("fileId") Long fileId, @Param("userId") Long userId);
 
@@ -36,6 +41,9 @@ public interface FileRepository extends JpaRepository<File, Long> {
     List<File> findByDeletedTrueOrderByDeleteTimeDesc();
 
     Optional<File> findByIdAndDeletedTrue(Long fileId);
+
+    // 管理员清理：查找到期的排期删除项
+    List<File> findByAdminDeleteScheduledTrueAndAdminDeleteExecuteTimeBefore(LocalDateTime now);
 
     // 按ID查询非删除文件（用于公开缩略图等场景）
     Optional<File> findByIdAndDeletedFalse(Long fileId);

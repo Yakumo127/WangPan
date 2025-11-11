@@ -11,6 +11,10 @@ public class AdminFileDTO {
     private LocalDateTime createTime;
     private Boolean deleted;
     private String ownerUsername;
+    private LocalDateTime deleteTime;
+    private Boolean adminDeleteScheduled;
+    private LocalDateTime adminDeleteExecuteTime;
+    private String adminDeleteReason;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -28,5 +32,12 @@ public class AdminFileDTO {
     public void setDeleted(Boolean deleted) { this.deleted = deleted; }
     public String getOwnerUsername() { return ownerUsername; }
     public void setOwnerUsername(String ownerUsername) { this.ownerUsername = ownerUsername; }
+    public LocalDateTime getDeleteTime() { return deleteTime; }
+    public void setDeleteTime(LocalDateTime deleteTime) { this.deleteTime = deleteTime; }
+    public Boolean getAdminDeleteScheduled() { return adminDeleteScheduled; }
+    public void setAdminDeleteScheduled(Boolean adminDeleteScheduled) { this.adminDeleteScheduled = adminDeleteScheduled; }
+    public LocalDateTime getAdminDeleteExecuteTime() { return adminDeleteExecuteTime; }
+    public void setAdminDeleteExecuteTime(LocalDateTime adminDeleteExecuteTime) { this.adminDeleteExecuteTime = adminDeleteExecuteTime; }
+    public String getAdminDeleteReason() { return adminDeleteReason; }
+    public void setAdminDeleteReason(String adminDeleteReason) { this.adminDeleteReason = adminDeleteReason; }
 }
-

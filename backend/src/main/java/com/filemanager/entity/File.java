@@ -68,6 +68,28 @@ public class File {
     
     private String description;
     
+    // 用户侧：是否对文件所有者隐藏（用户在回收站“彻底删除/清空”后置为true，仅管理员可见）
+    @Column(name = "owner_hidden")
+    private Boolean ownerHidden = false;
+
+    // 管理员侧：是否已排期删除（进入15天冷静期）
+    @Column(name = "admin_delete_scheduled")
+    private Boolean adminDeleteScheduled = false;
+
+    // 管理员侧：排期删除请求时间、执行时间与理由
+    @Column(name = "admin_delete_request_time")
+    private LocalDateTime adminDeleteRequestTime;
+
+    @Column(name = "admin_delete_execute_time")
+    private LocalDateTime adminDeleteExecuteTime;
+
+    @Column(name = "admin_delete_reason", length = 500)
+    private String adminDeleteReason;
+
+    // 配额标记：当用户执行“删除（软删）”后立即释放配额，避免二次释放
+    @Column(name = "quota_released")
+    private Boolean quotaReleased = false;
+    
       
     public enum FileType {
         IMAGE, DOCUMENT, VIDEO, AUDIO, ARCHIVE, OTHER
@@ -106,4 +128,17 @@ public class File {
     public void setDownloadCount(Integer downloadCount) { this.downloadCount = downloadCount; }
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
+
+    public Boolean getOwnerHidden() { return ownerHidden; }
+    public void setOwnerHidden(Boolean ownerHidden) { this.ownerHidden = ownerHidden; }
+    public Boolean getAdminDeleteScheduled() { return adminDeleteScheduled; }
+    public void setAdminDeleteScheduled(Boolean adminDeleteScheduled) { this.adminDeleteScheduled = adminDeleteScheduled; }
+    public LocalDateTime getAdminDeleteRequestTime() { return adminDeleteRequestTime; }
+    public void setAdminDeleteRequestTime(LocalDateTime adminDeleteRequestTime) { this.adminDeleteRequestTime = adminDeleteRequestTime; }
+    public LocalDateTime getAdminDeleteExecuteTime() { return adminDeleteExecuteTime; }
+    public void setAdminDeleteExecuteTime(LocalDateTime adminDeleteExecuteTime) { this.adminDeleteExecuteTime = adminDeleteExecuteTime; }
+    public String getAdminDeleteReason() { return adminDeleteReason; }
+    public void setAdminDeleteReason(String adminDeleteReason) { this.adminDeleteReason = adminDeleteReason; }
+    public Boolean getQuotaReleased() { return quotaReleased; }
+    public void setQuotaReleased(Boolean quotaReleased) { this.quotaReleased = quotaReleased; }
 }

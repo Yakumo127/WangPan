@@ -101,6 +101,10 @@ public class FileController {
             dto.setCreateTime(f.getCreateTime());
             dto.setDeleted(Boolean.TRUE.equals(f.getDeleted()));
             dto.setOwnerUsername(f.getUser() != null ? f.getUser().getUsername() : null);
+            dto.setDeleteTime(f.getDeleteTime());
+            dto.setAdminDeleteScheduled(Boolean.TRUE.equals(f.getAdminDeleteScheduled()));
+            dto.setAdminDeleteExecuteTime(f.getAdminDeleteExecuteTime());
+            dto.setAdminDeleteReason(f.getAdminDeleteReason());
             return dto;
         }).toList();
 
@@ -169,14 +173,19 @@ public class FileController {
     }
     
     @DeleteMapping("/{fileId}")
-    public ResponseEntity<Map<String, String>> deleteFile(@PathVariable Long fileId) {
+    public ResponseEntity<Map<String, Object>> deleteFile(@PathVariable Long fileId) {
         try {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             String username = auth.getName();
             Long userId = userService.getUserIdByUsername(username);
             
             fileService.deleteFile(fileId, userId);
-            return ResponseEntity.ok(Map.of("message", "文件删除成功"));
+            com.filemanager.entity.User user = userService.getUserById(userId);
+            return ResponseEntity.ok(Map.of(
+                    "message", "文件删除成功",
+                    "quotaUsed", user.getQuotaUsed(),
+                    "quotaLimit", user.getQuotaLimit()
+            ));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }
@@ -298,19 +307,34 @@ public class FileController {
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<Map<String, Object>> adminRestoreFile(@PathVariable Long fileId) {
         try {
-            fileService.adminRestoreFile(fileId);
-            return ResponseEntity.ok(Map.of("message", "文件恢复成功"));
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            String adminUsername = auth.getName();
+            Long adminId = userService.getUserIdByUsername(adminUsername);
+            fileService.adminRestoreFile(fileId, adminId);
+            com.filemanager.entity.User admin = userService.getUserById(adminId);
+            return ResponseEntity.ok(Map.of(
+                    "message", "文件已恢复到管理员网盘",
+                    "quotaUsed", admin.getQuotaUsed(),
+                    "quotaLimit", admin.getQuotaLimit()
+            ));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }
     }
 
-    @DeleteMapping("/admin/recycle/bin/{fileId}")
+    // 管理员：为回收站文件排期删除（进入冷静期），需要理由
+    @PostMapping("/admin/recycle/bin/{fileId}/schedule-delete")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
-    public ResponseEntity<Map<String, String>> adminPermanentDeleteFile(@PathVariable Long fileId) {
+    public ResponseEntity<Map<String, Object>> adminScheduleDeleteFile(
+            @PathVariable Long fileId,
+            @RequestBody Map<String, String> body) {
         try {
-            fileService.adminPermanentDeleteFile(fileId);
-            return ResponseEntity.ok(Map.of("message", "文件彻底删除成功"));
+            String reason = body != null ? body.getOrDefault("reason", "管理员删除") : "管理员删除";
+            java.time.LocalDateTime execAt = fileService.adminScheduleDeleteFile(fileId, reason);
+            return ResponseEntity.ok(Map.of(
+                    "message", "已排期删除（进入冷静期）",
+                    "executeTime", execAt
+            ));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }
@@ -318,20 +342,25 @@ public class FileController {
     
     // 用户回收站：恢复文件
     @PutMapping("/{fileId}/restore")
-    public ResponseEntity<Map<String, String>> restoreFile(@PathVariable Long fileId) {
+    public ResponseEntity<Map<String, Object>> restoreFile(@PathVariable Long fileId) {
         try {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             String username = auth.getName();
             Long userId = userService.getUserIdByUsername(username);
 
             fileService.restoreFile(fileId, userId);
-            return ResponseEntity.ok(Map.of("message", "文件恢复成功"));
+            com.filemanager.entity.User user = userService.getUserById(userId);
+            return ResponseEntity.ok(Map.of(
+                    "message", "文件恢复成功",
+                    "quotaUsed", user.getQuotaUsed(),
+                    "quotaLimit", user.getQuotaLimit()
+            ));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }
     }
 
-    // 用户回收站：彻底删除文件
+    // 用户回收站：彻底删除文件（对用户隐藏，不物理删除）
     @DeleteMapping("/recycle/bin/{fileId}")
     public ResponseEntity<Map<String, String>> permanentDeleteFile(@PathVariable Long fileId) {
         try {
@@ -340,7 +369,7 @@ public class FileController {
             Long userId = userService.getUserIdByUsername(username);
 
             fileService.permanentDeleteFile(fileId, userId);
-            return ResponseEntity.ok(Map.of("message", "文件彻底删除成功"));
+            return ResponseEntity.ok(Map.of("message", "已从你的回收站移除"));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }
@@ -379,12 +408,13 @@ public class FileController {
         }
     }
 
-    @DeleteMapping("/admin/recycle/bin/empty")
+    // 管理员：手动清理到期的排期删除文件（通常依赖定时任务，这里仅提供手动触发）
+    @PostMapping("/admin/recycle/bin/purge-expired")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
-    public ResponseEntity<Map<String, String>> adminEmptyAllRecycleBin() {
+    public ResponseEntity<Map<String, Object>> adminPurgeExpired() {
         try {
-            fileService.adminEmptyAllRecycleBin();
-            return ResponseEntity.ok(Map.of("message", "所有回收站清空成功"));
+            int count = fileService.purgeExpiredScheduledDeletions();
+            return ResponseEntity.ok(Map.of("message", "已清理到期文件", "count", count));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }
