@@ -11,14 +11,14 @@
       </template>
       
       <div style="margin-bottom:12px; display:flex; gap:8px; align-items:center;">
-        <el-input v-model="keyword" placeholder="搜索文件名" style="max-width:240px;" clearable />
-        <el-select v-model="status" placeholder="状态" style="width:140px;">
+        <el-input v-model="keyword" placeholder="搜索文件名" style="max-width:240px;" clearable @keyup.enter="onSearch" />
+        <el-select v-model="status" placeholder="状态" style="width:140px;" @change="onStatusChange">
           <el-option label="未删除" value="active" />
           <el-option label="已删除" value="deleted" />
           <el-option label="全部" value="all" />
         </el-select>
-        <el-button type="primary" @click="loadFiles">查询</el-button>
-        <el-button @click="() => { keyword=''; status='active'; loadFiles(); }">重置</el-button>
+        <el-button type="primary" @click="onSearch">查询</el-button>
+        <el-button @click="onReset">重置</el-button>
       </div>
 
       <el-table :data="files" style="width: 100%">
@@ -203,7 +203,24 @@ export default {
     onMounted(() => {
       loadFiles()
     })
-    
+
+    const onSearch = () => {
+      currentPage.value = 1
+      loadFiles()
+    }
+
+    const onStatusChange = () => {
+      currentPage.value = 1
+      loadFiles()
+    }
+
+    const onReset = () => {
+      keyword.value = ''
+      status.value = 'active'
+      currentPage.value = 1
+      loadFiles()
+    }
+
     return {
       files,
       currentPage,
@@ -221,7 +238,10 @@ export default {
       formatFileSize,
       formatDate,
       keyword,
-      status
+      status,
+      onSearch,
+      onStatusChange,
+      onReset
     }
   }
 }
