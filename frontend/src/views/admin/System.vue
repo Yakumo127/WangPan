@@ -24,14 +24,16 @@
               <span class="unit">MB</span>
             </el-form-item>
             
-            <el-form-item label="允许的文件类型">
-              <el-select v-model="systemConfig.allowedTypes" multiple placeholder="选择允许的文件类型">
-                <el-option label="图片" value="image" />
-                <el-option label="文档" value="document" />
-                <el-option label="视频" value="video" />
-                <el-option label="音频" value="audio" />
-                <el-option label="压缩包" value="archive" />
+            <el-form-item label="不限制上传类型">
+              <el-switch v-model="uploadPolicy.allowAll" @change="saveUploadPolicy" />
+              <span class="tip" style="margin-left:8px;">开启后，所有文件均可上传</span>
+            </el-form-item>
+            <el-form-item label="允许的文件后缀" v-if="!uploadPolicy.allowAll">
+              <el-select v-model="uploadPolicy.allowedSuffixes" multiple filterable allow-create default-first-option placeholder="输入后按回车添加，如：jpg、pdf、zip">
+                <el-option v-for="s in uploadPolicy.allowedSuffixes" :key="s" :label="s" :value="s" />
               </el-select>
+              <el-button style="margin-left:8px;" @click="addCommonSuffixes">常用后缀</el-button>
+              <el-button type="primary" style="margin-left:8px;" @click="saveUploadPolicy">保存上传策略</el-button>
             </el-form-item>
             
             <el-form-item label="会话超时">
@@ -288,7 +290,7 @@ import { ref, onMounted, nextTick } from "vue"
 import { ElMessage, ElMessageBox } from "element-plus"
 import { Delete, Refresh, Search, Document, User, Calendar, DataLine, RefreshLeft } from "@element-plus/icons-vue"
 import { getAllRecycleBinFiles, adminRestoreFile, adminScheduleDeleteFile } from "@/api/file"
-import { getRecycleSettings, updateRecycleSettings } from "@/api/system"
+import { getRecycleSettings, updateRecycleSettings, getUploadPolicy, updateUploadPolicy } from "@/api/system"
 
 export default {
   name: "System",
@@ -328,6 +330,7 @@ export default {
       uptime: "2天 3小时 45分钟",
       memoryUsage: "256MB / 1024MB"
     })
+    const uploadPolicy = ref({ allowAll: true, allowedSuffixes: [] })
     
     const recycleStats = ref({
       totalItems: 0,
@@ -624,6 +627,33 @@ export default {
         ElMessage.error('更新失败')
       }
     }
+
+    const normalizeSuffixes = (arr) => {
+      const set = new Set()
+      for (const v of (arr || [])) {
+        if (!v) continue
+        let s = String(v).trim().toLowerCase()
+        if (s.startsWith('.')) s = s.slice(1)
+        if (s) set.add(s)
+      }
+      return Array.from(set)
+    }
+    const addCommonSuffixes = () => {
+      const commons = ['jpg','jpeg','png','gif','webp','pdf','doc','docx','xls','xlsx','ppt','pptx','txt','zip','rar','7z','mp4','mp3']
+      uploadPolicy.value.allowedSuffixes = normalizeSuffixes([...(uploadPolicy.value.allowedSuffixes||[]), ...commons])
+    }
+    const saveUploadPolicy = async () => {
+      try {
+        const payload = {
+          allowAll: !!uploadPolicy.value.allowAll,
+          allowedSuffixes: normalizeSuffixes(uploadPolicy.value.allowedSuffixes)
+        }
+        await updateUploadPolicy(payload)
+        ElMessage.success('上传策略已更新')
+      } catch (e) {
+        ElMessage.error('保存失败')
+      }
+    }
     
     // 重置配置
     const resetConfig = () => {
@@ -645,6 +675,9 @@ export default {
         const cfg = await getRecycleSettings()
         systemConfig.value.manualPurgeEnabled = !!cfg.manualPurgeEnabled
         if (cfg.retentionDays) systemConfig.value.retentionDays = cfg.retentionDays
+        const pol = await getUploadPolicy()
+        uploadPolicy.value.allowAll = !!pol.allowAll
+        uploadPolicy.value.allowedSuffixes = Array.isArray(pol.allowedSuffixes) ? pol.allowedSuffixes : []
       } catch (e) {}
       nextTick(() => { loadRecycleBinData() })
     })
@@ -663,6 +696,7 @@ export default {
       selectedItems,
       systemConfig,
       systemInfo,
+      uploadPolicy,
       recycleStats,
       formatFileSize,
       formatStorage,

@@ -63,6 +63,19 @@ public class FileService {
         // 配额校验
         User userEntity = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("用户不存在"));
+        // 上传策略校验：后缀白名单（allowAll=false 时生效）
+        if (!systemSettingService.isUploadAllowAll()) {
+            String originalFilename = file.getOriginalFilename();
+            String ext = getFileExtension(originalFilename);
+            String suffix = (ext == null) ? "" : ext.replaceFirst("^\\.", "").toLowerCase();
+            java.util.List<String> allowed = systemSettingService.getAllowedSuffixes();
+            if (suffix.isEmpty() || allowed.isEmpty() || !allowed.contains(suffix)) {
+                String allowStr = String.join(",", allowed);
+                throw new RuntimeException(allowed.isEmpty()
+                        ? "当前未配置允许的后缀，已禁止上传，请联系管理员"
+                        : (suffix.isEmpty() ? "不允许上传无后缀文件" : ("不允许上传该类型文件（仅允许：" + allowStr + ")")));
+            }
+        }
         if (!userEntity.hasEnoughQuota(file.getSize())) {
             throw new RuntimeException("存储空间不足，无法上传该文件");
         }

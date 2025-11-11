@@ -15,3 +15,18 @@ export function updateRecycleSettings(data) {
   })
 }
 
+// 上传策略
+export function getUploadPolicy() {
+  return request({
+    url: "/admin/settings/upload-policy",
+    method: "get"
+  })
+}
+
+export function updateUploadPolicy(data) {
+  return request({
+    url: "/admin/settings/upload-policy",
+    method: "put",
+    data
+  })
+}

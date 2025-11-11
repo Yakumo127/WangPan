@@ -1,0 +1,99 @@
+# 缩略图生成内存优化 — 变更说明与操作指南 (__TS__)
+
+本说明文档记录“缩略图生成的内存使用”优化的动机、方案、代码与配置变更、测试建议与风险控制，确保生产环境稳定、可回滚与可扩展。
+
+---
+
+## 1. 背景与问题
+- 现状：缩略图生成使用 `ImageIO.read()` 整图解码 + `getScaledInstance()` 再缩放。
+- 风险：在超大分辨率或大文件（例如上百 MB）情况下，整图解码会占用大量堆内存，容易触发 Full GC 或 OOM。
+
+---
+
+## 2. 优化目标
+- 以“读取即压缩”的方式避免整图驻留，显著降低峰值内存。
+- 对超大图像设置理性阈值直接拒绝生成，保护系统稳定性。
+- 可配置化参数适应不同部署环境。
+
+---
+
+## 3. 技术方案
+1) 按需子采样：
+   - 使用 `ImageIO` 的 `ImageReader + ImageReadParam.setSourceSubsampling(x, y)`，在解码阶段直接按分块抽样读取为低分辨率，避免整图进内存。
+2) 磁盘缓存：
+   - 启用 `ImageIO.setUseCache(true)` 并设置缓存目录为 `file.storage.temp-dir`，降低堆内存压力（临时文件在磁盘）。
+3) 阈值保护：
+   - 超过 `max-source-bytes`（默认 50MB）或 `max-source-pixels`（默认 5000 万像素）直接拒绝生成，抛出明确异常。
+4) 高质量缩放：
+   - 子采样后若仍超过目标最长边 `max-side`（默认 256），再用双线性插值进行二次缩放，兼顾质量与性能。
+
+---
+
+## 4. 代码变更
+- 文件：`backend/src/main/java/com/filemanager/service/FileService.java`
+  - 方法：`ensureThumbnail(File file)`
+  - 核心变更：
+    - 读取前检查源文件大小；
+    - 使用 `ImageInputStream` + `ImageReader` 子采样读取；
+    - 配置 `ImageIO.setUseCache(imageIoUseCache)` 与缓存目录；
+    - 按 `max-side` 计算目标尺寸，双线性缩放；
+    - 捕获 `OutOfMemoryError` 并转换为明确错误；
+    - 资源释放：`try-with-resources` + `reader.dispose()`。
+
+---
+
+## 5. 配置变更
+- 本地配置：`backend/src/main/resources/application.yml`
+```
+file:
+  storage:
+    temp-dir: /app/temp
+    imageio:
+      use-cache: true
+    thumbnail:
+      max-side: 256
+      max-source-bytes: 52428800   # 50MB
+      max-source-pixels: 50000000  # 5000万像素
+```
+- 容器配置：`backend/src/main/resources/application-docker.yml`（同上参数，路径沿用容器目录）
+
+参数说明：
+- `max-side`：缩略图最长边像素；
+- `max-source-bytes`：源图片最大字节数上限，超出拒绝生成；
+- `max-source-pixels`：源图片最大像素数上限，超出拒绝生成；
+- `imageio.use-cache`：是否启用 ImageIO 磁盘缓存；
+- `temp-dir`：临时缓存目录（ImageIO 缓存与上传临时文件）。
+
+---
+
+## 6. 行为变化
+- 对超大图片将返回 400（控制器捕获异常并转为响应），提示“生成缩略图失败”并在日志中说明原因（过大/不支持/内存不足）。
+- 正常图片生成的内存峰值显著下降。
+
+---
+
+## 7. 测试建议
+- 小图（<5MB，常见分辨率）：应快速生成缩略图，尺寸最长边等于 `max-side`。
+- 大文件（>50MB）与超高像素（>5000万像素）：应被拒绝生成，返回错误；服务稳定无 OOM。
+- 不支持格式：返回错误。
+- 压测：并发访问多个缩略图生成请求，观察堆内存与 GC 无异常尖峰。
+
+---
+
+## 8. 风险与回滚
+- 风险：某些奇异图片编码可能让 `ImageReader` 不兼容；已通过“格式检查+异常处理”屏蔽。
+- 回滚：将 `ensureThumbnail` 改回整图读取逻辑或放宽阈值；生产建议保留阈值保护。
+
+---
+
+## 9. 变更清单
+- `backend/src/main/java/com/filemanager/service/FileService.java`
+- `backend/src/main/resources/application.yml`
+- `backend/src/main/resources/application-docker.yml`
+
+---
+
+## 10. 时间与版本
+- 时间：__TS__
+- 分支：main
+

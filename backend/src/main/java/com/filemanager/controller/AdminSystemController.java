@@ -60,4 +60,45 @@ public class AdminSystemController {
         }
         return Map.of("message", "设置已更新", "manualPurgeEnabled", manualEnabled, "retentionDays", retentionDays);
     }
+
+    // 上传策略：获取
+    @GetMapping("/upload-policy")
+    public Map<String, Object> getUploadPolicy() {
+        boolean allowAll = systemSettingService.isUploadAllowAll();
+        java.util.List<String> suffixes = systemSettingService.getAllowedSuffixes();
+        return Map.of("allowAll", allowAll, "allowedSuffixes", suffixes);
+    }
+
+    // 上传策略：更新
+    @PutMapping("/upload-policy")
+    public Map<String, Object> updateUploadPolicy(@RequestBody Map<String, Object> body) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        Long adminId = userService.getUserIdByUsername(auth.getName());
+        com.filemanager.entity.User admin = userService.getUserById(adminId);
+
+        boolean allowAll = body.get("allowAll") != null && Boolean.TRUE.equals(body.get("allowAll"));
+        java.util.List<String> suffixes = null;
+        try {
+            Object v = body.get("allowedSuffixes");
+            if (v instanceof java.util.List<?> list) {
+                suffixes = new java.util.ArrayList<>();
+                for (Object o : list) if (o != null) suffixes.add(o.toString());
+            }
+        } catch (Exception ignore) {}
+
+        systemSettingService.setUploadAllowAll(allowAll, admin);
+        if (suffixes != null) systemSettingService.setAllowedSuffixes(suffixes, admin);
+
+        try {
+            auditLogService.logSuccess(adminId,
+                    com.filemanager.entity.UserLog.ACTION_UPDATE_SETTING,
+                    "SYSTEM",
+                    null,
+                    com.filemanager.service.SystemSettingService.KEY_UPLOAD_ALLOWED_SUFFIXES,
+                    (allowAll ? "allowAll=true" : ("allowAll=false; suffixes=" + (suffixes == null ? "" : String.join(",", suffixes)))),
+                    0L);
+        } catch (Exception ignore) {}
+
+        return Map.of("message", "上传策略已更新", "allowAll", allowAll, "allowedSuffixes", suffixes);
+    }
 }
