@@ -6,6 +6,7 @@ import com.filemanager.repository.UserLogRepository;
 import com.filemanager.repository.UserRepository;
 import com.filemanager.util.RequestInfoProvider;
 import lombok.RequiredArgsConstructor;
+import com.filemanager.metrics.AuditMetricsService;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -16,6 +17,7 @@ public class AuditLogService {
     private final UserLogRepository userLogRepository;
     private final UserRepository userRepository;
     private final RequestInfoProvider requestInfoProvider;
+    private final AuditMetricsService metrics;
 
     @Async
     public void logSuccess(Long userId,
@@ -76,9 +78,9 @@ public class AuditLogService {
             log.setIpAddress(requestInfoProvider.getClientIp());
             log.setUserAgent(requestInfoProvider.getUserAgent());
             userLogRepository.save(log);
+            if (UserLog.STATUS_SUCCESS.equals(status)) metrics.incSuccess(); else metrics.incFailure();
         } catch (Exception ignore) {
             // 审计日志失败不影响主流程
         }
     }
 }
-

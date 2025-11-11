@@ -5,7 +5,7 @@ import com.filemanager.service.AuditLogQueryService;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.xssf.streaming.SXSSFWorkbook;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Sort;
@@ -123,7 +123,7 @@ public class AdminLogController {
     }
 
     private byte[] toXlsx(List<UserLogDTO> rows) throws Exception {
-        try (Workbook wb = new XSSFWorkbook(); ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+        try (Workbook wb = new SXSSFWorkbook(100); ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
             Sheet sheet = wb.createSheet("Logs");
             int r = 0;
             String[] headers = new String[]{"时间","用户名","昵称","动作","资源类型","资源ID","资源名","结果","耗时(ms)","IP","UA","错误"};
@@ -147,6 +147,7 @@ public class AdminLogController {
             }
             for (int i=0;i<headers.length;i++) sheet.autoSizeColumn(i);
             wb.write(bos);
+            if (wb instanceof SXSSFWorkbook sx) { sx.dispose(); }
             return bos.toByteArray();
         }
     }

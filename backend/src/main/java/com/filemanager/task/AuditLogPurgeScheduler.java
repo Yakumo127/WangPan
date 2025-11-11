@@ -3,6 +3,7 @@ package com.filemanager.task;
 import com.filemanager.entity.UserLog;
 import com.filemanager.repository.UserLogRepository;
 import lombok.RequiredArgsConstructor;
+import com.filemanager.metrics.AuditMetricsService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -18,6 +19,7 @@ import java.time.LocalDateTime;
 public class AuditLogPurgeScheduler {
 
     private final UserLogRepository userLogRepository;
+    private final AuditMetricsService metrics;
 
     @Value("${audit.retention-days:180}")
     private int retentionDays;
@@ -26,6 +28,7 @@ public class AuditLogPurgeScheduler {
     public void purgeExpired() {
         LocalDateTime cutoff = LocalDateTime.now().minusDays(Math.max(1, retentionDays));
         int batchSize = 500;
+        long total = 0;
         while (true) {
             Specification<UserLog> spec = (root, cq, cb) -> cb.lessThan(root.get("createTime"), cutoff);
             Page<UserLog> page = userLogRepository.findAll(spec, PageRequest.of(0, batchSize, Sort.by(Sort.Direction.ASC, "createTime")));
@@ -38,8 +41,9 @@ public class AuditLogPurgeScheduler {
                     try { userLogRepository.delete(log); } catch (Exception ignore) {}
                 }
             }
+            total += page.getNumberOfElements();
             if (page.getNumberOfElements() < batchSize) break;
         }
+        metrics.incPurged(total);
     }
 }
-

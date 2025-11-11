@@ -89,3 +89,6 @@ audit:
     max-rows: 50000
   purge:
     cron: "0 0 3 * * ?"
+  success-fallback:
+    enabled: false
+    only-get: true
