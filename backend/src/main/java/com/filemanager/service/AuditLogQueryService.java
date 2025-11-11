@@ -63,6 +63,49 @@ public class AuditLogQueryService {
         return new PageImpl<>(content, pageable, result.getTotalElements());
     }
 
+    public java.util.List<UserLogDTO> queryAllLimited(
+            Set<String> actions,
+            Set<String> resourceTypes,
+            String status,
+            String keyword,
+            LocalDateTime from,
+            LocalDateTime to,
+            int limit,
+            Sort sort
+    ) {
+        if (limit <= 0) return java.util.List.of();
+        Specification<UserLog> spec = (root, cq, cb) -> {
+            List<Predicate> ps = new ArrayList<>();
+            if (actions != null && !actions.isEmpty()) {
+                ps.add(root.get("actionType").in(actions));
+            }
+            if (resourceTypes != null && !resourceTypes.isEmpty()) {
+                ps.add(root.get("resourceType").in(resourceTypes));
+            }
+            if (status != null && !status.isBlank()) {
+                ps.add(cb.equal(root.get("status"), status));
+            }
+            if (from != null) {
+                ps.add(cb.greaterThanOrEqualTo(root.get("createTime"), from));
+            }
+            if (to != null) {
+                ps.add(cb.lessThanOrEqualTo(root.get("createTime"), to));
+            }
+            if (keyword != null && !keyword.isBlank()) {
+                Join<Object, Object> userJoin = root.join("user");
+                String like = "%" + keyword.trim() + "%";
+                ps.add(cb.or(
+                        cb.like(userJoin.get("username"), like),
+                        cb.like(userJoin.get("displayName"), like)
+                ));
+            }
+            return cb.and(ps.toArray(new Predicate[0]));
+        };
+        PageRequest pr = PageRequest.of(0, limit, sort);
+        Page<UserLog> result = userLogRepository.findAll(spec, pr);
+        return result.getContent().stream().map(this::toDTO).toList();
+    }
+
     private UserLogDTO toDTO(UserLog log) {
         UserLogDTO dto = new UserLogDTO();
         dto.setId(log.getId());
@@ -85,4 +128,3 @@ public class AuditLogQueryService {
         return dto;
     }
 }
-
