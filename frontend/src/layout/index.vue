@@ -189,6 +189,7 @@ const toggleSidebar = () => {
 
 // 菜单选择
 const handleMenuSelect = (key) => {
+  try { ElMessage.closeAll && ElMessage.closeAll() } catch (e) {}
   router.push(key)
 }
 
