@@ -87,6 +87,12 @@ const routes = [
         name: 'System',
         component: () => import('@/views/admin/System.vue'),
         meta: { title: '系统设置', requiresAuth: true, requiresAdmin: true }
+      },
+      {
+        path: '/admin/logs',
+        name: 'AdminLogs',
+        component: () => import('@/views/admin/Logs.vue'),
+        meta: { title: '日志管理', requiresAuth: true, requiresAdmin: true }
       }
     ]
   }
