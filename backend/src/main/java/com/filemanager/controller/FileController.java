@@ -298,10 +298,26 @@ public class FileController {
     // 管理员回收站相关API
     @GetMapping("/admin/recycle/bin")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
-    public ResponseEntity<List<File>> getAllRecycleBinFiles() {
+    public ResponseEntity<List<com.filemanager.dto.AdminFileDTO>> getAllRecycleBinFiles() {
         try {
             List<File> files = fileService.getAllRecycleBinFiles();
-            return ResponseEntity.ok(files);
+            List<com.filemanager.dto.AdminFileDTO> list = files.stream().map(f -> {
+                com.filemanager.dto.AdminFileDTO dto = new com.filemanager.dto.AdminFileDTO();
+                dto.setId(f.getId());
+                dto.setOriginalFilename(f.getOriginalFilename());
+                dto.setSize(f.getSize());
+                dto.setContentType(f.getContentType());
+                dto.setDownloadCount(f.getDownloadCount());
+                dto.setCreateTime(f.getCreateTime());
+                dto.setDeleted(Boolean.TRUE.equals(f.getDeleted()));
+                dto.setOwnerUsername(f.getUser() != null ? f.getUser().getUsername() : null);
+                dto.setDeleteTime(f.getDeleteTime());
+                dto.setAdminDeleteScheduled(Boolean.TRUE.equals(f.getAdminDeleteScheduled()));
+                dto.setAdminDeleteExecuteTime(f.getAdminDeleteExecuteTime());
+                dto.setAdminDeleteReason(f.getAdminDeleteReason());
+                return dto;
+            }).toList();
+            return ResponseEntity.ok(list);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
         }

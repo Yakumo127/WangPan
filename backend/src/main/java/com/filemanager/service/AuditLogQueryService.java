@@ -23,6 +23,7 @@ public class AuditLogQueryService {
             Set<String> resourceTypes,
             String status,
             String keyword,
+            String reason,
             LocalDateTime from,
             LocalDateTime to,
             int page,
@@ -54,6 +55,10 @@ public class AuditLogQueryService {
                         cb.like(userJoin.get("displayName"), like)
                 ));
             }
+            if (reason != null && !reason.isBlank()) {
+                String like2 = "%" + reason.trim() + "%";
+                ps.add(cb.like(root.get("actionDescription"), like2));
+            }
             return cb.and(ps.toArray(new Predicate[0]));
         };
 
@@ -68,6 +73,7 @@ public class AuditLogQueryService {
             Set<String> resourceTypes,
             String status,
             String keyword,
+            String reason,
             LocalDateTime from,
             LocalDateTime to,
             int limit,
@@ -98,6 +104,10 @@ public class AuditLogQueryService {
                         cb.like(userJoin.get("username"), like),
                         cb.like(userJoin.get("displayName"), like)
                 ));
+            }
+            if (reason != null && !reason.isBlank()) {
+                String like2 = "%" + reason.trim() + "%";
+                ps.add(cb.like(root.get("actionDescription"), like2));
             }
             return cb.and(ps.toArray(new Predicate[0]));
         };

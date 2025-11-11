@@ -174,24 +174,30 @@
                       <Document />
                     </el-icon>
                     <div class="item-details">
-                      <div class="item-name">{{ row.originalFilename }}</div>
-                      <div class="item-meta">
-                        <el-tag size="small" type="primary">
-                          文件
-                        </el-tag>
-                        <span class="item-size">{{ formatFileSize(row.size) }}</span>
-                        <span class="item-user">用户: {{ row.username || "未知" }}</span>
-                      </div>
-                    </div>
-                  </div>
-                </template>
-              </el-table-column>
+              <div class="item-name">{{ row.originalFilename }}</div>
+              <div class="item-meta">
+                <el-tag size="small" type="primary">
+                  文件
+                </el-tag>
+                <span class="item-size">{{ formatFileSize(row.size) }}</span>
+                <span class="item-user">用户: {{ row.ownerUsername || row.username || "未知" }}</span>
+              </div>
+            </div>
+          </div>
+        </template>
+      </el-table-column>
               <el-table-column prop="deleteTime" label="删除时间" width="180">
                 <template #default="{ row }">
                   {{ formatDateTime(row.deleteTime) }}
                 </template>
               </el-table-column>
-              <el-table-column prop="username" label="所属用户" width="120" />
+              <el-table-column prop="ownerUsername" label="所属用户" width="120" />
+              <el-table-column prop="adminDeleteExecuteTime" label="到期时间" width="180">
+                <template #default="{ row }">
+                  {{ row.adminDeleteExecuteTime ? formatDateTime(row.adminDeleteExecuteTime) : '-' }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="adminDeleteReason" label="删除理由" min-width="200" show-overflow-tooltip />
               <el-table-column label="操作" width="200">
                 <template #default="{ row }">
                   <el-button-group>

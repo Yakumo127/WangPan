@@ -21,6 +21,7 @@
           value-format="YYYY-MM-DDTHH:mm:ss"
         />
         <el-input v-model="filters.keyword" placeholder="用户名/昵称关键词" style="width: 220px" clearable />
+        <el-input v-model="filters.reason" placeholder="理由/描述关键词" style="width: 220px" clearable />
         <el-button type="primary" @click="load">查询</el-button>
         <el-button @click="resetFilters">重置</el-button>
         <el-button type="success" @click="doExport('csv')" :loading="exporting">导出CSV</el-button>
@@ -72,11 +73,12 @@ const actionOptions = ref([])
 const resourceTypeOptions = ref([])
 
 const filters = reactive({
-  actions: [],
-  resourceTypes: [],
-  status: '',
-  range: [],
-  keyword: ''
+    actions: [],
+    resourceTypes: [],
+    status: '',
+    range: [],
+    keyword: '',
+    reason: ''
 })
 
 const page = reactive({ current: 1, size: 20, total: 0 })
@@ -95,6 +97,7 @@ const buildParams = () => {
     keyword: filters.keyword || undefined,
     from: filters.range && filters.range.length ? filters.range[0] : undefined,
     to: filters.range && filters.range.length ? filters.range[1] : undefined,
+    reason: filters.reason || undefined,
     sort: 'createTime',
     order: 'desc'
   }
@@ -119,6 +122,7 @@ const resetFilters = () => {
   filters.status = ''
   filters.range = []
   filters.keyword = ''
+  filters.reason = ''
   page.current = 1
   load()
 }

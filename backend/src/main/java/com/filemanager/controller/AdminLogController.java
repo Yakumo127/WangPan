@@ -39,6 +39,7 @@ public class AdminLogController {
             @RequestParam(required = false) String resourceTypes,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String reason,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to,
             @RequestParam(defaultValue = "createTime") String sort,
@@ -48,7 +49,7 @@ public class AdminLogController {
         Set<String> rtypeSet = split(resourceTypes);
         Sort.Direction dir = "asc".equalsIgnoreCase(order) ? Sort.Direction.ASC : Sort.Direction.DESC;
         Sort s = Sort.by(dir, sort == null || sort.isBlank() ? "createTime" : sort);
-        return queryService.query(actionSet, rtypeSet, status, keyword, from, to, page, size, s);
+        return queryService.query(actionSet, rtypeSet, status, keyword, reason, from, to, page, size, s);
     }
 
     @GetMapping("/export")
@@ -58,6 +59,7 @@ public class AdminLogController {
             @RequestParam(required = false) String resourceTypes,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String reason,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to,
             @RequestParam(defaultValue = "createTime") String sort,
@@ -69,7 +71,7 @@ public class AdminLogController {
         Sort.Direction dir = "asc".equalsIgnoreCase(order) ? Sort.Direction.ASC : Sort.Direction.DESC;
         Sort s = Sort.by(dir, sort == null || sort.isBlank() ? "createTime" : sort);
         int limit = Math.max(1, Math.min(maxRows, 50000));
-        List<UserLogDTO> rows = queryService.queryAllLimited(actionSet, rtypeSet, status, keyword, from, to, limit, s);
+        List<UserLogDTO> rows = queryService.queryAllLimited(actionSet, rtypeSet, status, keyword, reason, from, to, limit, s);
 
         String fmt = (format == null || format.isBlank()) ? "csv" : format.trim().toLowerCase();
         byte[] bytes;

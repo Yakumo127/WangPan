@@ -18,6 +18,7 @@ public class AdminSystemController {
 
     private final SystemSettingService systemSettingService;
     private final UserService userService;
+    private final com.filemanager.service.AuditLogService auditLogService;
 
     // 获取回收站相关设置
     @GetMapping("/recycle")
@@ -44,8 +45,18 @@ public class AdminSystemController {
                     userService.getUserById(adminId));
         }
         if (retentionDays != null && retentionDays > 0) {
+            int oldDays = systemSettingService.getRetentionDaysOrDefault(15);
             systemSettingService.setInt(SystemSettingService.KEY_RECYCLE_RETENTION_DAYS, retentionDays,
                     "回收站保留期（天）", userService.getUserById(adminId));
+            try {
+                auditLogService.logSuccess(adminId,
+                        com.filemanager.entity.UserLog.ACTION_UPDATE_SETTING,
+                        "SYSTEM",
+                        null,
+                        SystemSettingService.KEY_RECYCLE_RETENTION_DAYS,
+                        "retentionDays: " + oldDays + " -> " + retentionDays,
+                        0L);
+            } catch (Exception ignore) {}
         }
         return Map.of("message", "设置已更新", "manualPurgeEnabled", manualEnabled, "retentionDays", retentionDays);
     }

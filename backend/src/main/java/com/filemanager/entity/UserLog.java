@@ -70,6 +70,7 @@ public class UserLog {
     public static final String ACTION_DELETE_FOLDER = "DELETE_FOLDER";
     public static final String ACTION_CHANGE_PASSWORD = "CHANGE_PASSWORD";
     public static final String ACTION_UPDATE_PROFILE = "UPDATE_PROFILE";
+    public static final String ACTION_UPDATE_SETTING = "UPDATE_SETTING";
     // 扩展：管理员/回收站场景
     public static final String ACTION_ADMIN_SCHEDULE_DELETE = "ADMIN_SCHEDULE_DELETE";
     public static final String ACTION_ADMIN_RESTORE = "ADMIN_RESTORE";
