@@ -32,8 +32,8 @@
         <el-table-column prop="displayName" label="显示名称" width="120" />
         <el-table-column prop="role" label="角色" width="100">
           <template #default="{ row }">
-            <el-tag :type="row.role === 'ROLE_ADMIN' ? 'danger' : 'primary'">
-              {{ row.role === 'ROLE_ADMIN' ? '管理员' : '用户' }}
+            <el-tag :type="row.role === 'ADMIN' ? 'danger' : 'primary'">
+              {{ row.role === 'ADMIN' ? '管理员' : '用户' }}
             </el-tag>
           </template>
         </el-table-column>
@@ -95,7 +95,7 @@
         <el-form-item label="角色" prop="role">
           <el-select v-model="userForm.role" style="width: 100%">
             <el-option label="用户" value="USER" />
-            <el-option label="管理员" value="ROLE_ADMIN" />
+            <el-option label="管理员" value="ADMIN" />
           </el-select>
         </el-form-item>
         <el-form-item label="状态" prop="enabled">

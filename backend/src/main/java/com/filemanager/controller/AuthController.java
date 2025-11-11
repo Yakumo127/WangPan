@@ -88,7 +88,13 @@ public class AuthController {
             userInfo.put("username", user.getUsername());
             userInfo.put("email", user.getEmail());
             userInfo.put("displayName", user.getDisplayName());
+            // 为兼容旧前端，保留 role（ROLE_*）
             userInfo.put("role", "ROLE_" + user.getRole().name());
+            // 新增标准化字段：实体角色与权限清单
+            userInfo.put("roleEnum", user.getRole().name()); // ADMIN / USER
+            java.util.List<String> authorities = java.util.List.of("ROLE_" + user.getRole().name());
+            userInfo.put("authorities", authorities);
+            userInfo.put("isAdmin", user.getRole() == User.Role.ADMIN);
             userInfo.put("quotaLimit", user.getQuotaLimit());
             userInfo.put("quotaUsed", user.getQuotaUsed());
             userInfo.put("createTime", user.getCreateTime());

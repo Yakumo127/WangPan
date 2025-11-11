@@ -45,7 +45,14 @@ export const useAuthStore = defineStore('auth', () => {
       const response = await getUserInfo()
       console.log('获取用户信息成功:', response)
       user.value = response
-      roles.value = response.role ? [response.role] : []
+      // 优先使用后端 authorities（方案B），兼容旧字段 role
+      if (Array.isArray(response.authorities) && response.authorities.length > 0) {
+        roles.value = response.authorities
+      } else if (response.role) {
+        roles.value = [response.role]
+      } else {
+        roles.value = []
+      }
       return response
     } catch (error) {
       console.error('获取用户信息失败:', error)
