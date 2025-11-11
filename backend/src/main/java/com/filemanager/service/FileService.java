@@ -22,9 +22,13 @@ import java.util.List;
 import java.util.UUID;
 
 import javax.imageio.ImageIO;
+import javax.imageio.ImageReadParam;
+import javax.imageio.ImageReader;
+import javax.imageio.stream.ImageInputStream;
 import java.awt.Graphics2D;
 import java.awt.Image;
 import java.awt.image.BufferedImage;
+import java.util.Iterator;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
@@ -35,6 +39,16 @@ public class FileService {
     
     @Value("${file.storage.path}")
     private String storagePath;
+    @Value("${file.storage.thumbnail.max-side:256}")
+    private int thumbnailMaxSide;
+    @Value("${file.storage.thumbnail.max-source-bytes:52428800}")
+    private long thumbnailMaxSourceBytes; // 50MB 默认
+    @Value("${file.storage.thumbnail.max-source-pixels:50000000}")
+    private long thumbnailMaxSourcePixels; // 5000万像素默认
+    @Value("${file.storage.imageio.use-cache:true}")
+    private boolean imageIoUseCache;
+    @Value("${file.storage.temp-dir:}")
+    private String tempDir;
     
     private final FileRepository fileRepository;
     private final FolderRepository folderRepository;
@@ -383,26 +397,83 @@ public class FileService {
             }
         }
 
-        // 读取原图
+        // 读取原图（内存友好：按需子采样）
         Path source = Paths.get(file.getFilePath());
-        BufferedImage original = ImageIO.read(source.toFile());
-        if (original == null) {
-            throw new IOException("无法读取原始图片");
+        if (!Files.exists(source)) {
+            throw new IOException("源文件不存在");
+        }
+        long sizeBytes = Files.size(source);
+        if (sizeBytes > thumbnailMaxSourceBytes) {
+            throw new IOException("原始图片过大，不生成缩略图");
         }
 
-        // 计算缩放尺寸（最长边 256）
-        int maxSize = 256;
-        int ow = original.getWidth();
-        int oh = original.getHeight();
-        double scale = Math.min(1.0 * maxSize / Math.max(ow, oh), 1.0);
-        int nw = Math.max(1, (int) Math.round(ow * scale));
-        int nh = Math.max(1, (int) Math.round(oh * scale));
+        // 配置 ImageIO 缓存（使用磁盘，降低堆内存占用）
+        try {
+            ImageIO.setUseCache(imageIoUseCache);
+            if (imageIoUseCache && tempDir != null && !tempDir.isBlank()) {
+                java.io.File cacheDir = new java.io.File(tempDir);
+                if (cacheDir.exists() || cacheDir.mkdirs()) {
+                    ImageIO.setCacheDirectory(cacheDir);
+                }
+            }
+        } catch (Exception ignore) {}
 
-        Image scaled = original.getScaledInstance(nw, nh, Image.SCALE_SMOOTH);
-        BufferedImage thumbnail = new BufferedImage(nw, nh, BufferedImage.TYPE_INT_RGB);
-        Graphics2D g2d = thumbnail.createGraphics();
-        g2d.drawImage(scaled, 0, 0, null);
-        g2d.dispose();
+        BufferedImage thumbnail;
+        try (ImageInputStream iis = ImageIO.createImageInputStream(source.toFile())) {
+            if (iis == null) {
+                throw new IOException("无法打开图片流");
+            }
+            Iterator<ImageReader> readers = ImageIO.getImageReaders(iis);
+            if (!readers.hasNext()) {
+                throw new IOException("不支持的图片格式");
+            }
+            ImageReader reader = readers.next();
+            try {
+                reader.setInput(iis, true, true);
+                int ow = reader.getWidth(0);
+                int oh = reader.getHeight(0);
+                long pixels = (long) ow * (long) oh;
+
+                // 计算子采样因子，保证最长边<=thumbnailMaxSide，同时在超大像素下进一步提高因子
+                int baseSub = Math.max(1, (int) Math.ceil((double) Math.max(ow, oh) / (double) thumbnailMaxSide));
+                if (pixels > thumbnailMaxSourcePixels) {
+                    int extra = (int) Math.ceil(Math.sqrt((double) pixels / (double) thumbnailMaxSourcePixels));
+                    baseSub = Math.max(baseSub, extra);
+                }
+
+                ImageReadParam param = reader.getDefaultReadParam();
+                param.setSourceSubsampling(baseSub, baseSub, 0, 0);
+                BufferedImage sampled = reader.read(0, param);
+                if (sampled == null) {
+                    throw new IOException("无法读取原始图片");
+                }
+
+                int sw = sampled.getWidth();
+                int sh = sampled.getHeight();
+                double scale = Math.min(1.0 * thumbnailMaxSide / Math.max(sw, sh), 1.0);
+                int nw = Math.max(1, (int) Math.round(sw * scale));
+                int nh = Math.max(1, (int) Math.round(sh * scale));
+
+                if (nw != sw || nh != sh) {
+                    thumbnail = new BufferedImage(nw, nh, BufferedImage.TYPE_INT_RGB);
+                    Graphics2D g2d = thumbnail.createGraphics();
+                    g2d.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                    g2d.setRenderingHint(java.awt.RenderingHints.KEY_RENDERING, java.awt.RenderingHints.VALUE_RENDER_QUALITY);
+                    g2d.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+                    g2d.drawImage(sampled, 0, 0, nw, nh, null);
+                    g2d.dispose();
+                } else {
+                    thumbnail = new BufferedImage(sw, sh, BufferedImage.TYPE_INT_RGB);
+                    Graphics2D g2d = thumbnail.createGraphics();
+                    g2d.drawImage(sampled, 0, 0, null);
+                    g2d.dispose();
+                }
+            } finally {
+                reader.dispose();
+            }
+        } catch (OutOfMemoryError oom) {
+            throw new RuntimeException("生成缩略图内存不足", oom);
+        }
 
         Path target = thumbDir.resolve("thumb_" + file.getId() + ".jpg");
         ImageIO.write(thumbnail, "jpg", target.toFile());
