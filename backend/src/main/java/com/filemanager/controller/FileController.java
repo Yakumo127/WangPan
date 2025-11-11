@@ -3,7 +3,9 @@ package com.filemanager.controller;
 import com.filemanager.entity.File;
 import com.filemanager.entity.Folder;
 import com.filemanager.service.FileService;
+import com.filemanager.service.AuditLogService;
 import com.filemanager.service.FolderService;
+import com.filemanager.service.SystemSettingService;
 import com.filemanager.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.Resource;
@@ -35,6 +37,8 @@ public class FileController {
     private final FileService fileService;
     private final FolderService folderService;
     private final UserService userService;
+    private final SystemSettingService systemSettingService;
+    private final AuditLogService auditLogService;
     
     @PostMapping("/upload")
     public ResponseEntity<Map<String, Object>> uploadFile(
@@ -331,6 +335,13 @@ public class FileController {
         try {
             String reason = body != null ? body.getOrDefault("reason", "管理员删除") : "管理员删除";
             java.time.LocalDateTime execAt = fileService.adminScheduleDeleteFile(fileId, reason);
+            // 审计：管理员排期删除
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            String adminUsername = auth.getName();
+            Long adminId = userService.getUserIdByUsername(adminUsername);
+            try { auditLogService.logSuccess(adminId, com.filemanager.entity.UserLog.ACTION_ADMIN_SCHEDULE_DELETE,
+                    com.filemanager.entity.UserLog.RESOURCE_FILE, fileId, null,
+                    "管理员排期删除：执行时间=" + execAt + ", 理由=" + reason, 0L); } catch (Exception ignore) {}
             return ResponseEntity.ok(Map.of(
                     "message", "已排期删除（进入冷静期）",
                     "executeTime", execAt
@@ -413,6 +424,10 @@ public class FileController {
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<Map<String, Object>> adminPurgeExpired() {
         try {
+            if (!systemSettingService.isManualPurgeEnabled()) {
+                return ResponseEntity.status(403).body(Map.of("message", "手动清理未启用"));
+            }
+
             int count = fileService.purgeExpiredScheduledDeletions();
             return ResponseEntity.ok(Map.of("message", "已清理到期文件", "count", count));
         } catch (Exception e) {

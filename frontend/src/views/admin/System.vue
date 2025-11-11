@@ -43,6 +43,10 @@
               <el-switch v-model="systemConfig.enableLogging" />
             </el-form-item>
             
+            <el-form-item label="允许手动清理到期文件">
+              <el-switch v-model="systemConfig.manualPurgeEnabled" @change="saveManualPurgeSetting" />
+            </el-form-item>
+            
             <el-form-item label="日志级别">
               <el-select v-model="systemConfig.logLevel" placeholder="选择日志级别">
                 <el-option label="DEBUG" value="DEBUG" />
@@ -66,9 +70,9 @@
           <template #header>
             <div class="card-header">
               <span>回收站管理</span>
-              <el-button type="danger" @click="emptyAllRecycleBin" :loading="emptying">
+              <el-button v-if="systemConfig.manualPurgeEnabled" type="warning" @click="manualPurgeExpired" :loading="emptying">
                 <el-icon><Delete /></el-icon>
-                清空所有用户回收站
+                手动清理到期文件
               </el-button>
             </div>
           </template>
@@ -242,7 +246,8 @@
 import { ref, onMounted, nextTick } from "vue"
 import { ElMessage, ElMessageBox } from "element-plus"
 import { Delete, Refresh, Search, Document, User, Calendar, DataLine, RefreshLeft } from "@element-plus/icons-vue"
-import { getAllRecycleBinFiles, adminRestoreFile, adminPermanentDeleteFile, adminEmptyAllRecycleBin } from "@/api/file"
+import { getAllRecycleBinFiles, adminRestoreFile, adminPermanentDeleteFile } from "@/api/file"
+import { getRecycleSettings, updateRecycleSettings } from "@/api/system"
 
 export default {
   name: "System",
@@ -266,6 +271,7 @@ export default {
       allowedTypes: ["image", "document", "video", "audio", "archive"],
       sessionTimeout: 30,
       enableLogging: true,
+      manualPurgeEnabled: false,
       logLevel: "INFO"
     })
     
@@ -502,36 +508,27 @@ export default {
     }
     
     // 清空所有回收站
-    const emptyAllRecycleBin = async () => {
+    const manualPurgeExpired = async () => {
       try {
         await ElMessageBox.confirm(
-          `确定要清空所有用户的回收站吗？此操作将彻底删除所有文件，不可恢复！`,
-          "清空所有回收站",
+          `将触发到期文件的立即清理，是否继续？`,
+          "手动清理到期",
           {
-            confirmButtonText: "确定",
+            confirmButtonText: "继续",
             cancelButtonText: "取消",
-            type: "error",
-            inputPattern: /^清空所有回收站$/,
-            inputPlaceholder: "请输入 \"清空所有回收站\" 确认操作",
-            inputValidator: (value) => {
-              if (value !== "清空所有回收站") {
-                return "请输入 \"清空所有回收站\" 确认操作"
-              }
-              return true
-            },
-            showInput: true
+            type: "warning"
           }
         )
-        
         emptying.value = true
-        
-        await adminEmptyAllRecycleBin()
-        ElMessage.success("所有回收站已清空")
+        const token = localStorage.getItem('enterprise_file_manager_token')
+        const resp = await fetch('/api/files/admin/recycle/bin/purge-expired', { method: 'POST', headers: { 'Authorization': token ? `Bearer ${token}` : '' } })
+        const data = await resp.json()
+        if (!resp.ok) throw new Error(data?.message || '请求失败')
+        ElMessage.success(data.message || '已清理到期文件')
         await loadRecycleBinData()
       } catch (error) {
         if (error !== "cancel") {
-          ElMessage.error("清空回收站失败")
-          console.error("清空回收站失败:", error)
+          ElMessage.error(error?.message || "手动清理失败或未启用")
         }
       } finally {
         emptying.value = false
@@ -541,6 +538,15 @@ export default {
     // 保存配置
     const saveConfig = () => {
       ElMessage.success("设置保存成功")
+    }
+    
+    const saveManualPurgeSetting = async () => {
+      try {
+        await updateRecycleSettings({ manualPurgeEnabled: systemConfig.value.manualPurgeEnabled })
+        ElMessage.success('已更新手动清理到期开关')
+      } catch (e) {
+        ElMessage.error('更新失败')
+      }
     }
     
     // 重置配置
@@ -557,11 +563,12 @@ export default {
       ElMessage.info("设置已重置")
     }
     
-    onMounted(() => {
-      // 使用nextTick确保组件完全挂载后再加载数据
-      nextTick(() => {
-        loadRecycleBinData()
-      })
+    onMounted(async () => {
+      try {
+        const cfg = await getRecycleSettings()
+        systemConfig.value.manualPurgeEnabled = !!cfg.manualPurgeEnabled
+      } catch (e) {}
+      nextTick(() => { loadRecycleBinData() })
     })
     
     return {
@@ -586,7 +593,7 @@ export default {
       deletePermanently,
       batchRestore,
       batchDelete,
-      emptyAllRecycleBin,
+      manualPurgeExpired,
       saveConfig,
       resetConfig
     }

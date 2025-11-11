@@ -64,6 +64,8 @@ recycle:
     retention-days: 15
   purge:
     fixed-delay-ms: 3600000   # 1小时
+  manual-purge:
+    enabled: false
 
 management:
   endpoints:
