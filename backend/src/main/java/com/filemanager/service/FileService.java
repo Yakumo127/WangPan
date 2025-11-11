@@ -55,8 +55,10 @@ public class FileService {
     private final FileRepository fileRepository;
     private final FolderRepository folderRepository;
     private final UserRepository userRepository;
+    private final AuditLogService auditLogService;
     
     public File uploadFile(MultipartFile file, Long userId, Long folderId) throws IOException {
+        long start = System.currentTimeMillis();
         // 配额校验
         User userEntity = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("用户不存在"));
@@ -110,6 +112,10 @@ public class FileService {
         // 扣减配额
         user.useQuota(file.getSize());
         userRepository.save(user);
+        try { auditLogService.logSuccess(userId, com.filemanager.entity.UserLog.ACTION_UPLOAD,
+                com.filemanager.entity.UserLog.RESOURCE_FILE, saved.getId(), saved.getOriginalFilename(),
+                "上传文件：" + saved.getOriginalFilename() + "（" + saved.getSize() + "字节）",
+                System.currentTimeMillis() - start); } catch (Exception ignore) {}
         return saved;
     }
     
@@ -127,6 +133,7 @@ public class FileService {
     }
     
     public void deleteFile(Long fileId, Long userId) {
+        long start = System.currentTimeMillis();
         File file = getFile(fileId, userId);
         file.setDeleted(true);
         file.setDeleteTime(LocalDateTime.now());
@@ -139,6 +146,10 @@ public class FileService {
             }
         });
         fileRepository.save(file);
+        try { auditLogService.logSuccess(userId, com.filemanager.entity.UserLog.ACTION_DELETE,
+                com.filemanager.entity.UserLog.RESOURCE_FILE, file.getId(), file.getOriginalFilename(),
+                "删除文件（移至回收站）：" + file.getOriginalFilename() + "（释放" + file.getSize() + "字节）",
+                System.currentTimeMillis() - start); } catch (Exception ignore) {}
     }
     
     public File renameFile(Long fileId, Long userId, String newName) {
@@ -217,13 +228,18 @@ public class FileService {
     }
     
     public Path getFilePath(Long fileId, Long userId) {
+        long start = System.currentTimeMillis();
         File file = getFile(fileId, userId);
         
         // 增加下载次数
         file.setDownloadCount(file.getDownloadCount() + 1);
         fileRepository.save(file);
         
-        return Paths.get(file.getFilePath());
+        Path p = Paths.get(file.getFilePath());
+        try { auditLogService.logSuccess(userId, com.filemanager.entity.UserLog.ACTION_DOWNLOAD,
+                com.filemanager.entity.UserLog.RESOURCE_FILE, file.getId(), file.getOriginalFilename(),
+                "下载文件：" + file.getOriginalFilename(), System.currentTimeMillis() - start); } catch (Exception ignore) {}
+        return p;
     }
 
     // 管理员分页查询封装
@@ -248,6 +264,7 @@ public class FileService {
     
     // 管理员恢复文件
     public void adminRestoreFile(Long fileId, Long adminId) {
+        long start = System.currentTimeMillis();
         File file = fileRepository.findByIdAndDeletedTrue(fileId)
                 .orElseThrow(() -> new RuntimeException("回收站中不存在该文件"));
 
@@ -321,6 +338,9 @@ public class FileService {
         file.setQuotaReleased(false);
         file.setUpdateTime(LocalDateTime.now());
         fileRepository.save(file);
+        try { auditLogService.logSuccess(adminId, com.filemanager.entity.UserLog.ACTION_RESTORE,
+                com.filemanager.entity.UserLog.RESOURCE_FILE, file.getId(), file.getOriginalFilename(),
+                "管理员恢复到管理员网盘：" + file.getOriginalFilename(), System.currentTimeMillis() - start); } catch (Exception ignore) {}
     }
     
     // 管理员：为已删除文件排期彻底删除（进入冷静期）。旧的“立即彻删”改为调度删除。
@@ -350,11 +370,15 @@ public class FileService {
 
     // 用户回收站：彻底删除（对用户隐藏，不物理删除，不改配额）
     public void permanentDeleteFile(Long fileId, Long userId) {
+        long start = System.currentTimeMillis();
         File file = fileRepository.findByIdAndUserIdAndDeletedTrue(fileId, userId)
                 .orElseThrow(() -> new RuntimeException("回收站中不存在该文件"));
         file.setOwnerHidden(true);
         file.setUpdateTime(LocalDateTime.now());
         fileRepository.save(file);
+        try { auditLogService.logSuccess(userId, com.filemanager.entity.UserLog.ACTION_DELETE,
+                com.filemanager.entity.UserLog.RESOURCE_FILE, file.getId(), file.getOriginalFilename(),
+                "从用户回收站移除：" + file.getOriginalFilename(), System.currentTimeMillis() - start); } catch (Exception ignore) {}
     }
     public List<File> getUserRecycleBinFiles(Long userId) {
         return fileRepository.findByUserIdAndDeletedTrueAndOwnerHiddenFalseOrderByDeleteTimeDesc(userId);
@@ -366,6 +390,7 @@ public class FileService {
 
     // 用户回收站：恢复文件（若之前释放过配额，需要回加并校验剩余容量）
     public void restoreFile(Long fileId, Long userId) {
+        long start = System.currentTimeMillis();
         File file = fileRepository.findByIdAndUserIdAndDeletedTrue(fileId, userId)
                 .orElseThrow(() -> new RuntimeException("回收站中不存在该文件"));
 
@@ -391,16 +416,23 @@ public class FileService {
         file.setAdminDeleteReason(null);
         file.setUpdateTime(LocalDateTime.now());
         fileRepository.save(file);
+        try { auditLogService.logSuccess(userId, com.filemanager.entity.UserLog.ACTION_RENAME,
+                com.filemanager.entity.UserLog.RESOURCE_FILE, file.getId(), file.getOriginalFilename(),
+                "恢复文件：" + file.getOriginalFilename(), System.currentTimeMillis() - start); } catch (Exception ignore) {}
     }
 
     // 用户回收站：清空回收站（仅对用户隐藏，不物理删除，不改配额）
     public void emptyRecycleBin(Long userId) {
+        long start = System.currentTimeMillis();
         List<File> files = fileRepository.findByUserIdAndDeletedTrueAndOwnerHiddenFalseOrderByDeleteTimeDesc(userId);
         for (File file : files) {
             file.setOwnerHidden(true);
             file.setUpdateTime(LocalDateTime.now());
         }
         fileRepository.saveAll(files);
+        try { auditLogService.logSuccess(userId, com.filemanager.entity.UserLog.ACTION_DELETE,
+                com.filemanager.entity.UserLog.RESOURCE_FILE, null, null,
+                "清空用户回收站（仅隐藏）：共" + files.size() + "项", System.currentTimeMillis() - start); } catch (Exception ignore) {}
     }
 
     // 管理员：清理到期的排期删除项（物理删除 -> 兜底释放配额 -> 删除记录）

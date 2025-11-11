@@ -81,3 +81,11 @@ management:
       enabled: true
     db:
       enabled: true
+
+audit:
+  enabled: true
+  retention-days: 180
+  export:
+    max-rows: 50000
+  purge:
+    cron: "0 0 3 * * ?"
