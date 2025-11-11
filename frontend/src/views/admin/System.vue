@@ -384,6 +384,8 @@ export default {
           params.toExec = execRange.value[1]
         }
         if (onlyScheduled.value) params.scheduledOnly = true
+        if (searchKeyword.value && searchKeyword.value.trim()) params.keyword = searchKeyword.value.trim()
+        if (reasonKeyword.value && reasonKeyword.value.trim()) params.reason = reasonKeyword.value.trim()
         const response = await getAllRecycleBinFiles(params)
         recycleRawItems.value = response || []
         recycleItems.value = [...recycleRawItems.value]

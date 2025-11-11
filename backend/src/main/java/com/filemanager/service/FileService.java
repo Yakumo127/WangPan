@@ -263,9 +263,13 @@ public class FileService {
 
     public List<File> getAllRecycleBinFiles(java.time.LocalDateTime fromExec,
                                             java.time.LocalDateTime toExec,
-                                            Boolean scheduledOnly) {
+                                            Boolean scheduledOnly,
+                                            String keyword,
+                                            String reason) {
         boolean only = scheduledOnly != null && scheduledOnly;
-        return fileRepository.findAdminRecycleFiltered(fromExec, toExec, only);
+        String kw = (keyword == null || keyword.isBlank()) ? null : keyword.trim();
+        String rsn = (reason == null || reason.isBlank()) ? null : reason.trim();
+        return fileRepository.findAdminRecycleFiltered(fromExec, toExec, only, kw, rsn);
     }
     
     // 管理员恢复文件

@@ -305,11 +305,13 @@ public class FileController {
             @RequestParam(value = "toExec", required = false)
             @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME)
             java.time.LocalDateTime toExec,
-            @RequestParam(value = "scheduledOnly", required = false) Boolean scheduledOnly
+            @RequestParam(value = "scheduledOnly", required = false) Boolean scheduledOnly,
+            @RequestParam(value = "keyword", required = false) String keyword,
+            @RequestParam(value = "reason", required = false) String reason
     ) {
         try {
-            List<File> files = (fromExec != null || toExec != null || Boolean.TRUE.equals(scheduledOnly))
-                    ? fileService.getAllRecycleBinFiles(fromExec, toExec, scheduledOnly)
+            List<File> files = (fromExec != null || toExec != null || Boolean.TRUE.equals(scheduledOnly) || (keyword != null && !keyword.isBlank()) || (reason != null && !reason.isBlank()))
+                    ? fileService.getAllRecycleBinFiles(fromExec, toExec, scheduledOnly, keyword, reason)
                     : fileService.getAllRecycleBinFiles();
             List<com.filemanager.dto.AdminFileDTO> list = files.stream().map(f -> {
                 com.filemanager.dto.AdminFileDTO dto = new com.filemanager.dto.AdminFileDTO();
