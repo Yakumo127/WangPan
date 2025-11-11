@@ -46,9 +46,10 @@
         </el-table-column>
         <el-table-column prop="createTime" label="创建时间" width="180" />
         <el-table-column prop="lastLoginTime" label="最后登录" width="180" />
-        <el-table-column label="操作" width="200">
+        <el-table-column label="操作" width="300">
           <template #default="{ row }">
             <el-button size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button size="small" type="warning" @click="openChangePwd(row)">修改密码</el-button>
             <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -145,6 +146,23 @@
         </span>
       </template>
     </el-dialog>
+
+    <!-- 修改密码对话框 -->
+    <el-dialog v-model="pwdDialogVisible" title="修改用户密码" width="480px">
+      <el-form :model="pwdForm" ref="pwdFormRef" label-width="120px">
+        <el-form-item label="目标用户">
+          <el-tag type="info">{{ pwdTarget?.username }}</el-tag>
+        </el-form-item>
+        <el-form-item label="新密码" prop="newPassword" :rules="[{ required: true, message: '请输入新密码', trigger: 'blur' }]"><el-input v-model="pwdForm.newPassword" type="password" show-password /></el-form-item>
+        <el-form-item label="管理员口令" prop="adminPassword" :rules="[{ required: true, message: '请输入管理员口令', trigger: 'blur' }]"><el-input v-model="pwdForm.adminPassword" type="password" show-password /></el-form-item>
+      </el-form>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="pwdDialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="submitChangePwd" :loading="pwdSubmitting">确定</el-button>
+        </span>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -152,7 +170,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, UploadFilled } from '@element-plus/icons-vue'
-import { getUserList, createUser, updateUser, deleteUser, importUsers, exportUsers, downloadUsersImportTemplate } from '@/api/admin'
+import { getUserList, createUser, updateUser, deleteUser, importUsers, exportUsers, downloadUsersImportTemplate, changeUserPassword } from '@/api/admin'
 
 // 数据定义
 const userList = ref([])
@@ -201,6 +219,13 @@ const userRules = {
 
 const userFormRef = ref()
 const uploadRef = ref()
+
+// 修改密码对话框
+const pwdDialogVisible = ref(false)
+const pwdSubmitting = ref(false)
+const pwdTarget = ref(null)
+const pwdFormRef = ref()
+const pwdForm = reactive({ newPassword: '', adminPassword: '' })
 
 // 加载用户列表
 const loadUserList = async () => {
@@ -260,6 +285,32 @@ const handleEdit = (row) => {
   Object.assign(userForm, row)
   userForm.password = ''
   dialogVisible.value = true
+}
+
+// 打开修改密码
+const openChangePwd = (row) => {
+  pwdTarget.value = row
+  pwdForm.newPassword = ''
+  pwdForm.adminPassword = ''
+  pwdDialogVisible.value = true
+}
+
+// 提交修改密码
+const submitChangePwd = async () => {
+  if (!pwdTarget.value) return
+  // 简单校验：必填
+  if (!pwdForm.newPassword) { ElMessage.warning('请输入新密码'); return }
+  if (!pwdForm.adminPassword) { ElMessage.warning('请输入管理员口令'); return }
+  try {
+    pwdSubmitting.value = true
+    await changeUserPassword(pwdTarget.value.id, { newPassword: pwdForm.newPassword, adminPassword: pwdForm.adminPassword })
+    ElMessage.success('用户密码已更新')
+    pwdDialogVisible.value = false
+  } catch (e) {
+    ElMessage.error(e?.message || '修改失败')
+  } finally {
+    pwdSubmitting.value = false
+  }
 }
 
 // 保存用户

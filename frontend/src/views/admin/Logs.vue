@@ -3,14 +3,15 @@
     <el-card class="mb-12">
       <div class="filters">
         <el-select v-model="filters.actions" multiple collapse-tags placeholder="动作" style="width: 260px" clearable>
-          <el-option v-for="a in actionOptions" :key="a" :label="a" :value="a" />
+          <el-option v-for="a in actionOptionsZh" :key="a" :label="a" :value="a" />
         </el-select>
+        <el-button size="small" @click="toggleSelectAll">{{ allSelected ? '全不选' : '全选' }}</el-button>
         <el-select v-model="filters.resourceTypes" multiple collapse-tags placeholder="资源类型" style="width: 200px" clearable>
-          <el-option v-for="t in resourceTypeOptions" :key="t" :label="t" :value="t" />
+          <el-option v-for="t in resourceTypeOptionsZh" :key="t" :label="t" :value="t" />
         </el-select>
         <el-select v-model="filters.status" placeholder="状态" style="width: 140px" clearable>
-          <el-option label="SUCCESS" value="SUCCESS" />
-          <el-option label="FAILED" value="FAILED" />
+          <el-option label="成功" value="成功" />
+          <el-option label="失败" value="失败" />
         </el-select>
         <el-date-picker
           v-model="filters.range"
@@ -34,13 +35,17 @@
         <el-table-column prop="createTime" label="时间" width="170" />
         <el-table-column prop="username" label="用户名" width="140" />
         <el-table-column prop="displayName" label="昵称" width="140" />
-        <el-table-column prop="actionType" label="动作" width="180" />
-        <el-table-column prop="resourceType" label="资源类型" width="100" />
+        <el-table-column prop="actionType" label="动作" width="180">
+          <template #default="scope">{{ actionEnToZh(scope.row.actionType) }}</template>
+        </el-table-column>
+        <el-table-column prop="resourceType" label="资源类型" width="100">
+          <template #default="scope">{{ resourceEnToZh(scope.row.resourceType) }}</template>
+        </el-table-column>
         <el-table-column prop="resourceId" label="资源ID" width="100" />
         <el-table-column prop="resourceName" label="资源名" min-width="180" show-overflow-tooltip />
         <el-table-column prop="status" label="结果" width="90">
           <template #default="scope">
-            <el-tag :type="scope.row.status==='SUCCESS' ? 'success' : 'danger'">{{ scope.row.status }}</el-tag>
+            <el-tag :type="scope.row.status==='SUCCESS' ? 'success' : 'danger'">{{ statusEnToZh(scope.row.status) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="executionTime" label="耗时(ms)" width="110" />
@@ -69,8 +74,21 @@ import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getLogs, exportLogs, getLogDictionaries } from '@/api/logs'
 
-const actionOptions = ref([])
-const resourceTypeOptions = ref([])
+// 英文到中文的映射
+const ACTION_MAP = {
+  LOGIN: '登录', LOGOUT: '登出', UPLOAD: '上传', DOWNLOAD: '下载', DELETE: '删除', COPY: '复制', MOVE: '移动', RENAME: '重命名', RESTORE: '恢复',
+  CREATE_FOLDER: '创建文件夹', DELETE_FOLDER: '删除文件夹', UPDATE_PROFILE: '更新资料', CHANGE_PASSWORD: '修改密码',
+  ADMIN_SCHEDULE_DELETE: '发起彻底删除', ADMIN_RESTORE: '管理员恢复', ADMIN_PURGE_EXPIRED: '到期自动删除', RECYCLE_REMOVE: '从个人回收站移除', RECYCLE_EMPTY: '清空个人回收站'
+}
+const RESOURCE_MAP = { FILE: '文件', FOLDER: '文件夹', USER: '用户', API: 'API', SYSTEM: '系统' }
+const STATUS_MAP = { SUCCESS: '成功', FAILED: '失败', PENDING: '进行中' }
+
+const ACTION_MAP_REV = Object.fromEntries(Object.entries(ACTION_MAP).map(([en, zh]) => [zh, en]))
+const RESOURCE_MAP_REV = Object.fromEntries(Object.entries(RESOURCE_MAP).map(([en, zh]) => [zh, en]))
+const STATUS_MAP_REV = Object.fromEntries(Object.entries(STATUS_MAP).map(([en, zh]) => [zh, en]))
+
+const actionOptionsZh = ref([])
+const resourceTypeOptionsZh = ref([])
 
 const filters = reactive({
     actions: [],
@@ -91,9 +109,9 @@ const buildParams = () => {
   return {
     page: page.current - 0 - 1 < 0 ? 0 : page.current - 1,
     size: page.size,
-    actions: filters.actions && filters.actions.length ? filters.actions.join(',') : undefined,
-    resourceTypes: filters.resourceTypes && filters.resourceTypes.length ? filters.resourceTypes.join(',') : undefined,
-    status: filters.status || undefined,
+    actions: filters.actions && filters.actions.length ? filters.actions.map(a => ACTION_MAP_REV[a]).filter(Boolean).join(',') : undefined,
+    resourceTypes: filters.resourceTypes && filters.resourceTypes.length ? filters.resourceTypes.map(t => RESOURCE_MAP_REV[t]).filter(Boolean).join(',') : undefined,
+    status: filters.status ? STATUS_MAP_REV[filters.status] : undefined,
     keyword: filters.keyword || undefined,
     from: filters.range && filters.range.length ? filters.range[0] : undefined,
     to: filters.range && filters.range.length ? filters.range[1] : undefined,
@@ -149,15 +167,31 @@ const doExport = async (fmt) => {
 onMounted(async () => {
   try {
     const dict = await getLogDictionaries()
-    actionOptions.value = dict.actions || []
-    resourceTypeOptions.value = dict.resourceTypes || []
+    // 将后端英文选项映射为中文显示
+    const actionsEn = dict.actions || Object.keys(ACTION_MAP)
+    actionOptionsZh.value = actionsEn.map(a => ACTION_MAP[a]).filter(Boolean)
+    const rtypesEn = dict.resourceTypes || Object.keys(RESOURCE_MAP)
+    resourceTypeOptionsZh.value = rtypesEn.map(t => RESOURCE_MAP[t]).filter(Boolean)
   } catch (e) {
     // 回退默认
-    actionOptions.value = ['LOGIN','UPLOAD','DOWNLOAD','DELETE','COPY','RESTORE','MOVE','RENAME','CREATE_FOLDER','DELETE_FOLDER','ADMIN_SCHEDULE_DELETE','ADMIN_RESTORE','ADMIN_PURGE_EXPIRED','RECYCLE_REMOVE','RECYCLE_EMPTY']
-    resourceTypeOptions.value = ['FILE','FOLDER','USER','API']
+    actionOptionsZh.value = Object.values(ACTION_MAP)
+    resourceTypeOptionsZh.value = Object.values(RESOURCE_MAP)
   }
   await load()
 })
+
+const actionEnToZh = (en) => ACTION_MAP[en] || en
+const resourceEnToZh = (en) => RESOURCE_MAP[en] || en
+const statusEnToZh = (en) => STATUS_MAP[en] || en
+
+const allSelected = computed(() => filters.actions && actionOptionsZh.value.length > 0 && filters.actions.length === actionOptionsZh.value.length)
+const toggleSelectAll = () => {
+  if (allSelected.value) {
+    filters.actions = []
+  } else {
+    filters.actions = [...actionOptionsZh.value]
+  }
+}
 </script>
 
 <style scoped>

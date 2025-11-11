@@ -46,6 +46,7 @@
           </template>
           <el-menu-item index="/admin/users">用户管理</el-menu-item>
           <el-menu-item index="/admin/files">文件管理</el-menu-item>
+          <el-menu-item index="/admin/system-recycle">系统回收站</el-menu-item>
           <el-menu-item index="/admin/logs">日志管理</el-menu-item>
           <el-menu-item index="/admin/system">系统设置</el-menu-item>
         </el-sub-menu>

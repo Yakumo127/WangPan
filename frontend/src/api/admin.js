@@ -65,3 +65,11 @@ export function downloadUsersImportTemplate() {
     responseType: "blob"
   })
 }
+
+export function changeUserPassword(id, data) {
+  return request({
+    url: `/admin/users/${id}/password`,
+    method: 'put',
+    data
+  })
+}

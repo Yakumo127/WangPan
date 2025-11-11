@@ -89,6 +89,12 @@ const routes = [
         meta: { title: '系统设置', requiresAuth: true, requiresAdmin: true }
       },
       {
+        path: '/admin/system-recycle',
+        name: 'SystemRecycle',
+        component: () => import('@/views/admin/SystemRecycle.vue'),
+        meta: { title: '系统回收站', requiresAuth: true, requiresAdmin: true }
+      },
+      {
         path: '/admin/logs',
         name: 'AdminLogs',
         component: () => import('@/views/admin/Logs.vue'),

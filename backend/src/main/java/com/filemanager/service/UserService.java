@@ -291,6 +291,48 @@ public class UserService implements UserDetailsService {
         return userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("用户不存在: " + userId));
     }
+
+    // 管理员操作：校验管理员口令后，修改指定用户的密码
+    public void changeUserPasswordWithAdminConfirm(Long targetUserId, String newPassword, String adminUsername, String adminPassword) {
+        long start = System.currentTimeMillis();
+        if (newPassword == null || newPassword.isBlank()) {
+            throw new RuntimeException("新密码不能为空");
+        }
+
+        // 验证管理员身份与口令
+        User admin = userRepository.findByUsername(adminUsername)
+                .orElseThrow(() -> new RuntimeException("管理员不存在"));
+        if (admin.getRole() != User.Role.ADMIN) {
+            throw new RuntimeException("无权限执行该操作");
+        }
+        if (!passwordEncoder.matches(adminPassword == null ? "" : adminPassword, admin.getPassword())) {
+            try { auditLogService.logFailure(admin.getId(),
+                    com.filemanager.entity.UserLog.ACTION_CHANGE_PASSWORD,
+                    com.filemanager.entity.UserLog.RESOURCE_USER,
+                    targetUserId,
+                    null,
+                    "管理员修改用户密码失败",
+                    "管理员口令错误",
+                    System.currentTimeMillis() - start);
+            } catch (Exception ignore) {}
+            throw new RuntimeException("管理员口令错误");
+        }
+
+        // 设置目标用户的新密码
+        User target = userRepository.findById(targetUserId)
+                .orElseThrow(() -> new RuntimeException("目标用户不存在"));
+        target.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(target);
+
+        try { auditLogService.logSuccess(admin.getId(),
+                com.filemanager.entity.UserLog.ACTION_CHANGE_PASSWORD,
+                com.filemanager.entity.UserLog.RESOURCE_USER,
+                target.getId(),
+                target.getUsername(),
+                "管理员修改用户密码：" + target.getUsername(),
+                System.currentTimeMillis() - start);
+        } catch (Exception ignore) {}
+    }
     
     // 管理员方法：获取所有用户
     public List<User> getAllUsers() {

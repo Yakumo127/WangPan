@@ -52,7 +52,7 @@
               <el-switch v-model="systemConfig.manualPurgeEnabled" @change="saveManualPurgeSetting" />
             </el-form-item>
             
-            <el-form-item label="日志级别">
+            <el-form-item label="日志级别（待完善）">
               <el-select v-model="systemConfig.logLevel" placeholder="选择日志级别">
                 <el-option label="DEBUG" value="DEBUG" />
                 <el-option label="INFO" value="INFO" />
@@ -70,7 +70,7 @@
       </el-tab-pane>
       
       <!-- 回收站管理 -->
-      <el-tab-pane label="回收站管理" name="recycle">
+      <el-tab-pane label="回收站管理" name="recycle" v-if="false">
         <el-card class="box-card">
           <template #header>
             <div class="card-header">
@@ -287,7 +287,7 @@
 import { ref, onMounted, nextTick } from "vue"
 import { ElMessage, ElMessageBox } from "element-plus"
 import { Delete, Refresh, Search, Document, User, Calendar, DataLine, RefreshLeft } from "@element-plus/icons-vue"
-import { getAllRecycleBinFiles, adminRestoreFile, adminPermanentDeleteFile } from "@/api/file"
+import { getAllRecycleBinFiles, adminRestoreFile, adminScheduleDeleteFile } from "@/api/file"
 import { getRecycleSettings, updateRecycleSettings } from "@/api/system"
 
 export default {
@@ -459,25 +459,6 @@ export default {
     // 彻底删除单个文件
     const deletePermanently = async (item) => {
       try {
-        await ElMessageBox.confirm(
-          `确定要彻底删除 "${item.originalFilename}" 吗？此操作不可恢复！`,
-          "彻底删除",
-          {
-            confirmButtonText: "确定",
-            cancelButtonText: "取消",
-            type: "error",
-            inputPattern: new RegExp(`^${item.originalFilename}$`),
-            inputPlaceholder: `请输入 "${item.originalFilename}" 确认删除`,
-            inputValidator: (value) => {
-              if (value !== item.originalFilename) {
-                return "输入的文件名称不正确"
-              }
-              return true
-            },
-            showInput: true
-          }
-        )
-        
         // 第一次确认：警告
         await ElMessageBox.confirm(
           `此操作将发起彻底删除并进入保留期，期间可恢复，到期自动删除且不可恢复。`,
@@ -676,6 +657,9 @@ export default {
       batchDeleting,
       recycleItems,
       searchKeyword,
+      reasonKeyword,
+      onlyScheduled,
+      execRange,
       selectedItems,
       systemConfig,
       systemInfo,
@@ -683,6 +667,7 @@ export default {
       formatFileSize,
       formatStorage,
       formatDateTime,
+      formatRemaining,
       handleSelectionChange,
       refreshRecycleBin,
       searchRecycleBin,

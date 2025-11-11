@@ -40,7 +40,10 @@ public interface FileRepository extends JpaRepository<File, Long> {
     List<File> findByDeletedTrue();
     List<File> findByDeletedTrueOrderByDeleteTimeDesc();
 
-    @Query("SELECT f FROM File f JOIN f.user u WHERE f.deleted = true " +
+    // 系统回收站：仅展示对用户已隐藏（个人彻底删除/清空后）的已删除文件
+    List<File> findByDeletedTrueAndOwnerHiddenTrueOrderByDeleteTimeDesc();
+
+    @Query("SELECT f FROM File f JOIN f.user u WHERE f.deleted = true AND f.ownerHidden = true " +
            "AND (:scheduledOnly = false OR f.adminDeleteScheduled = true) " +
            "AND (:fromExec IS NULL OR f.adminDeleteExecuteTime >= :fromExec) " +
            "AND (:toExec IS NULL OR f.adminDeleteExecuteTime <= :toExec) " +

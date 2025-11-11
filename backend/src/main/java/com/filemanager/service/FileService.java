@@ -138,18 +138,10 @@ public class FileService {
         File file = getFile(fileId, userId);
         file.setDeleted(true);
         file.setDeleteTime(LocalDateTime.now());
-        // 用户删除后立即释放容量（仅一次）
-        userRepository.findById(userId).ifPresent(u -> {
-            if (!Boolean.TRUE.equals(file.getQuotaReleased())) {
-                u.releaseQuota(file.getSize());
-                userRepository.save(u);
-                file.setQuotaReleased(true);
-            }
-        });
         fileRepository.save(file);
         try { auditLogService.logSuccess(userId, com.filemanager.entity.UserLog.ACTION_DELETE,
                 com.filemanager.entity.UserLog.RESOURCE_FILE, file.getId(), file.getOriginalFilename(),
-                "删除文件（移至回收站）：" + file.getOriginalFilename() + "（释放" + file.getSize() + "字节）",
+                "删除文件（移至个人回收站）：" + file.getOriginalFilename(),
                 System.currentTimeMillis() - start); } catch (Exception ignore) {}
     }
     
@@ -259,7 +251,7 @@ public class FileService {
     
     // 回收站相关方法
     // 管理员回收站方法
-    public List<File> getAllRecycleBinFiles() { return fileRepository.findByDeletedTrueOrderByDeleteTimeDesc(); }
+    public List<File> getAllRecycleBinFiles() { return fileRepository.findByDeletedTrueAndOwnerHiddenTrueOrderByDeleteTimeDesc(); }
 
     public List<File> getAllRecycleBinFiles(java.time.LocalDateTime fromExec,
                                             java.time.LocalDateTime toExec,
@@ -379,17 +371,25 @@ public class FileService {
         }
     }
 
-    // 用户回收站：彻底删除（对用户隐藏，不物理删除，不改配额）
+    // 用户回收站：彻底删除（移入系统回收站 + 释放配额，不物理删除）
     public void permanentDeleteFile(Long fileId, Long userId) {
         long start = System.currentTimeMillis();
         File file = fileRepository.findByIdAndUserIdAndDeletedTrue(fileId, userId)
                 .orElseThrow(() -> new RuntimeException("回收站中不存在该文件"));
         file.setOwnerHidden(true);
+        // 释放配额（仅一次）
+        userRepository.findById(userId).ifPresent(u -> {
+            if (!Boolean.TRUE.equals(file.getQuotaReleased())) {
+                u.releaseQuota(file.getSize());
+                userRepository.save(u);
+                file.setQuotaReleased(true);
+            }
+        });
         file.setUpdateTime(LocalDateTime.now());
         fileRepository.save(file);
         try { auditLogService.logSuccess(userId, com.filemanager.entity.UserLog.ACTION_RECYCLE_REMOVE,
                 com.filemanager.entity.UserLog.RESOURCE_FILE, file.getId(), file.getOriginalFilename(),
-                "从用户回收站移除：" + file.getOriginalFilename(), System.currentTimeMillis() - start); } catch (Exception ignore) {}
+                "个人回收站彻底删除：" + file.getOriginalFilename() + "（配额已释放，移入系统回收站）", System.currentTimeMillis() - start); } catch (Exception ignore) {}
     }
     public List<File> getUserRecycleBinFiles(Long userId) {
         return fileRepository.findByUserIdAndDeletedTrueAndOwnerHiddenFalseOrderByDeleteTimeDesc(userId);
@@ -432,18 +432,28 @@ public class FileService {
                 "恢复文件：" + file.getOriginalFilename(), System.currentTimeMillis() - start); } catch (Exception ignore) {}
     }
 
-    // 用户回收站：清空回收站（仅对用户隐藏，不物理删除，不改配额）
+    // 用户回收站：清空回收站（等同批量“彻底删除”：移入系统回收站 + 释放配额，不物理删除）
     public void emptyRecycleBin(Long userId) {
         long start = System.currentTimeMillis();
         List<File> files = fileRepository.findByUserIdAndDeletedTrueAndOwnerHiddenFalseOrderByDeleteTimeDesc(userId);
+        int released = 0;
         for (File file : files) {
             file.setOwnerHidden(true);
+            // 释放配额（仅一次）
+            userRepository.findById(userId).ifPresent(u -> {
+                if (!Boolean.TRUE.equals(file.getQuotaReleased())) {
+                    u.releaseQuota(file.getSize());
+                    userRepository.save(u);
+                    file.setQuotaReleased(true);
+                }
+            });
             file.setUpdateTime(LocalDateTime.now());
+            released++;
         }
         fileRepository.saveAll(files);
         try { auditLogService.logSuccess(userId, com.filemanager.entity.UserLog.ACTION_RECYCLE_EMPTY,
                 com.filemanager.entity.UserLog.RESOURCE_FILE, null, null,
-                "清空用户回收站（仅隐藏）：共" + files.size() + "项", System.currentTimeMillis() - start); } catch (Exception ignore) {}
+                "清空个人回收站（彻底删除并移入系统回收站）：共" + released + "项", System.currentTimeMillis() - start); } catch (Exception ignore) {}
     }
 
     // 管理员：清理到期的排期删除项（物理删除 -> 兜底释放配额 -> 删除记录）
