@@ -40,6 +40,15 @@ public interface FileRepository extends JpaRepository<File, Long> {
     List<File> findByDeletedTrue();
     List<File> findByDeletedTrueOrderByDeleteTimeDesc();
 
+    @Query("SELECT f FROM File f WHERE f.deleted = true " +
+           "AND (:scheduledOnly = false OR f.adminDeleteScheduled = true) " +
+           "AND (:fromExec IS NULL OR f.adminDeleteExecuteTime >= :fromExec) " +
+           "AND (:toExec IS NULL OR f.adminDeleteExecuteTime <= :toExec) " +
+           "ORDER BY f.deleteTime DESC")
+    List<File> findAdminRecycleFiltered(@Param("fromExec") java.time.LocalDateTime fromExec,
+                                        @Param("toExec") java.time.LocalDateTime toExec,
+                                        @Param("scheduledOnly") boolean scheduledOnly);
+
     Optional<File> findByIdAndDeletedTrue(Long fileId);
 
     // 管理员清理：查找到期的排期删除项

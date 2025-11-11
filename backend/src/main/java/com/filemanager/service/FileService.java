@@ -259,8 +259,13 @@ public class FileService {
     
     // 回收站相关方法
     // 管理员回收站方法
-    public List<File> getAllRecycleBinFiles() {
-        return fileRepository.findByDeletedTrueOrderByDeleteTimeDesc();
+    public List<File> getAllRecycleBinFiles() { return fileRepository.findByDeletedTrueOrderByDeleteTimeDesc(); }
+
+    public List<File> getAllRecycleBinFiles(java.time.LocalDateTime fromExec,
+                                            java.time.LocalDateTime toExec,
+                                            Boolean scheduledOnly) {
+        boolean only = scheduledOnly != null && scheduledOnly;
+        return fileRepository.findAdminRecycleFiltered(fromExec, toExec, only);
     }
     
     // 管理员恢复文件

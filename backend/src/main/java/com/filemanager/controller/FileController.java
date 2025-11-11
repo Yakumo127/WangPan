@@ -298,9 +298,19 @@ public class FileController {
     // 管理员回收站相关API
     @GetMapping("/admin/recycle/bin")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
-    public ResponseEntity<List<com.filemanager.dto.AdminFileDTO>> getAllRecycleBinFiles() {
+    public ResponseEntity<List<com.filemanager.dto.AdminFileDTO>> getAllRecycleBinFiles(
+            @RequestParam(value = "fromExec", required = false)
+            @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME)
+            java.time.LocalDateTime fromExec,
+            @RequestParam(value = "toExec", required = false)
+            @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME)
+            java.time.LocalDateTime toExec,
+            @RequestParam(value = "scheduledOnly", required = false) Boolean scheduledOnly
+    ) {
         try {
-            List<File> files = fileService.getAllRecycleBinFiles();
+            List<File> files = (fromExec != null || toExec != null || Boolean.TRUE.equals(scheduledOnly))
+                    ? fileService.getAllRecycleBinFiles(fromExec, toExec, scheduledOnly)
+                    : fileService.getAllRecycleBinFiles();
             List<com.filemanager.dto.AdminFileDTO> list = files.stream().map(f -> {
                 com.filemanager.dto.AdminFileDTO dto = new com.filemanager.dto.AdminFileDTO();
                 dto.setId(f.getId());

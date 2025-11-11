@@ -122,10 +122,11 @@ export function emptyRecycleBin() {
 // 管理员回收站API
 
 // 管理员回收站API
-export function getAllRecycleBinFiles() {
+export function getAllRecycleBinFiles(params = {}) {
   return request({
     url: "/files/admin/recycle/bin",
-    method: "get"
+    method: "get",
+    params
   })
 }
 

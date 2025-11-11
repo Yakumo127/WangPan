@@ -378,7 +378,13 @@ export default {
       loading.value = true
       try {
         // 使用管理员API获取所有用户的回收站文件
-        const response = await getAllRecycleBinFiles()
+        const params = {}
+        if (Array.isArray(execRange.value) && execRange.value.length === 2 && execRange.value[0] && execRange.value[1]) {
+          params.fromExec = execRange.value[0]
+          params.toExec = execRange.value[1]
+        }
+        if (onlyScheduled.value) params.scheduledOnly = true
+        const response = await getAllRecycleBinFiles(params)
         recycleRawItems.value = response || []
         recycleItems.value = [...recycleRawItems.value]
         
