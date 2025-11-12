@@ -273,41 +273,81 @@ public class FileController {
                 try {
                     java.util.List<org.springframework.http.HttpRange> ranges = org.springframework.http.HttpRange.parseRanges(rangeHeader);
                     if (!ranges.isEmpty()) {
-                        org.springframework.http.HttpRange r = ranges.get(0);
-                        long start = r.getRangeStart(total);
-                        long end = r.getRangeEnd(total);
-                        if (start >= total || end >= total || start > end) {
-                            return ResponseEntity.status(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
-                                    .header(HttpHeaders.CONTENT_RANGE, "bytes */" + total)
-                                    .build();
-                        }
-                        long rangeLen = end - start + 1;
-                        final long copyStart = start;
-                        final long copyLen = rangeLen;
-                        StreamingResponseBody body = outputStream -> {
-                            try (FileChannel fc = FileChannel.open(filePath, StandardOpenOption.READ);
-                                 WritableByteChannel out = Channels.newChannel(outputStream)) {
-                                long pos = copyStart;
-                                long remaining = copyLen;
-                                while (remaining > 0) {
-                                    long transferred = fc.transferTo(pos, remaining, out);
-                                    if (transferred <= 0) break;
-                                    pos += transferred;
-                                    remaining -= transferred;
-                                }
+                        if (ranges.size() == 1) {
+                            org.springframework.http.HttpRange r = ranges.get(0);
+                            long start = r.getRangeStart(total);
+                            long end = r.getRangeEnd(total);
+                            if (start >= total || end >= total || start > end) {
+                                return ResponseEntity.status(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+                                        .header(HttpHeaders.CONTENT_RANGE, "bytes */" + total)
+                                        .build();
                             }
-                        };
-                        return ResponseEntity.status(HttpStatus.PARTIAL_CONTENT)
-                                .contentType(MediaType.parseMediaType(contentType))
-                                .header(HttpHeaders.CONTENT_DISPOSITION, disposition)
-                                .header(HttpHeaders.CACHE_CONTROL, "no-store")
-                                .header("X-Content-Type-Options", "nosniff")
-                                .header(HttpHeaders.ACCEPT_RANGES, "bytes")
-                                .header(HttpHeaders.ETAG, eTag)
-                                .lastModified(lastModified)
-                                .header(HttpHeaders.CONTENT_RANGE, String.format("bytes %d-%d/%d", start, end, total))
-                                .contentLength(rangeLen)
-                                .body(body);
+                            long rangeLen = end - start + 1;
+                            final long copyStart = start;
+                            final long copyLen = rangeLen;
+                            StreamingResponseBody body = outputStream -> {
+                                try (FileChannel fc = FileChannel.open(filePath, StandardOpenOption.READ);
+                                     WritableByteChannel out = Channels.newChannel(outputStream)) {
+                                    long pos = copyStart;
+                                    long remaining = copyLen;
+                                    while (remaining > 0) {
+                                        long transferred = fc.transferTo(pos, remaining, out);
+                                        if (transferred <= 0) break;
+                                        pos += transferred;
+                                        remaining -= transferred;
+                                    }
+                                }
+                            };
+                            return ResponseEntity.status(HttpStatus.PARTIAL_CONTENT)
+                                    .contentType(MediaType.parseMediaType(contentType))
+                                    .header(HttpHeaders.CONTENT_DISPOSITION, disposition)
+                                    .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                                    .header("X-Content-Type-Options", "nosniff")
+                                    .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+                                    .header(HttpHeaders.ETAG, eTag)
+                                    .lastModified(lastModified)
+                                    .header(HttpHeaders.CONTENT_RANGE, String.format("bytes %d-%d/%d", start, end, total))
+                                    .contentLength(rangeLen)
+                                    .body(body);
+                        } else {
+                            // 多区间：multipart/byteranges
+                            final String boundary = "MULTIPART_BYTERANGES_" + java.util.UUID.randomUUID();
+                            StreamingResponseBody body = outputStream -> {
+                                try (FileChannel fc = FileChannel.open(filePath, StandardOpenOption.READ)) {
+                                    java.nio.charset.Charset ascii = java.nio.charset.StandardCharsets.US_ASCII;
+                                    for (org.springframework.http.HttpRange r : ranges) {
+                                        long start = r.getRangeStart(total);
+                                        long end = r.getRangeEnd(total);
+                                        if (start >= total || end >= total || start > end) continue; // 跳过非法片段
+                                        String partHeader = "--" + boundary + "\r\n"
+                                                + "Content-Type: " + contentType + "\r\n"
+                                                + String.format("Content-Range: bytes %d-%d/%d\r\n\r\n", start, end, total);
+                                        outputStream.write(partHeader.getBytes(ascii));
+                                        long pos = start;
+                                        long remaining = (end - start + 1);
+                                        WritableByteChannel out = Channels.newChannel(outputStream);
+                                        while (remaining > 0) {
+                                            long transferred = fc.transferTo(pos, remaining, out);
+                                            if (transferred <= 0) break;
+                                            pos += transferred;
+                                            remaining -= transferred;
+                                        }
+                                        outputStream.write("\r\n".getBytes(ascii));
+                                    }
+                                    String endBoundary = "--" + boundary + "--\r\n";
+                                    outputStream.write(endBoundary.getBytes(ascii));
+                                }
+                            };
+                            MediaType mt = MediaType.parseMediaType("multipart/byteranges; boundary=" + boundary);
+                            return ResponseEntity.status(HttpStatus.PARTIAL_CONTENT)
+                                    .contentType(mt)
+                                    .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                                    .header("X-Content-Type-Options", "nosniff")
+                                    .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+                                    .header(HttpHeaders.ETAG, eTag)
+                                    .lastModified(lastModified)
+                                    .body(body);
+                        }
                     }
                 } catch (IllegalArgumentException ignore) {
                     // 无效 Range，忽略按全量返回
