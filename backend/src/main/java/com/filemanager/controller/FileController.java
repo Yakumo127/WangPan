@@ -10,9 +10,11 @@ import com.filemanager.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -119,7 +121,7 @@ public class FileController {
     // 管理员：下载任意文件（忽略归属）
     @GetMapping("/admin/download/{fileId}")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
-    public ResponseEntity<Resource> adminDownload(@PathVariable Long fileId) {
+    public ResponseEntity<?> adminDownload(@PathVariable Long fileId, javax.servlet.http.HttpServletRequest request) {
         long start = System.currentTimeMillis();
         try {
             com.filemanager.entity.File file = fileService.getFileByIdForAdmin(fileId);
@@ -147,7 +149,10 @@ public class FileController {
                 }
             } catch (Exception ignore) {}
 
-            return buildAttachmentResponse(file.getOriginalFilename(), file.getContentType(), file.getSize(), resource);
+            // 计数口径一致
+            try { fileService.incrementDownloadCount(file.getId()); } catch (Exception ignore) {}
+
+            return buildDownloadResponse(request, file, filePath);
         } catch (Exception e) {
             return ResponseEntity.internalServerError().build();
         }
@@ -169,7 +174,7 @@ public class FileController {
     }
     
     @GetMapping("/download/{fileId}")
-    public ResponseEntity<Resource> downloadFile(@PathVariable Long fileId) {
+    public ResponseEntity<?> downloadFile(@PathVariable Long fileId, javax.servlet.http.HttpServletRequest request) {
         try {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             String username = auth.getName();
@@ -180,7 +185,7 @@ public class FileController {
 
             if (resource.exists() && resource.isReadable()) {
                 File file = fileService.getFile(fileId, userId);
-                return buildAttachmentResponse(file.getOriginalFilename(), file.getContentType(), file.getSize(), resource);
+                return buildDownloadResponse(request, file, filePath);
             } else {
                 return ResponseEntity.notFound().build();
             }
@@ -189,24 +194,228 @@ public class FileController {
         }
     }
 
-    // 构建下载响应：统一设置 Content-Type/Disposition/Length 及安全相关响应头
-    private ResponseEntity<Resource> buildAttachmentResponse(String originalFilename, String contentType, Long size, Resource resource) {
-        String safeType = (contentType == null || contentType.isBlank()) ? "application/octet-stream" : contentType;
-        String asciiName = originalFilename == null ? "download" : originalFilename.replaceAll("[\\r\\n]", " ");
-        // RFC 5987/6266 文件名编码，兼容中文
-        String encoded = org.springframework.web.util.UriUtils.encode(asciiName, java.nio.charset.StandardCharsets.UTF_8);
-        String contentDisposition = String.format("attachment; filename=\"%s\"; filename*=UTF-8''%s", asciiName, encoded);
-
-        ResponseEntity.BodyBuilder builder = ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType(safeType))
-                .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition)
-                .header(HttpHeaders.CACHE_CONTROL, "no-store")
-                .header("X-Content-Type-Options", "nosniff");
-
-        if (size != null && size >= 0) {
-            builder = builder.contentLength(size);
+    // HEAD: 用户下载
+    @RequestMapping(value = "/download/{fileId}", method = RequestMethod.HEAD)
+    public ResponseEntity<?> headDownload(@PathVariable Long fileId, javax.servlet.http.HttpServletRequest request) {
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            String username = auth.getName();
+            Long userId = userService.getUserIdByUsername(username);
+            File file = fileService.getFile(fileId, userId);
+            Path filePath = Path.of(file.getFilePath());
+            return buildHeadResponseConditional(request, file, filePath);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
         }
-        return builder.body(resource);
+    }
+
+    // HEAD: 管理员下载
+    @RequestMapping(value = "/admin/download/{fileId}", method = RequestMethod.HEAD)
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    public ResponseEntity<?> headAdminDownload(@PathVariable Long fileId, javax.servlet.http.HttpServletRequest request) {
+        try {
+            com.filemanager.entity.File file = fileService.getFileByIdForAdmin(fileId);
+            Path filePath = Path.of(file.getFilePath());
+            return buildHeadResponseConditional(request, file, filePath);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    // 构建下载响应：统一设置 Content-Type/Disposition/Length 及安全相关响应头
+    private ResponseEntity<?> buildDownloadResponse(javax.servlet.http.HttpServletRequest request,
+                                                    File file,
+                                                    Path filePath) {
+        try {
+            // 路径安全校验：必须位于受控存储根目录下
+            Path root = java.nio.file.Paths.get(fileService.getStorageRoot()).toAbsolutePath().normalize();
+            Path normalized = filePath.toAbsolutePath().normalize();
+            if (!normalized.startsWith(root)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
+            long total = java.nio.file.Files.size(filePath);
+            String contentType = (file.getContentType() == null || file.getContentType().isBlank())
+                    ? java.nio.file.Files.probeContentType(filePath)
+                    : file.getContentType();
+            if (contentType == null || contentType.isBlank()) contentType = "application/octet-stream";
+
+            long lastModified = java.nio.file.Files.getLastModifiedTime(filePath).toMillis();
+            String asciiName = file.getOriginalFilename() == null ? "download" : file.getOriginalFilename().replaceAll("[\\r\\n]", " ");
+            String encoded = org.springframework.web.util.UriUtils.encode(asciiName, java.nio.charset.StandardCharsets.UTF_8);
+            String disposition = String.format("attachment; filename=\"%s\"; filename*=UTF-8''%s", asciiName, encoded);
+
+            String eTag = (file.getFileHash() != null && !file.getFileHash().isBlank())
+                    ? "W/\"" + file.getFileHash() + "\""
+                    : "W/\"" + total + "-" + lastModified + "\"";
+
+            // If-Range：若不匹配，则忽略 Range，返回完整内容
+            String rangeHeader = request.getHeader("Range");
+            String ifRange = request.getHeader("If-Range");
+            boolean serveFullForIfRange = false;
+            if (rangeHeader != null && ifRange != null && !ifRange.isBlank()) {
+                // 简单比较 ETag；若 If-Range 是日期且不等同于 lastModified，也回退全量
+                if (!(ifRange.equals(eTag) || parseHttpDate(ifRange) >= 0 && parseHttpDate(ifRange) >= lastModified)) {
+                    serveFullForIfRange = true;
+                }
+            }
+
+            // 条件请求：If-None-Match / If-Modified-Since
+            String ifNoneMatch = request.getHeader("If-None-Match");
+            long ifModifiedSince = request.getDateHeader("If-Modified-Since");
+            if (rangeHeader == null) { // 仅对全量/非分块响应应用 304 判断
+                if (ifNoneMatch != null && ifNoneMatch.contains(eTag)) {
+                    return ResponseEntity.status(HttpStatus.NOT_MODIFIED)
+                            .eTag(eTag)
+                            .lastModified(lastModified)
+                            .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+                            .build();
+                }
+                if (ifModifiedSince != -1 && lastModified / 1000 <= ifModifiedSince / 1000) {
+                    return ResponseEntity.status(HttpStatus.NOT_MODIFIED)
+                            .eTag(eTag)
+                            .lastModified(lastModified)
+                            .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+                            .build();
+                }
+            }
+
+            // Range 支持
+            if (rangeHeader != null && !serveFullForIfRange) {
+                try {
+                    java.util.List<org.springframework.http.HttpRange> ranges = org.springframework.http.HttpRange.parseRanges(rangeHeader);
+                    if (!ranges.isEmpty()) {
+                        org.springframework.http.HttpRange r = ranges.get(0);
+                        long start = r.getRangeStart(total);
+                        long end = r.getRangeEnd(total);
+                        if (start >= total || end >= total || start > end) {
+                            return ResponseEntity.status(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+                                    .header(HttpHeaders.CONTENT_RANGE, "bytes */" + total)
+                                    .build();
+                        }
+                        long rangeLen = end - start + 1;
+                        final long copyStart = start;
+                        final long copyLen = rangeLen;
+                        StreamingResponseBody body = outputStream -> {
+                            try (java.io.InputStream is = java.nio.file.Files.newInputStream(filePath)) {
+                                long skipped = 0L;
+                                while (skipped < copyStart) {
+                                    long s = is.skip(copyStart - skipped);
+                                    if (s <= 0) break;
+                                    skipped += s;
+                                }
+                                byte[] buffer = new byte[8192];
+                                long remaining = copyLen;
+                                while (remaining > 0) {
+                                    int toRead = (int) Math.min(buffer.length, remaining);
+                                    int read = is.read(buffer, 0, toRead);
+                                    if (read == -1) break;
+                                    outputStream.write(buffer, 0, read);
+                                    remaining -= read;
+                                }
+                            }
+                        };
+                        return ResponseEntity.status(HttpStatus.PARTIAL_CONTENT)
+                                .contentType(MediaType.parseMediaType(contentType))
+                                .header(HttpHeaders.CONTENT_DISPOSITION, disposition)
+                                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                                .header("X-Content-Type-Options", "nosniff")
+                                .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+                                .header(HttpHeaders.ETAG, eTag)
+                                .lastModified(lastModified)
+                                .header(HttpHeaders.CONTENT_RANGE, String.format("bytes %d-%d/%d", start, end, total))
+                                .contentLength(rangeLen)
+                                .body(body);
+                    }
+                } catch (IllegalArgumentException ignore) {
+                    // 无效 Range，忽略按全量返回
+                }
+            }
+
+            // 全量下载
+            StreamingResponseBody body = outputStream -> {
+                try (java.io.InputStream is = java.nio.file.Files.newInputStream(filePath)) {
+                    byte[] buffer = new byte[8192];
+                    int read;
+                    while ((read = is.read(buffer)) != -1) {
+                        outputStream.write(buffer, 0, read);
+                    }
+                }
+            };
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType(contentType))
+                    .header(HttpHeaders.CONTENT_DISPOSITION, disposition)
+                    .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                    .header("X-Content-Type-Options", "nosniff")
+                    .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+                    .header(HttpHeaders.ETAG, eTag)
+                    .lastModified(lastModified)
+                    .contentLength(total)
+                    .body(body);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    private ResponseEntity<?> buildHeadResponseConditional(javax.servlet.http.HttpServletRequest request, File file, Path filePath) {
+        try {
+            // 路径安全校验
+            Path root = java.nio.file.Paths.get(fileService.getStorageRoot()).toAbsolutePath().normalize();
+            Path normalized = filePath.toAbsolutePath().normalize();
+            if (!normalized.startsWith(root)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
+            long total = java.nio.file.Files.size(filePath);
+            String contentType = (file.getContentType() == null || file.getContentType().isBlank())
+                    ? java.nio.file.Files.probeContentType(filePath)
+                    : file.getContentType();
+            if (contentType == null || contentType.isBlank()) contentType = "application/octet-stream";
+            long lastModified = java.nio.file.Files.getLastModifiedTime(filePath).toMillis();
+            String asciiName = file.getOriginalFilename() == null ? "download" : file.getOriginalFilename().replaceAll("[\\r\\n]", " ");
+            String encoded = org.springframework.web.util.UriUtils.encode(asciiName, java.nio.charset.StandardCharsets.UTF_8);
+            String disposition = String.format("attachment; filename=\"%s\"; filename*=UTF-8''%s", asciiName, encoded);
+            String eTag = (file.getFileHash() != null && !file.getFileHash().isBlank())
+                    ? "W/\"" + file.getFileHash() + "\""
+                    : "W/\"" + total + "-" + lastModified + "\"";
+
+            // 条件 HEAD：If-None-Match / If-Modified-Since
+            String ifNoneMatch = request.getHeader("If-None-Match");
+            long ifModifiedSince = request.getDateHeader("If-Modified-Since");
+            if (ifNoneMatch != null && ifNoneMatch.contains(eTag)) {
+                return ResponseEntity.status(HttpStatus.NOT_MODIFIED)
+                        .eTag(eTag)
+                        .lastModified(lastModified)
+                        .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+                        .build();
+            }
+            if (ifModifiedSince != -1 && lastModified / 1000 <= ifModifiedSince / 1000) {
+                return ResponseEntity.status(HttpStatus.NOT_MODIFIED)
+                        .eTag(eTag)
+                        .lastModified(lastModified)
+                        .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+                        .build();
+            }
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType(contentType))
+                    .header(HttpHeaders.CONTENT_DISPOSITION, disposition)
+                    .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                    .header("X-Content-Type-Options", "nosniff")
+                    .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+                    .header(HttpHeaders.ETAG, eTag)
+                    .lastModified(lastModified)
+                    .contentLength(total)
+                    .build();
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    private long parseHttpDate(String value) {
+        try {
+            java.util.Date d = org.springframework.http.HttpHeaders.parseDate(value);
+            return d.getTime();
+        } catch (Exception e) {
+            return -1L;
+        }
     }
     
     @DeleteMapping("/{fileId}")

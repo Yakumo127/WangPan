@@ -237,15 +237,23 @@ public class FileService {
         long start = System.currentTimeMillis();
         File file = getFile(fileId, userId);
         
-        // 增加下载次数
-        file.setDownloadCount(file.getDownloadCount() + 1);
-        fileRepository.save(file);
+        // 增加下载次数（原子操作）
+        try { fileRepository.incrementDownloadCount(file.getId()); } catch (Exception ignore) {}
         
         Path p = Paths.get(file.getFilePath());
         try { auditLogService.logSuccess(userId, com.filemanager.entity.UserLog.ACTION_DOWNLOAD,
                 com.filemanager.entity.UserLog.RESOURCE_FILE, file.getId(), file.getOriginalFilename(),
                 "下载文件：" + file.getOriginalFilename(), System.currentTimeMillis() - start); } catch (Exception ignore) {}
         return p;
+    }
+
+    // 供控制层调用，用于管理员下载也能口径一致地增加计数
+    public void incrementDownloadCount(Long fileId) {
+        try { fileRepository.incrementDownloadCount(fileId); } catch (Exception ignore) {}
+    }
+
+    public String getStorageRoot() {
+        return storagePath;
     }
 
     // 管理员分页查询封装

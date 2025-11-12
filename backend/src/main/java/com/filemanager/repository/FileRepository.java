@@ -70,4 +70,9 @@ public interface FileRepository extends JpaRepository<File, Long> {
     Page<File> findByOriginalFilenameContainingAndDeletedFalse(String keyword, Pageable pageable);
     Page<File> findByOriginalFilenameContainingAndDeletedTrue(String keyword, Pageable pageable);
     Page<File> findByOriginalFilenameContaining(String keyword, Pageable pageable);
+
+    // 原子增加下载次数，避免并发丢失
+    @org.springframework.data.jpa.repository.Modifying
+    @Query("update File f set f.downloadCount = COALESCE(f.downloadCount,0) + 1 where f.id = :id")
+    int incrementDownloadCount(@Param("id") Long id);
 }
