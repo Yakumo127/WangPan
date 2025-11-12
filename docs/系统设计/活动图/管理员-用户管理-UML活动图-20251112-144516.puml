@@ -1,0 +1,37 @@
+@startuml
+title 管理员 - 用户管理 UML 活动图
+
+start
+partition 列表/搜索 {
+  :前端请求\nGET /api/admin/users[?keyword];
+  if (keyword 存在?) then (是)
+    :搜索用户\n(DB: findByUsernameContainingOrEmailContaining);
+  else (否)
+    :获取全部用户\n(DB: findAll);
+  endif
+  :返回 200 [User...];
+}
+
+partition 创建/更新/删除 {
+  :创建\nPOST /api/admin/users -> 保存用户(编码密码), 返回 200;
+  :更新\nPUT /api/admin/users/{id} -> 保存更新, 返回 200;
+  :删除\nDELETE /api/admin/users/{id} -> 删除, 返回 200;
+}
+
+partition 导入/导出/模板 {
+  :导入\nPOST /api/admin/users/import (multipart file) -> 解析Excel并创建/跳过/更新, 返回 200 { message: summary };
+  :导出\nGET /api/admin/users/export -> 生成xlsx并返回二进制;
+  :下载导入模板\nGET /api/admin/users/import/template -> 返回xlsx模板;
+}
+
+partition 修改用户密码(管理员口令确认) {
+  :前端提交\nPUT /api/admin/users/{id}/password\n{ newPassword, adminPassword };
+  :鉴权获取 adminUsername;
+  :校验管理员角色与口令, 设置目标用户新密码并保存;
+  :返回 200 { message };
+}
+
+stop
+
+@enduml
+

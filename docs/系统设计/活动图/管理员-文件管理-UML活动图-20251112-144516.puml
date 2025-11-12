@@ -1,0 +1,24 @@
+@startuml
+title 管理员 - 文件管理 UML 活动图（列表/下载）
+
+start
+:管理员打开“文件管理”页面;
+:前端请求\nGET /api/files/admin/list?page=&size=&keyword=&status=;
+:后端按 status/keyword 查询\n(Active/Deleted/All -> 不同仓储方法);
+:映射为 AdminFileDTO 分页返回 200;
+:前端渲染表格;
+
+if (管理员点击“下载”?) then (是)
+  :前端请求\nGET /api/files/admin/download/{fileId}\nAuthorization: Bearer <token>;
+  :鉴权要求 ROLE_ADMIN;
+  :查询文件记录 (未删除) 并读取磁盘;
+  if (可读?) then (是)
+    :返回 200 二进制流 (带文件名/类型);
+  else (否)
+    :返回 404 Not Found;
+  endif
+endif
+stop
+
+@enduml
+

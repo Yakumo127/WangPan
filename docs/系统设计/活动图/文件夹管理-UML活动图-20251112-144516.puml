@@ -1,0 +1,50 @@
+@startuml
+title 企业文件管理系统 - 文件夹管理 UML 活动图
+
+start
+partition 创建 {
+  :前端提交\nPOST /api/folders/create\n{ name, parentId? };
+  :后端解析 userId;
+  :检查重名 (existsByNameAndUserIdAndParentIdAndDeletedFalse);
+  if (重名?) then (是)
+    :返回 400 { message: 文件夹名称已存在 };
+  else (否)
+    :查找父文件夹(可选)并保存新记录;
+    :返回 200 { folderId, name, parentId, createTime };
+  endif
+}
+
+partition 列表 {
+  :前端请求\nGET /api/folders/list[?parentId];
+  :后端解析 userId 并查询: 根/指定父级;
+  :返回 200 [Folder...];
+}
+
+partition 删除 {
+  :前端提交\nDELETE /api/folders/{folderId};
+  :后端解析 userId, 标记 deleted=true, deleteTime=now;
+  :返回 200 { message };
+}
+
+partition 重命名 {
+  :前端提交\nPUT /api/folders/{folderId}/rename\n{ name };
+  :后端解析 userId, 检查同级重名并保存;
+  :返回 200 { folderId, name };
+}
+
+partition 移动 {
+  :前端提交\nPOST /api/folders/{folderId}/move\n{ targetParentId };
+  :后端解析 userId, 校验目标父级; 检查不能移动到自身子孙(简化: 与自身不同);
+  :保存并返回 200 { folderId, parentId };
+}
+
+partition 路径 {
+  :前端请求\nGET /api/folders/{folderId}/path;
+  :后端解析 userId, 查询路径(简化版返回自身);
+  :返回 200 [Folder...];
+}
+
+stop
+
+@enduml
+

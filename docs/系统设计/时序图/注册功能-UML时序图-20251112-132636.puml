@@ -1,0 +1,33 @@
+@startuml
+title 企业文件管理系统 - 注册功能时序图
+
+actor 用户 as User
+participant "浏览器/注册页\n(Login.vue: 注册模式)" as UI
+participant "Axios\nrequest.js" as Axios
+participant "后端控制器\nAuthController" as AuthCtrl
+participant "用户服务\nUserService" as UserSvc
+database "UserRepository\n(MySQL)" as DB
+
+User -> UI: 输入用户名/邮箱/密码/确认密码
+UI -> Axios: POST /api/auth/register\n{ username,email,password,confirmPassword }
+Axios -> AuthCtrl: POST /auth/register
+AuthCtrl -> UserSvc: register(dto)
+UserSvc -> DB: 用户名/邮箱唯一性检查
+alt 已存在
+  UserSvc --> AuthCtrl: 抛出 “用户名已存在/邮箱已被使用”
+  AuthCtrl --> Axios: 400 { message }
+  Axios --> UI: 显示错误
+  return
+end
+UserSvc -> UserSvc: password encode / 初始化字段
+UserSvc -> DB: 保存用户(USER 角色)
+UserSvc --> AuthCtrl: 注册成功
+AuthCtrl --> Axios: 200 { message: 注册成功 }
+Axios --> UI: 显示成功，切换至登录
+
+note over AuthCtrl
+接口：POST /api/auth/register
+end note
+
+@enduml
+

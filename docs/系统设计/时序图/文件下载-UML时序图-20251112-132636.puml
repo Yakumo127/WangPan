@@ -1,0 +1,34 @@
+@startuml
+title 企业文件管理系统 - 文件下载时序图
+
+actor 用户 as User
+participant "浏览器/文件列表页\n(files/List.vue)" as UI
+participant "Axios\nrequest.js" as Axios
+participant "文件控制器\nFileController" as FileCtrl
+participant "文件服务\nFileService" as FileSvc
+database "FileRepository\n(MySQL)" as DB
+
+User -> UI: 点击“下载”
+UI -> Axios: GET /api/files/download/{fileId}\nAuthorization: Bearer <token>\nresponseType=blob
+Axios -> FileCtrl: downloadFile(fileId)
+FileCtrl -> SecurityContextHolder: 获取 username/userId
+FileCtrl -> FileSvc: getFilePath(fileId, userId)
+FileSvc -> DB: 校验归属、未删除
+alt 不存在/无权限
+  FileSvc --> FileCtrl: 抛出错误
+  FileCtrl --> Axios: 404/500
+  Axios --> UI: 显示错误
+  return
+end
+FileSvc -> DB: getFile(fileId, userId)
+FileSvc -> FileSvc: downloadCount+1 并保存
+FileSvc --> FileCtrl: 物理路径 Path
+FileCtrl --> Axios: 200 二进制流\nContent-Type: contentType\nContent-Disposition: attachment; filename
+Axios --> UI: 创建 Blob 并触发保存
+
+note over FileCtrl
+接口：GET /api/files/download/{fileId}
+end note
+
+@enduml
+

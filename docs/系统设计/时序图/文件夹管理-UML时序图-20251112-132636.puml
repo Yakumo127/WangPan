@@ -1,0 +1,66 @@
+@startuml
+title 企业文件管理系统 - 文件夹管理时序图
+
+actor 用户 as User
+participant "浏览器/文件夹页\n(folders/List.vue)" as UI
+participant "Axios\nrequest.js" as Axios
+participant "文件夹控制器\nFolderController" as FolderCtrl
+participant "文件夹服务\nFolderService" as FolderSvc
+database "FolderRepository\n(MySQL)" as DB
+
+== 创建 ==
+User -> UI: 输入名称/选择父文件夹
+UI -> Axios: POST /api/folders/create\n{ name, parentId? }
+Axios -> FolderCtrl: createFolder(body)
+FolderCtrl -> SecurityContext: 获取 userId
+FolderCtrl -> FolderSvc: createFolder(name, parentId, userId)
+FolderSvc -> DB: 检查重名 & 父级存在性
+FolderSvc -> DB: 保存
+FolderCtrl --> Axios: 200 { folderId, name, parentId, createTime }
+
+== 列表 ==
+UI -> Axios: GET /api/folders/list[?parentId]
+Axios -> FolderCtrl: getUserFolders(parentId)
+FolderCtrl -> SecurityContext: 获取 userId
+FolderCtrl -> FolderSvc: getUserFolders(userId, parentId)
+alt 根目录
+  FolderSvc -> DB: findByUserIdAndParentIsNullAndDeletedFalseOrderByCreateTimeDesc
+else 指定父级
+  FolderSvc -> DB: findByUserIdAndParentIdAndDeletedFalseOrderByCreateTimeDesc
+end
+FolderCtrl --> Axios: 200 [Folder...]
+
+== 删除 ==
+UI -> Axios: DELETE /api/folders/{folderId}
+Axios -> FolderCtrl: deleteFolder(folderId)
+FolderCtrl -> SecurityContext: 获取 userId
+FolderCtrl -> FolderSvc: deleteFolder(folderId, userId)
+FolderSvc -> DB: 标记 deleted=true, deleteTime=now
+FolderCtrl --> Axios: 200 { message }
+
+== 重命名 ==
+UI -> Axios: PUT /api/folders/{folderId}/rename\n{ name }
+Axios -> FolderCtrl: renameFolder(folderId, body)
+FolderCtrl -> SecurityContext: 获取 userId
+FolderCtrl -> FolderSvc: renameFolder(folderId, userId, name)
+FolderSvc -> DB: 检查同级重名并保存
+FolderCtrl --> Axios: 200 { folderId, name }
+
+== 移动 ==
+UI -> Axios: POST /api/folders/{folderId}/move\n{ targetParentId }
+Axios -> FolderCtrl: moveFolder(folderId, body)
+FolderCtrl -> SecurityContext: 获取 userId
+FolderCtrl -> FolderSvc: moveFolder(folderId, userId, targetParentId)
+FolderSvc -> DB: 检查目标父级/循环关系并保存
+FolderCtrl --> Axios: 200 { folderId, parentId }
+
+== 获取路径 ==
+UI -> Axios: GET /api/folders/{folderId}/path
+Axios -> FolderCtrl: getFolderPath(folderId)
+FolderCtrl -> SecurityContext: 获取 userId
+FolderCtrl -> FolderSvc: getFolderPath(folderId, userId)
+FolderSvc -> DB: 查询路径（简化版返回自身）
+FolderCtrl --> Axios: 200 [Folder...]
+
+@enduml
+

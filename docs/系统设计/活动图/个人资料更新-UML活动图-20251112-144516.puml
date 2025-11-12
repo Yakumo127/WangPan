@@ -1,0 +1,14 @@
+@startuml
+title 企业文件管理系统 - 个人资料更新 UML 活动图
+
+start
+:前端编辑显示名/邮箱/头像URL;
+:前端提交\nPUT /api/auth/profile\nAuthorization: Bearer <token>\n{ displayName, email, avatarUrl };
+:后端解析用户名\n(JwtUtils.extractUsername);
+:查询用户并应用变更\n(DB: findByUsername + save);
+:返回 200 { message: 个人信息更新成功 };
+:前端刷新 /auth/userinfo;
+stop
+
+@enduml
+

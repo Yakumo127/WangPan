@@ -1,0 +1,25 @@
+@startuml
+title 企业文件管理系统 - 文件浏览与搜索 UML 活动图
+
+start
+:用户打开文件页或点击刷新;
+:前端请求\nGET /api/files/list[?folderId]\nAuthorization: Bearer <token>;
+:后端解析 userId;
+if (folderId 为空?) then (是)
+  :查询根目录文件\n(DB: findByUserIdAndFolderIsNullAndDeletedFalseOrderByCreateTimeDesc);
+else (否)
+  :查询指定文件夹文件\n(DB: findByUserIdAndFolderIdAndDeletedFalseOrderByCreateTimeDesc);
+endif
+:返回 200 [File...];
+:前端渲染列表;
+
+if (用户发起搜索?) then (是)
+  :前端请求\nGET /api/files/search?keyword=...;
+  :后端查询\n(DB: findByUserIdAndOriginalFilenameContainingAndDeletedFalse...);
+  :返回 200 [File...];
+  :前端渲染搜索结果;
+endif
+stop
+
+@enduml
+

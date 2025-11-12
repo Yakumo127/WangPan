@@ -1,0 +1,36 @@
+@startuml
+title 企业文件管理系统 - 文件浏览与搜索时序图
+
+actor 用户 as User
+participant "浏览器/文件列表页\n(files/List.vue)" as UI
+participant "Axios\nrequest.js" as Axios
+participant "文件控制器\nFileController" as FileCtrl
+participant "文件服务\nFileService" as FileSvc
+database "FileRepository\n(MySQL)" as DB
+
+== 列表 ==
+User -> UI: 打开页面/刷新
+UI -> Axios: GET /api/files/list\nAuthorization: Bearer <token>\n[folderId?]
+Axios -> FileCtrl: getUserFiles(folderId)
+FileCtrl -> SecurityContext: 获取 userId
+FileCtrl -> FileSvc: getUserFiles(userId, folderId)
+alt 根目录
+  FileSvc -> DB: findByUserIdAndFolderIsNullAndDeletedFalseOrderByCreateTimeDesc
+else 指定文件夹
+  FileSvc -> DB: findByUserIdAndFolderIdAndDeletedFalseOrderByCreateTimeDesc
+end
+FileCtrl --> Axios: 200 [File...]
+Axios --> UI: 渲染列表
+
+== 搜索 ==
+User -> UI: 输入关键字并搜索
+UI -> Axios: GET /api/files/search?keyword=...\nAuthorization: Bearer <token>
+Axios -> FileCtrl: searchFiles(keyword)
+FileCtrl -> SecurityContext: 获取 userId
+FileCtrl -> FileSvc: searchFiles(userId, keyword)
+FileSvc -> DB: findByUserIdAndOriginalFilenameContainingAndDeletedFalseOrderByCreateTimeDesc
+FileCtrl --> Axios: 200 [File...]
+Axios --> UI: 显示搜索结果
+
+@enduml
+

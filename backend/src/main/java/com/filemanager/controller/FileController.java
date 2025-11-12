@@ -120,6 +120,7 @@ public class FileController {
     @GetMapping("/admin/download/{fileId}")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<Resource> adminDownload(@PathVariable Long fileId) {
+        long start = System.currentTimeMillis();
         try {
             com.filemanager.entity.File file = fileService.getFileByIdForAdmin(fileId);
             Path filePath = Path.of(file.getFilePath());
@@ -127,10 +128,26 @@ public class FileController {
             if (!resource.exists() || !resource.isReadable()) {
                 return ResponseEntity.notFound().build();
             }
-            return ResponseEntity.ok()
-                    .contentType(MediaType.parseMediaType(file.getContentType() == null ? "application/octet-stream" : file.getContentType()))
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + file.getOriginalFilename() + "\"")
-                    .body(resource);
+
+            // 记录审计日志（管理员下载）
+            try {
+                Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+                String adminUsername = auth != null ? auth.getName() : null;
+                if (adminUsername != null) {
+                    Long adminId = userService.getUserIdByUsername(adminUsername);
+                    auditLogService.logSuccess(
+                            adminId,
+                            com.filemanager.entity.UserLog.ACTION_DOWNLOAD,
+                            com.filemanager.entity.UserLog.RESOURCE_FILE,
+                            file.getId(),
+                            file.getOriginalFilename(),
+                            "管理员下载文件：" + file.getOriginalFilename(),
+                            System.currentTimeMillis() - start
+                    );
+                }
+            } catch (Exception ignore) {}
+
+            return buildAttachmentResponse(file.getOriginalFilename(), file.getContentType(), file.getSize(), resource);
         } catch (Exception e) {
             return ResponseEntity.internalServerError().build();
         }
@@ -157,23 +174,39 @@ public class FileController {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             String username = auth.getName();
             Long userId = userService.getUserIdByUsername(username);
-            
+
             Path filePath = fileService.getFilePath(fileId, userId);
             Resource resource = new UrlResource(filePath.toUri());
-            
+
             if (resource.exists() && resource.isReadable()) {
                 File file = fileService.getFile(fileId, userId);
-                
-                return ResponseEntity.ok()
-                        .contentType(MediaType.parseMediaType(file.getContentType()))
-                        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + file.getOriginalFilename() + "\"")
-                        .body(resource);
+                return buildAttachmentResponse(file.getOriginalFilename(), file.getContentType(), file.getSize(), resource);
             } else {
                 return ResponseEntity.notFound().build();
             }
         } catch (Exception e) {
             return ResponseEntity.internalServerError().build();
         }
+    }
+
+    // 构建下载响应：统一设置 Content-Type/Disposition/Length 及安全相关响应头
+    private ResponseEntity<Resource> buildAttachmentResponse(String originalFilename, String contentType, Long size, Resource resource) {
+        String safeType = (contentType == null || contentType.isBlank()) ? "application/octet-stream" : contentType;
+        String asciiName = originalFilename == null ? "download" : originalFilename.replaceAll("[\\r\\n]", " ");
+        // RFC 5987/6266 文件名编码，兼容中文
+        String encoded = org.springframework.web.util.UriUtils.encode(asciiName, java.nio.charset.StandardCharsets.UTF_8);
+        String contentDisposition = String.format("attachment; filename=\"%s\"; filename*=UTF-8''%s", asciiName, encoded);
+
+        ResponseEntity.BodyBuilder builder = ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(safeType))
+                .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition)
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .header("X-Content-Type-Options", "nosniff");
+
+        if (size != null && size >= 0) {
+            builder = builder.contentLength(size);
+        }
+        return builder.body(resource);
     }
     
     @DeleteMapping("/{fileId}")

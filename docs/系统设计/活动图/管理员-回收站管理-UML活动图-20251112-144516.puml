@@ -1,0 +1,38 @@
+@startuml
+title 管理员 - 回收站管理 UML 活动图
+
+start
+:管理员打开“系统回收站”页面;
+:前端请求\nGET /api/files/admin/recycle/bin[?fromExec&toExec&scheduledOnly&keyword&reason];
+:后端根据条件查询\n(findAdminRecycleFiltered 或 findByDeletedTrueAndOwnerHiddenTrue...);
+:返回 200 [AdminFileDTO...];
+:前端渲染列表;
+
+if (点击“恢复到管理员网盘”?) then (是)
+  :前端提交\nPUT /api/files/admin/{fileId}/restore;
+  :根据 adminId 校验配额, 释放原属主配额(如需), 移动物理文件到管理员目录, 更新记录;
+  :返回 200 { quotaUsed, quotaLimit };
+endif
+
+if (点击“排期删除”?) then (是)
+  :前端提交\nPOST /api/files/admin/recycle/bin/{fileId}/schedule-delete\n{ reason };
+  :更新 adminDeleteScheduled, adminDeleteExecuteTime, adminDeleteReason;
+  :审计记录管理员排期删除;
+  :返回 200 { executeTime };
+endif
+
+if (点击“清理到期文件”?) then (是)
+  :前端提交\nPOST /api/files/admin/recycle/bin/purge-expired;
+  :检查系统设置 manualPurgeEnabled;
+  if (未启用?) then (是)
+    :返回 403 { message: 手动清理未启用 };
+  else (否)
+    :查找到期的排期删除记录并清理;
+    :返回 200 { message, count };
+  endif
+endif
+
+stop
+
+@enduml
+

@@ -1,0 +1,30 @@
+@startuml
+title 企业文件管理系统 - 缩略图获取（公开）时序图
+
+actor 用户 as User
+participant "浏览器/任意页面" as UI
+participant "Axios\nrequest.js" as Axios
+participant "文件控制器\nFileController" as FileCtrl
+participant "文件服务\nFileService" as FileSvc
+database "FileRepository\n(MySQL)" as DB
+
+User -> UI: 请求文件缩略图
+UI -> Axios: GET /api/files/thumbnail/{fileId}
+Axios -> FileCtrl: getThumbnail(fileId)
+note over FileCtrl
+路径在 SecurityConfig 中允许匿名访问
+end note
+FileCtrl -> FileSvc: getThumbnailPathPublic(fileId)
+FileSvc -> DB: findByIdAndDeletedFalse(fileId)
+alt 文件不存在
+  FileSvc --> FileCtrl: 抛出
+  FileCtrl --> Axios: 404/400
+  Axios --> UI: 显示默认图
+  return
+end
+FileSvc -> FS: 生成/读取缩略图
+FileCtrl --> Axios: 200 JPEG 二进制\nCache-Control: public, max-age=3600
+Axios --> UI: 渲染缩略图
+
+@enduml
+

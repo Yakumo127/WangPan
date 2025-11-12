@@ -1,0 +1,20 @@
+@startuml
+title 企业文件管理系统 - 缩略图获取 UML 活动图（公开）
+
+start
+:前端请求\nGET /api/files/thumbnail/{fileId};
+:后端查询\n(DB: findByIdAndDeletedFalse(fileId));
+if (文件存在?) then (是)
+  :查找/生成缩略图路径并读取;
+  if (资源可读?) then (是)
+    :返回 200 JPEG 二进制\nCache-Control: public, max-age=3600;
+  else (否)
+    :返回 404 Not Found;
+  endif
+else (否)
+  :返回 400/404 (文件不存在);
+endif
+stop
+
+@enduml
+

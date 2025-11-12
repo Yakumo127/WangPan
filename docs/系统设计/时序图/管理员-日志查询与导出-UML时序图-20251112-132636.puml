@@ -1,0 +1,36 @@
+@startuml
+title 管理员 - 日志查询与导出时序图
+
+actor 管理员 as Admin
+participant "浏览器/日志管理\n(admin/Logs.vue)" as UI
+participant "Axios\nrequest.js" as Axios
+participant "日志控制器\nAdminLogController" as LogCtrl
+participant "审计查询服务\nAuditLogQueryService" as QuerySvc
+database "UserLogRepository\n(MySQL)" as DB
+
+== 列表 ==
+Admin -> UI: 打开“日志管理”
+UI -> Axios: GET /api/admin/logs?page=&size=&actions=&resourceTypes=&status=&keyword=&reason=&from=&to=&sort=&order=
+Axios -> LogCtrl: list(...)
+LogCtrl -> QuerySvc: query(filters, page,size,sort)
+QuerySvc -> DB: 组合条件分页查询
+LogCtrl --> Axios: 200 Page<UserLogDTO>
+Axios --> UI: 渲染表格
+
+== 导出 ==
+Admin -> UI: 选择格式并导出
+UI -> Axios: GET /api/admin/logs/export?format=xlsx/csv&...&maxRows=
+Axios -> LogCtrl: export(...)
+LogCtrl -> QuerySvc: queryAllLimited(filters, limit, sort)
+QuerySvc -> DB: 查询限定条数
+alt format=xlsx
+  LogCtrl -> LogCtrl: 生成 SXSSF Excel
+  LogCtrl --> Axios: 200 xlsx 二进制
+else format=csv
+  LogCtrl -> LogCtrl: 生成 CSV（带 BOM）
+  LogCtrl --> Axios: 200 csv 文本
+end
+Axios --> UI: 触发下载
+
+@enduml
+

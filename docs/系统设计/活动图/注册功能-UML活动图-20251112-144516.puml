@@ -1,0 +1,26 @@
+@startuml
+title 企业文件管理系统 - 注册功能 UML 活动图
+
+start
+:前端输入用户名/邮箱/密码/确认密码;
+:前端提交\nPOST /api/auth/register\n{ username, email, password, confirmPassword };
+:后端校验两次密码一致;
+if (一致?) then (是)
+  :检查用户名/邮箱唯一性\n(DB: findByUsername/findByEmail);
+  if (已存在?) then (是)
+    :返回 400 { message: 用户名已存在/邮箱已被使用 };
+    stop
+  else (否)
+    :编码密码并初始化用户字段;
+    :保存用户记录\n(DB: save);
+    :返回 200 { message: 注册成功 };
+    :前端切换到登录模式;
+    stop
+  endif
+else (否)
+  :返回 400 { message: 两次密码不一致 };
+  stop
+endif
+
+@enduml
+

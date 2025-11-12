@@ -1,0 +1,40 @@
+@startuml
+title 安全鉴权与 JWT 过滤流程时序图
+
+actor 客户端 as Client
+participant "Axios\nrequest.js" as Axios
+participant "SecurityFilterChain\n(SecurityConfig)" as SecChain
+participant "JwtAuthenticationFilter" as JwtFilter
+participant "UserService" as UserSvc
+participant "Controller\n(示例: FileController)" as Ctrl
+
+== 受保护请求 ==
+Client -> Axios: 发起 API 调用 (非 /api/auth/** 等排除路径)
+Axios -> SecChain: HTTP 请求
+SecChain -> JwtFilter: 进入过滤器
+JwtFilter -> JwtFilter: 解析 Authorization: Bearer <token>
+alt 存在有效 JWT 且上下文未认证
+  JwtFilter -> UserSvc: loadUserByUsername(extractUsername(token))
+  UserSvc --> JwtFilter: UserDetails
+  JwtFilter -> JwtFilter: validateToken(token, userDetails)
+  alt 校验通过
+    JwtFilter -> SecChain: setAuthentication(SecurityContext)
+  else 校验失败
+    JwtFilter -> SecChain: 不设置认证（后续将被拒绝）
+  end
+else 无 JWT/无效格式
+  JwtFilter -> SecChain: 跳过设置认证
+end
+SecChain -> Ctrl: 进入控制器(若需鉴权且未认证将被拒绝)
+Ctrl --> Axios: 响应
+Axios --> Client: 处理 200/401/403 等
+
+note over SecChain
+SecurityConfig:
+- 允许：/api/auth/**, /api/files/thumbnail/**, /actuator/**
+- 管理员：/api/files/admin/**, /api/admin/** 需 ROLE_ADMIN
+- 其余：需认证 (JWT)
+end note
+
+@enduml
+

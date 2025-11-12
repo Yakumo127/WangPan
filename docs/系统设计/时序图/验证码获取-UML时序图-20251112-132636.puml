@@ -1,0 +1,25 @@
+@startuml
+title 企业文件管理系统 - 验证码获取（带 key）时序图
+
+actor 用户 as User
+participant "浏览器/登录页\n(Login.vue)" as UI
+participant "Axios\nrequest.js" as Axios
+participant "认证控制器\nAuthController" as AuthCtrl
+participant "验证码服务\nCaptchaService" as CaptchaSvc
+
+User -> UI: 点击“显示验证码/换一张”
+UI -> Axios: GET /api/auth/captcha/new
+Axios -> AuthCtrl: getCaptchaNew()
+AuthCtrl -> CaptchaSvc: generateCaptchaPair()
+CaptchaSvc --> AuthCtrl: { key, text }
+AuthCtrl -> CaptchaSvc: createCaptchaImage(text)
+AuthCtrl -> AuthCtrl: 将 PNG 编码为 Base64
+AuthCtrl --> Axios: 200 { key, imageBase64, expiresIn=300 }
+Axios --> UI: 显示验证码图片，保存 captchaKey
+
+note over AuthCtrl
+旧接口 /api/auth/captcha 返回 PNG 图片；\n推荐使用 /api/auth/captcha/new，返回 key + base64。
+end note
+
+@enduml
+

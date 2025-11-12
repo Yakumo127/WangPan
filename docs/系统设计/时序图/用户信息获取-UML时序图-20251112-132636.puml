@@ -1,0 +1,25 @@
+@startuml
+title 企业文件管理系统 - 用户信息获取时序图
+
+actor 用户 as User
+participant "浏览器/任意受保护页" as UI
+participant "Axios\nrequest.js" as Axios
+participant "认证控制器\nAuthController" as AuthCtrl
+participant "JWT 工具\nJwtUtils" as Jwt
+database "UserRepository\n(MySQL)" as DB
+
+User -> UI: 页面进入（需鉴权）
+UI -> Axios: GET /api/auth/userinfo\nAuthorization: Bearer <token>
+Axios -> AuthCtrl: getUserInfo(Authorization)
+AuthCtrl -> Jwt: extractUsername(token)
+AuthCtrl -> DB: findByUsername(username)
+DB --> AuthCtrl: User
+AuthCtrl --> Axios: 200 { id, username, email, displayName, role, authorities, isAdmin, quotaLimit, quotaUsed, createTime, lastLoginTime, ... }
+Axios --> UI: 渲染用户信息/权限
+
+note over Security
+SecurityConfig 放行 /api/auth/**，但接口内部仍通过 Authorization 解析用户。
+end note
+
+@enduml
+

@@ -1,0 +1,38 @@
+@startuml
+title 管理员 - 文件管理（列表/下载）时序图
+
+actor 管理员 as Admin
+participant "浏览器/管理-文件\n(admin/Files.vue)" as UI
+participant "Axios\nrequest.js" as Axios
+participant "文件控制器\nFileController" as FileCtrl
+participant "文件服务\nFileService" as FileSvc
+database "FileRepository\n(MySQL)" as DB
+
+== 列表（分页/筛选） ==
+Admin -> UI: 打开“文件管理”
+UI -> Axios: GET /api/files/admin/list?page=&size=&keyword=&status=
+Axios -> FileCtrl: adminListFiles(...)
+FileCtrl -> FileSvc: 根据 status/keyword 选择查询
+alt status=active
+  FileSvc -> DB: findByDeletedFalse(Pageable)
+else status=deleted
+  FileSvc -> DB: findByDeletedTrue(Pageable)
+else status=all
+  FileSvc -> DB: findByOriginalFilenameContaining("", Pageable)
+end
+FileCtrl -> FileCtrl: 映射为 AdminFileDTO
+FileCtrl --> Axios: 200 Page<AdminFileDTO>
+Axios --> UI: 渲染表格
+
+== 下载任意文件 ==
+Admin -> UI: 点击“下载”
+UI -> Axios: GET /api/files/admin/download/{fileId}\nAuthorization: Bearer <token>
+Axios -> FileCtrl: adminDownload(fileId)
+FileCtrl -> FileSvc: getFileByIdForAdmin(fileId)
+FileSvc -> DB: findByIdAndDeletedFalse
+FileCtrl -> FS: 读取物理文件
+FileCtrl --> Axios: 200 二进制流（带文件名/类型）
+Axios --> UI: 触发保存
+
+@enduml
+

@@ -1,0 +1,31 @@
+@startuml
+title 企业文件管理系统 - 个人资料更新时序图
+
+actor 用户 as User
+participant "浏览器/个人资料页\n(Profile.vue)" as UI
+participant "Axios\nrequest.js" as Axios
+participant "后端控制器\nAuthController" as AuthCtrl
+participant "用户服务\nUserService" as UserSvc
+database "UserRepository\n(MySQL)" as DB
+
+User -> UI: 编辑昵称/邮箱/头像URL
+UI -> Axios: PUT /api/auth/profile\nAuthorization: Bearer <token>\n{ displayName, email, avatarUrl }
+Axios -> AuthCtrl: PUT /auth/profile
+note over Axios
+请求拦截器自动附加 Authorization
+end note
+AuthCtrl -> Jwt: extractUsername(token)
+AuthCtrl -> DB: findByUsername(username)
+DB --> AuthCtrl: User
+AuthCtrl -> UserSvc: updateUserProfile(user with changes)
+UserSvc -> DB: 保存
+AuthCtrl --> Axios: 200 { message: 个人信息更新成功 }
+Axios --> UI: 显示成功
+UI -> Axios: GET /api/auth/userinfo 以刷新本地资料
+
+note over AuthCtrl
+接口：PUT /api/auth/profile
+end note
+
+@enduml
+

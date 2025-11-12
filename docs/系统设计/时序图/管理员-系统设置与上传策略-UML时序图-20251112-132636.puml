@@ -1,0 +1,52 @@
+@startuml
+title 管理员 - 系统设置与上传策略时序图
+
+actor 管理员 as Admin
+participant "浏览器/系统设置\n(admin/System.vue)" as UI
+participant "Axios\nrequest.js" as Axios
+participant "系统设置控制器\nAdminSystemController" as SysCtrl
+participant "系统设置服务\nSystemSettingService" as SysSetting
+participant "用户服务\nUserService" as UserSvc
+participant "审计日志服务\nAuditLogService" as Audit
+
+== 获取回收站设置 ==
+Admin -> UI: 打开“回收站设置”
+UI -> Axios: GET /api/admin/settings/recycle
+Axios -> SysCtrl: getRecycleSettings()
+SysCtrl -> SysSetting: isManualPurgeEnabled(), getRetentionDaysOrDefault(15)
+SysCtrl --> Axios: 200 { manualPurgeEnabled, retentionDays }
+
+== 更新回收站设置 ==
+Admin -> UI: 修改并保存
+UI -> Axios: PUT /api/admin/settings/recycle\n{ manualPurgeEnabled?, retentionDays? }
+Axios -> SysCtrl: updateRecycleSettings(body)
+SysCtrl -> SecurityContext: 获取 adminUsername
+SysCtrl -> UserSvc: getUserIdByUsername, getUserById
+opt 更新开关
+  SysCtrl -> SysSetting: setBoolean(KEY_RECYCLE_MANUAL_PURGE_ENABLED, enabled, admin)
+end
+opt 更新保留天数
+  SysCtrl -> SysSetting: setInt(KEY_RECYCLE_RETENTION_DAYS, days, desc, admin)
+  SysCtrl -> Audit: 记录变更
+end
+SysCtrl --> Axios: 200 { message, manualPurgeEnabled, retentionDays }
+
+== 获取上传策略 ==
+UI -> Axios: GET /api/admin/settings/upload-policy
+Axios -> SysCtrl: getUploadPolicy()
+SysCtrl -> SysSetting: isUploadAllowAll(), getAllowedSuffixes()
+SysCtrl --> Axios: 200 { allowAll, allowedSuffixes }
+
+== 更新上传策略 ==
+UI -> Axios: PUT /api/admin/settings/upload-policy\n{ allowAll, allowedSuffixes }
+Axios -> SysCtrl: updateUploadPolicy(body)
+SysCtrl -> SecurityContext: 获取 adminUsername
+SysCtrl -> UserSvc: getUserIdByUsername, getUserById
+SysCtrl -> SysSetting: setUploadAllowAll(allowAll, admin)
+opt 提供后缀列表
+  SysCtrl -> SysSetting: setAllowedSuffixes(list, admin)
+end
+SysCtrl -> Audit: 记录变更
+SysCtrl --> Axios: 200 { message, allowAll, allowedSuffixes }
+
+@enduml

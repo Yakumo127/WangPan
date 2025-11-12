@@ -1,0 +1,60 @@
+@startuml
+title 管理员 - 回收站管理时序图
+
+actor 管理员 as Admin
+participant "浏览器/系统回收站\n(admin/SystemRecycle.vue)" as UI
+participant "Axios\nrequest.js" as Axios
+participant "文件控制器\nFileController" as FileCtrl
+participant "文件服务\nFileService" as FileSvc
+participant "系统设置服务\nSystemSettingService" as SysSetting
+participant "审计日志服务\nAuditLogService" as Audit
+database "File/User Repository\n(MySQL)" as DB
+
+== 系统回收站列表（对用户隐藏的已删除文件） ==
+Admin -> UI: 打开“系统回收站”
+UI -> Axios: GET /api/files/admin/recycle/bin[?fromExec&toExec&scheduledOnly&keyword&reason]
+Axios -> FileCtrl: getAllRecycleBinFiles(...)
+alt 带筛选条件
+  FileCtrl -> FileSvc: getAllRecycleBinFiles(from,to,scheduledOnly,kw,reason)
+  FileSvc -> DB: findAdminRecycleFiltered(...)
+else 无筛选
+  FileCtrl -> FileSvc: getAllRecycleBinFiles()
+  FileSvc -> DB: findByDeletedTrueAndOwnerHiddenTrueOrderByDeleteTimeDesc()
+end
+FileCtrl --> Axios: 200 [AdminFileDTO...]
+
+== 恢复到管理员网盘 ==
+Admin -> UI: 点击“恢复”
+UI -> Axios: PUT /api/files/admin/{fileId}/restore
+Axios -> FileCtrl: adminRestoreFile(fileId)
+FileCtrl -> SecurityContext: 获取 adminId
+FileCtrl -> FileSvc: adminRestoreFile(fileId, adminId)
+FileSvc -> DB: 查找回收站文件、管理员、校验配额
+FileSvc -> FS: 移动物理文件到管理员目录、删除缩略图、更新记录并释放原属主配额（如需）
+FileCtrl --> Axios: 200 { quotaUsed, quotaLimit }
+
+== 排期删除（进入冷静期） ==
+Admin -> UI: 点击“排期删除”并填写理由
+UI -> Axios: POST /api/files/admin/recycle/bin/{fileId}/schedule-delete\n{ reason }
+Axios -> FileCtrl: adminScheduleDeleteFile(fileId, reason)
+FileCtrl -> FileSvc: adminScheduleDeleteFile(...)
+FileSvc -> DB: 更新 adminDeleteScheduled=true, adminDeleteExecuteTime, adminDeleteReason
+FileCtrl -> Audit: 记录管理员排期删除
+FileCtrl --> Axios: 200 { executeTime }
+
+== 手动清理到期文件 ==
+Admin -> UI: 点击“清理到期”
+UI -> Axios: POST /api/files/admin/recycle/bin/purge-expired
+Axios -> FileCtrl: adminPurgeExpired()
+FileCtrl -> SysSetting: isManualPurgeEnabled()
+alt 未启用
+  FileCtrl --> Axios: 403 { message: 手动清理未启用 }
+  Axios --> UI: 显示错误
+  return
+end
+FileCtrl -> FileSvc: purgeExpiredScheduledDeletions()
+FileSvc -> DB: findByAdminDeleteScheduledTrueAndAdminDeleteExecuteTimeBefore(now) 并批量隐藏/删除
+FileCtrl --> Axios: 200 { message, count }
+
+@enduml
+

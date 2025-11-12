@@ -1,0 +1,118 @@
+@startuml
+title 企业文件管理系统 - 登录功能时序图
+
+actor 用户 as User
+participant "浏览器/登录页\n(Login.vue)" as UI
+participant "Pinia\nAuthStore" as Store
+participant "Axios\nrequest.js" as Axios
+participant "后端控制器\nAuthController" as AuthCtrl
+participant "用户服务\nUserService" as UserSvc
+participant "Spring Security\nAuthenticationManager" as AuthMgr
+participant "验证码服务\nCaptchaService" as CaptchaSvc
+participant "JWT 工具\nJwtUtils" as Jwt
+database "UserRepository\n(MySQL)" as DB
+
+note over UI
+可选：用户点击“显示验证码”，前端请求新的验证码
+end note
+
+UI -> Axios: GET /api/auth/captcha/new
+Axios -> AuthCtrl: GET /api/auth/captcha/new
+AuthCtrl -> CaptchaSvc: generateCaptchaPair() / createCaptchaImage()
+CaptchaSvc --> AuthCtrl: { key, imageBase64 }
+AuthCtrl --> Axios: 200 { key, imageBase64, expiresIn }
+Axios --> UI: 显示验证码图片，保存 captchaKey
+
+User -> UI: 输入用户名/密码/(验证码)
+UI -> Store: handleLogin({ username, password, captcha?, captchaKey? })
+Store -> Axios: POST /api/auth/login
+note right of Axios
+请求体: JSON
+{ username, password, captcha?, captchaKey? }
+end note
+Axios -> AuthCtrl: POST /api/auth/login
+AuthCtrl -> UserSvc: login(dto)
+
+group 用户存在性与状态检查
+UserSvc -> DB: findByUsername(username)
+alt 用户不存在
+  UserSvc --> AuthCtrl: 抛出 “用户名或密码错误”
+  AuthCtrl --> Axios: 400 { message }
+  Axios --> UI: 显示错误
+  return
+end
+
+alt 用户被禁用/锁定
+  UserSvc --> AuthCtrl: 抛出 “用户已被禁用/锁定”
+  AuthCtrl --> Axios: 400 { message }
+  Axios --> UI: 显示错误
+  return
+end
+end
+
+group 验证码校验策略
+alt 连续失败 ≥ 3 次 -> 必填
+  UserSvc -> CaptchaSvc: validateCaptcha(key, code)
+  alt 验证码错误/过期/缺失
+    UserSvc --> AuthCtrl: 抛出 “验证码错误或已过期/请先输入验证码”
+    AuthCtrl --> Axios: 400 { message }
+    Axios --> UI: 显示错误并提示验证码
+    UI -> UI: 自动 refreshCaptcha()
+    return
+  end
+else 提供了验证码（可选校验）
+  UserSvc -> CaptchaSvc: validateCaptcha(key, code)
+end
+end
+
+group 密码认证
+alt 密码正确
+  UserSvc -> AuthMgr: authenticate(UsernamePasswordAuthenticationToken)
+  AuthMgr --> UserSvc: Authentication
+  UserSvc -> DB: 更新 loginAttempts=0, lastLoginTime=now
+  UserSvc -> Jwt: generateToken(UserDetails)
+  Jwt --> UserSvc: JWT
+  UserSvc --> AuthCtrl: token
+  AuthCtrl --> Axios: 200 { token, message }
+  Axios --> Store: res.token
+  Store -> Store: setToken(token) 持久化至 localStorage
+  Store -> Store: 等待 100ms 确保写入
+  Store -> Axios: GET /api/auth/userinfo\nAuthorization: Bearer <token>
+  Axios -> AuthCtrl: GET /api/auth/userinfo
+  AuthCtrl -> Jwt: extractUsername(token)
+  Jwt --> AuthCtrl: username
+  AuthCtrl -> DB: findByUsername(username)
+  DB --> AuthCtrl: User
+  AuthCtrl --> Axios: 200 { 用户信息, authorities, role... }
+  Axios --> Store: 保存 user / roles
+  Store --> UI: 通知登录成功
+  UI -> UI: 跳转 '/'
+else 密码错误
+  UserSvc -> DB: loginAttempts + 1（≥5 则 locked=true）
+  DB --> UserSvc: 保存
+  UserSvc --> AuthCtrl: 抛出 “用户名或密码错误/账户已被锁定...”
+  AuthCtrl --> Axios: 400 { message }
+  Axios --> UI: 显示错误\n若包含“验证码”，UI 调用 enableCaptcha() 并刷新
+end
+end
+
+== 拦截器与安全配置说明 ==
+note over Axios
+请求拦截器：若存在 token，则为所有请求添加\nAuthorization: Bearer <token>
+响应拦截器：401 时清理 token 并跳转 /login
+end note
+
+note over AuthCtrl
+SecurityConfig 允许 /api/auth/** 免鉴权；\n但 /auth/userinfo 仍需前端提供合法 JWT，\n控制器内通过 JwtUtils 解析用户名。
+end note
+
+note over Jwt
+JWT 过期时间: 24 小时 (application.yml: jwt.expiration=86400000)
+end note
+
+note over DB
+users 表核心字段：enabled, locked,\nlogin_attempts, last_login_time, role 等
+end note
+
+@enduml
+

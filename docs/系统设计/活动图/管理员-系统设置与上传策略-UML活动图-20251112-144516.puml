@@ -1,0 +1,31 @@
+@startuml
+title 管理员 - 系统设置与上传策略 UML 活动图
+
+start
+partition 回收站设置 {
+  :前端请求\nGET /api/admin/settings/recycle;
+  :返回 200 { manualPurgeEnabled, retentionDays };
+  if (管理员修改设置并保存?) then (是)
+    :前端提交\nPUT /api/admin/settings/recycle\n{ manualPurgeEnabled?, retentionDays? };
+    :鉴权并获取 adminId;
+    :更新 KEY_RECYCLE_MANUAL_PURGE_ENABLED / KEY_RECYCLE_RETENTION_DAYS;
+    :必要时审计日志记录;
+    :返回 200 { message, manualPurgeEnabled, retentionDays };
+  endif
+}
+
+partition 上传策略 {
+  :前端请求\nGET /api/admin/settings/upload-policy;
+  :返回 200 { allowAll, allowedSuffixes };
+  if (管理员修改后保存?) then (是)
+    :前端提交\nPUT /api/admin/settings/upload-policy\n{ allowAll, allowedSuffixes };
+    :鉴权并获取 adminId;
+    :setUploadAllowAll / setAllowedSuffixes;
+    :审计日志记录;
+    :返回 200 { message, allowAll, allowedSuffixes };
+  endif
+}
+stop
+
+@enduml
+

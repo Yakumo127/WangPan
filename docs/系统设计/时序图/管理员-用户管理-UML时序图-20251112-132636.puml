@@ -1,0 +1,78 @@
+@startuml
+title 管理员 - 用户管理时序图
+
+actor 管理员 as Admin
+participant "浏览器/用户管理\n(admin/Users.vue)" as UI
+participant "Axios\nrequest.js" as Axios
+participant "管理员控制器\nAdminController" as AdminCtrl
+participant "用户服务\nUserService" as UserSvc
+database "UserRepository\n(MySQL)" as DB
+
+== 列表/搜索 ==
+Admin -> UI: 打开“用户管理”或搜索
+UI -> Axios: GET /api/admin/users[?keyword]
+alt 无关键字
+  Axios -> AdminCtrl: getAllUsers()
+  AdminCtrl -> UserSvc: getAllUsers()
+  UserSvc -> DB: findAll()
+  AdminCtrl --> Axios: 200 [User...]
+else 有关键字
+  Axios -> AdminCtrl: searchUsers(keyword)
+  AdminCtrl -> UserSvc: searchUsers(keyword)
+  UserSvc -> DB: findByUsernameContainingOrEmailContaining
+  AdminCtrl --> Axios: 200 [User...]
+end
+
+== 创建 ==
+Admin -> UI: 新建用户
+UI -> Axios: POST /api/admin/users\n{ username,password,email,role,... }
+Axios -> AdminCtrl: createUser(user)
+AdminCtrl -> UserSvc: createUser(user)
+UserSvc -> UserSvc: 编码密码
+UserSvc -> DB: 保存
+AdminCtrl --> Axios: 200 { message }
+
+== 更新 ==
+UI -> Axios: PUT /api/admin/users/{id}\n{ ... }
+Axios -> AdminCtrl: updateUser(id, user)
+AdminCtrl -> UserSvc: updateUser(user)
+UserSvc -> DB: 保存
+AdminCtrl --> Axios: 200 { message }
+
+== 删除 ==
+UI -> Axios: DELETE /api/admin/users/{id}
+Axios -> AdminCtrl: deleteUser(id)
+AdminCtrl -> UserSvc: deleteUser(id)
+UserSvc -> DB: deleteById
+AdminCtrl --> Axios: 200 { message }
+
+== 导入 ==
+UI -> Axios: POST /api/admin/users/import (multipart: file)
+Axios -> AdminCtrl: importUsers(file)
+AdminCtrl -> UserSvc: importUsers(file)
+UserSvc -> UserSvc: 解析 Excel 并批量创建/跳过/更新
+AdminCtrl --> Axios: 200 { message: summary }
+
+== 导出 ==
+UI -> Axios: GET /api/admin/users/export (responseType=blob)
+Axios -> AdminCtrl: exportUsers()
+AdminCtrl -> UserSvc: exportUsersToExcel()
+AdminCtrl --> Axios: 200 xlsx 二进制
+
+== 下载导入模板 ==
+UI -> Axios: GET /api/admin/users/import/template (responseType=blob)
+Axios -> AdminCtrl: downloadUsersImportTemplate()
+AdminCtrl -> UserSvc: generateUsersImportTemplate()
+AdminCtrl --> Axios: 200 xlsx 二进制
+
+== 修改用户密码（管理员口令确认） ==
+Admin -> UI: 输入新密码与管理员口令
+UI -> Axios: PUT /api/admin/users/{id}/password\n{ newPassword, adminPassword }
+Axios -> AdminCtrl: changeUserPassword(id, body)
+AdminCtrl -> SecurityContext: 获取 adminUsername
+AdminCtrl -> UserSvc: changeUserPasswordWithAdminConfirm(targetId, newPwd, adminUsername, adminPassword)
+UserSvc -> DB: 验证管理员身份与口令、写入新密码
+AdminCtrl --> Axios: 200 { message }
+
+@enduml
+

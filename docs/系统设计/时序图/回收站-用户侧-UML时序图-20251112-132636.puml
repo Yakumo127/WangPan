@@ -1,0 +1,49 @@
+@startuml
+title 企业文件管理系统 - 回收站（用户侧）时序图
+
+actor 用户 as User
+participant "浏览器/回收站页\n(Recycle.vue)" as UI
+participant "Axios\nrequest.js" as Axios
+participant "文件控制器\nFileController" as FileCtrl
+participant "文件服务\nFileService" as FileSvc
+database "FileRepository\n(MySQL)" as DB
+
+== 列表 ==
+User -> UI: 打开回收站
+UI -> Axios: GET /api/files/recycle/bin
+Axios -> FileCtrl: getRecycleBinFiles()
+FileCtrl -> SecurityContext: 获取 userId
+FileCtrl -> FileSvc: getUserRecycleBinFiles(userId)
+FileSvc -> DB: findByUserIdAndDeletedTrueAndOwnerHiddenFalseOrderByDeleteTimeDesc
+FileCtrl --> Axios: 200 [File...]
+Axios --> UI: 渲染回收站文件
+
+== 恢复 ==
+User -> UI: 点击“恢复”
+UI -> Axios: PUT /api/files/{fileId}/restore
+Axios -> FileCtrl: restoreFile(fileId)
+FileCtrl -> SecurityContext: 获取 userId
+FileCtrl -> FileSvc: restoreFile(fileId, userId)
+FileSvc -> DB: 置 deleted=false, 清空 deleteTime
+FileCtrl --> Axios: 200 { quotaUsed, quotaLimit }
+
+== 彻底删除（对用户隐藏） ==
+User -> UI: 点击“彻底删除”
+UI -> Axios: DELETE /api/files/recycle/bin/{fileId}
+Axios -> FileCtrl: permanentDeleteFile(fileId)
+FileCtrl -> SecurityContext: 获取 userId
+FileCtrl -> FileSvc: permanentDeleteFile(fileId, userId)
+FileSvc -> DB: ownerHidden=true （保留系统回收站项）
+FileCtrl --> Axios: 200 { message }
+
+== 清空回收站 ==
+User -> UI: 点击“清空回收站”
+UI -> Axios: DELETE /api/files/recycle/bin/empty
+Axios -> FileCtrl: emptyRecycleBin()
+FileCtrl -> SecurityContext: 获取 userId
+FileCtrl -> FileSvc: emptyRecycleBin(userId)
+FileSvc -> DB: 批量 ownerHidden=true
+FileCtrl --> Axios: 200 { message }
+
+@enduml
+

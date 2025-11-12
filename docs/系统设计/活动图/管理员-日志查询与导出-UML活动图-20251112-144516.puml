@@ -1,0 +1,23 @@
+@startuml
+title 管理员 - 日志查询与导出 UML 活动图
+
+start
+:管理员打开“日志管理”页面;
+:前端请求\nGET /api/admin/logs?page=&size=&actions=&resourceTypes=&status=&keyword=&reason=&from=&to=&sort=&order=;
+:后端按过滤条件分页查询\n(AuditLogQueryService -> UserLogRepository);
+:返回 200 Page<UserLogDTO>;
+:前端渲染表格;
+
+if (管理员点击“导出”?) then (是)
+  :前端请求\nGET /api/admin/logs/export?format=xlsx/csv&...&maxRows=;
+  :后端查询限定条数 rows;
+  if (format = xlsx?) then (是)
+    :生成 Excel (SXSSF) 并返回 200;
+  else (否)
+    :生成 CSV (含 BOM) 并返回 200;
+  endif
+endif
+stop
+
+@enduml
+

@@ -1,0 +1,32 @@
+@startuml
+title 安全鉴权与 JWT 过滤 UML 活动图
+
+start
+:客户端发起请求;
+if (请求路径匹配排除列表?) then (是)
+  :跳过 JWT 过滤 (如 /api/auth/**, /api/files/thumbnail/**, /actuator/**);
+  :进入目标控制器;
+  stop
+else (否)
+  :读取 Authorization 头并解析 Bearer token;
+  if (存在且格式正确?) then (是)
+    :提取用户名并加载 UserDetails;
+    :校验 token (JwtUtils.validateToken);
+    if (校验通过?) then (是)
+      :在 SecurityContext 中设置已认证用户;
+      :进入目标控制器;
+      stop
+    else (否)
+      :不设置认证, 后续被鉴权规则拒绝;
+      :返回 401/403;
+      stop
+    endif
+  else (否)
+    :无 token/格式不正确, 不设置认证;
+    :根据安全规则拒绝或允许;
+    stop
+  endif
+endif
+
+@enduml
+

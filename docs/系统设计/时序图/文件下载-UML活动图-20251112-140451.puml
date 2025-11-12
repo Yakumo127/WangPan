@@ -1,0 +1,39 @@
+@startuml
+title 企业文件管理系统 - 文件下载 UML 活动图（管理员与用户）
+
+start
+:用户在前端点击“下载”;
+if (管理员入口?) then (是)
+  :前端请求\nGET /api/files/admin/download/{fileId}\nAuthorization: Bearer <token>;
+  :Spring Security 鉴权\n要求 ROLE_ADMIN;
+  :FileService.getFileByIdForAdmin(fileId)\n(DB: findByIdAndDeletedFalse);
+  if (文件记录存在且未删除?) then (是)
+    :基于记录的 filePath 构造 UrlResource\n(FileController 在磁盘读取);
+    if (资源可读?) then (是)
+      :返回 200 OK\nContent-Type: 文件类型\nContent-Disposition: attachment; filename;
+    else (否)
+      :返回 404 Not Found;
+    endif
+  else (否)
+    :返回 404/500 (文件不存在或已删除);
+  endif
+else (否)
+  :普通用户入口\nGET /api/files/download/{fileId}\nAuthorization: Bearer <token>;
+  :JWT 认证通过; 
+  :解析 userId;
+  :FileService.getFilePath(fileId, userId)\n(校验归属 & 未删除);
+  if (归属正确且未删除?) then (是)
+    :增加下载次数并保存\n(downloadCount+1);
+    :根据 filePath 构造 UrlResource 并读取;
+    if (资源可读?) then (是)
+      :返回 200 OK\nContent-Type/Disposition 设置;
+    else (否)
+      :返回 404 Not Found;
+    endif
+  else (否)
+    :返回 404/403 (不存在或无权限);
+  endif
+endif
+stop
+
+@enduml

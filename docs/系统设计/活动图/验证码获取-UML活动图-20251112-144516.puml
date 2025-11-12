@@ -1,0 +1,14 @@
+@startuml
+title 企业文件管理系统 - 验证码获取 UML 活动图
+
+start
+:用户点击“显示验证码/换一张”;
+:前端请求\nGET /api/auth/captcha/new;
+:后端生成验证码对\n(CaptchaService.generateCaptchaPair -> {key,text});
+:生成图片并编码为Base64\n(createCaptchaImage + Base64);
+:返回 200 { key, imageBase64, expiresIn };
+:前端展示验证码图片并保存 captchaKey;
+stop
+
+@enduml
+

@@ -1,0 +1,51 @@
+@startuml
+title 企业文件管理系统 - 文件上传时序图
+
+actor 用户 as User
+participant "浏览器/文件列表页\n(files/List.vue)" as UI
+participant "Axios\nrequest.js" as Axios
+participant "文件控制器\nFileController" as FileCtrl
+participant "文件服务\nFileService" as FileSvc
+participant "系统设置服务\nSystemSettingService" as SysSetting
+participant "用户服务\nUserService" as UserSvc
+database "FileRepository/FolderRepository/UserRepository\n(MySQL)" as DB
+
+User -> UI: 选择文件并点击上传
+UI -> Axios: POST /api/files/upload (multipart)\nAuthorization: Bearer <token>\nfile, folderId?
+Axios -> FileCtrl: uploadFile(file, folderId)
+FileCtrl -> SecurityContextHolder: 获取 username
+FileCtrl -> UserSvc: getUserIdByUsername
+
+group 策略与配额校验
+FileSvc -> SysSetting: isUploadAllowAll()
+alt allowAll=false
+  FileSvc -> SysSetting: getAllowedSuffixes()
+  alt 后缀不在白名单/未配置
+    FileSvc --> FileCtrl: 抛出错误
+    FileCtrl --> Axios: 400 { message }
+    Axios --> UI: 显示错误
+    return
+  end
+end
+FileSvc -> DB: 加载用户并校验剩余配额
+alt 配额不足
+  FileSvc --> FileCtrl: 抛出 “存储空间不足”
+  FileCtrl --> Axios: 400 { message }
+  Axios --> UI: 显示错误
+  return
+end
+end
+
+group 保存与记录
+FileSvc -> FS: 保存物理文件至 storagePath/user_<uid>
+FileSvc -> FileSvc: 计算文件哈希
+FileSvc -> DB: 读取目标文件夹(可选)
+FileSvc -> DB: 新建文件记录并保存
+FileSvc -> DB: 增加用户 quotaUsed
+end
+
+FileCtrl --> Axios: 200 { fileId, filename, size, uploadTime }
+Axios --> UI: 刷新列表并提示成功
+
+@enduml
+

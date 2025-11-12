@@ -1,0 +1,20 @@
+@startuml
+title 企业文件管理系统 - 用户信息获取 UML 活动图
+
+start
+:前端在受保护页面需要用户信息;
+:前端请求\nGET /api/auth/userinfo\nAuthorization: Bearer <token>;
+:后端解析用户名\n(JwtUtils.extractUsername);
+:查询用户\n(DB: findByUsername);
+if (存在?) then (是)
+  :构造用户信息载荷\n{id, username, email, displayName, role, authorities, isAdmin, quota...};
+  :返回 200 JSON;
+  :前端更新用户与角色状态;
+  stop
+else (否)
+  :返回 400 { message: 用户不存在 };
+  stop
+endif
+
+@enduml
+

@@ -1,0 +1,32 @@
+@startuml
+title 企业文件管理系统 - 回收站（用户侧）UML 活动图
+
+start
+:用户打开回收站;
+:前端请求\nGET /api/files/recycle/bin;
+:后端解析 userId 并查询\n(DB: findByUserIdAndDeletedTrueAndOwnerHiddenFalseOrderByDeleteTimeDesc);
+:返回 200 [File...];
+:前端渲染回收站列表;
+
+if (用户点击“恢复”?) then (是)
+  :前端提交\nPUT /api/files/{fileId}/restore;
+  :后端解析 userId, 恢复文件 (deleted=false, 清空 deleteTime);
+  :返回 200 { quotaUsed, quotaLimit };
+endif
+
+if (用户点击“彻底删除”?) then (是)
+  :前端提交\nDELETE /api/files/recycle/bin/{fileId};
+  :后端解析 userId, 标记 ownerHidden=true (系统回收站保留);
+  :返回 200 { message };
+endif
+
+if (用户点击“清空回收站”?) then (是)
+  :前端提交\nDELETE /api/files/recycle/bin/empty;
+  :后端解析 userId, 批量 ownerHidden=true;
+  :返回 200 { message };
+endif
+
+stop
+
+@enduml
+

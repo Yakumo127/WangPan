@@ -1,0 +1,20 @@
+@startuml
+title 企业文件管理系统 - 修改密码 UML 活动图
+
+start
+:用户在个人资料页输入当前密码与新密码;
+:前端提交\nPOST /api/auth/change-password\nAuthorization: Bearer <token>\n{ oldPassword, newPassword };
+:后端解析用户名\n(JwtUtils.extractUsername);
+:查询用户并校验旧密码;
+if (旧密码匹配?) then (是)
+  :编码新密码并保存;
+  :返回 200 { message: 密码修改成功 };
+  :前端提示并退出登录，跳转 /login;
+  stop
+else (否)
+  :返回 400 { message: 原密码错误 };
+  stop
+endif
+
+@enduml
+

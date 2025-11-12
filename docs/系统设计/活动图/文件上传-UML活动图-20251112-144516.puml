@@ -1,0 +1,30 @@
+@startuml
+title 企业文件管理系统 - 文件上传 UML 活动图
+
+start
+:用户在前端选择文件并点击上传;
+:前端提交\nPOST /api/files/upload (multipart)\nAuthorization: Bearer <token>\nfile, folderId?;
+:后端识别 userId (JWT);
+:检查上传策略\n(SystemSettingService: allowAll / allowedSuffixes);
+if (不允许的后缀或未配置?) then (是)
+  :返回 400 { message: 不允许上传该类型/未配置 };
+  stop
+else (否)
+  :检查用户存储配额 (hasEnoughQuota);
+  if (空间不足?) then (是)
+    :返回 400 { message: 存储空间不足 };
+    stop
+  else (否)
+    :确保存储目录存在 (user_<id>);
+    :保存物理文件到磁盘;
+    :计算文件哈希;
+    :查找目标文件夹(可选)并创建文件记录;
+    :增加用户 quotaUsed 并保存;
+    :返回 200 { fileId, filename, size, uploadTime };
+    :前端刷新文件列表并提示成功;
+    stop
+  endif
+endif
+
+@enduml
+
