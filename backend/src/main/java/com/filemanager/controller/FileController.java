@@ -28,6 +28,13 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.nio.file.Files;
+import java.nio.channels.FileChannel;
+import java.nio.channels.WritableByteChannel;
+import java.nio.channels.Channels;
+import java.nio.file.StandardOpenOption;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 
@@ -243,7 +250,7 @@ public class FileController {
             if (contentType == null || contentType.isBlank()) contentType = "application/octet-stream";
 
             long lastModified = java.nio.file.Files.getLastModifiedTime(filePath).toMillis();
-            String asciiName = file.getOriginalFilename() == null ? "download" : file.getOriginalFilename().replaceAll("[\\r\\n]", " ");
+            String asciiName = sanitizeAsciiFilename(file.getOriginalFilename());
             String encoded = org.springframework.web.util.UriUtils.encode(asciiName, java.nio.charset.StandardCharsets.UTF_8);
             String disposition = String.format("attachment; filename=\"%s\"; filename*=UTF-8''%s", asciiName, encoded);
 
@@ -256,10 +263,12 @@ public class FileController {
             String ifRange = request.getHeader("If-Range");
             boolean serveFullForIfRange = false;
             if (rangeHeader != null && ifRange != null && !ifRange.isBlank()) {
-                // 简单比较 ETag；若 If-Range 是日期且不等同于 lastModified，也回退全量
-                if (!(ifRange.equals(eTag) || parseHttpDate(ifRange) >= 0 && parseHttpDate(ifRange) >= lastModified)) {
-                    serveFullForIfRange = true;
-                }
+                String normalizedIfRangeEtag = normalizeEtag(ifRange);
+                String normalizedRespEtag = normalizeEtag(eTag);
+                long ifRangeTime = parseRfc1123Millis(ifRange);
+                boolean match = (normalizedIfRangeEtag != null && normalizedIfRangeEtag.equals(normalizedRespEtag))
+                        || (ifRangeTime >= 0 && ifRangeTime >= lastModified);
+                if (!match) serveFullForIfRange = true;
             }
 
             // 条件请求：If-None-Match / If-Modified-Since
@@ -299,21 +308,15 @@ public class FileController {
                         final long copyStart = start;
                         final long copyLen = rangeLen;
                         StreamingResponseBody body = outputStream -> {
-                            try (java.io.InputStream is = java.nio.file.Files.newInputStream(filePath)) {
-                                long skipped = 0L;
-                                while (skipped < copyStart) {
-                                    long s = is.skip(copyStart - skipped);
-                                    if (s <= 0) break;
-                                    skipped += s;
-                                }
-                                byte[] buffer = new byte[8192];
+                            try (FileChannel fc = FileChannel.open(filePath, StandardOpenOption.READ);
+                                 WritableByteChannel out = Channels.newChannel(outputStream)) {
+                                long pos = copyStart;
                                 long remaining = copyLen;
                                 while (remaining > 0) {
-                                    int toRead = (int) Math.min(buffer.length, remaining);
-                                    int read = is.read(buffer, 0, toRead);
-                                    if (read == -1) break;
-                                    outputStream.write(buffer, 0, read);
-                                    remaining -= read;
+                                    long transferred = fc.transferTo(pos, remaining, out);
+                                    if (transferred <= 0) break;
+                                    pos += transferred;
+                                    remaining -= transferred;
                                 }
                             }
                         };
@@ -336,11 +339,15 @@ public class FileController {
 
             // 全量下载
             StreamingResponseBody body = outputStream -> {
-                try (java.io.InputStream is = java.nio.file.Files.newInputStream(filePath)) {
-                    byte[] buffer = new byte[8192];
-                    int read;
-                    while ((read = is.read(buffer)) != -1) {
-                        outputStream.write(buffer, 0, read);
+                try (FileChannel fc = FileChannel.open(filePath, StandardOpenOption.READ);
+                     WritableByteChannel out = Channels.newChannel(outputStream)) {
+                    long pos = 0L;
+                    long remaining = total;
+                    while (remaining > 0) {
+                        long transferred = fc.transferTo(pos, remaining, out);
+                        if (transferred <= 0) break;
+                        pos += transferred;
+                        remaining -= transferred;
                     }
                 }
             };
@@ -373,7 +380,7 @@ public class FileController {
                     : file.getContentType();
             if (contentType == null || contentType.isBlank()) contentType = "application/octet-stream";
             long lastModified = java.nio.file.Files.getLastModifiedTime(filePath).toMillis();
-            String asciiName = file.getOriginalFilename() == null ? "download" : file.getOriginalFilename().replaceAll("[\\r\\n]", " ");
+            String asciiName = sanitizeAsciiFilename(file.getOriginalFilename());
             String encoded = org.springframework.web.util.UriUtils.encode(asciiName, java.nio.charset.StandardCharsets.UTF_8);
             String disposition = String.format("attachment; filename=\"%s\"; filename*=UTF-8''%s", asciiName, encoded);
             String eTag = (file.getFileHash() != null && !file.getFileHash().isBlank())
@@ -412,13 +419,37 @@ public class FileController {
         }
     }
 
-    private long parseHttpDate(String value) {
+    private long parseRfc1123Millis(String value) {
         try {
-            java.util.Date d = org.springframework.http.HttpHeaders.parseDate(value);
-            return d.getTime();
+            java.time.ZonedDateTime zdt = java.time.ZonedDateTime.parse(value, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME);
+            return zdt.toInstant().toEpochMilli();
         } catch (Exception e) {
             return -1L;
         }
+    }
+
+    private String normalizeEtag(String etag) {
+        if (etag == null) return null;
+        String s = etag.trim();
+        if (s.startsWith("W/")) s = s.substring(2);
+        if (s.startsWith("\"") && s.endsWith("\"")) {
+            s = s.substring(1, s.length() - 1);
+        }
+        return s;
+    }
+
+    private String sanitizeAsciiFilename(String name) {
+        String fallback = "download";
+        if (name == null || name.isBlank()) return fallback;
+        String s = name.replaceAll("[\\r\\n]", " ");
+        s = s.replace('"', '_').replace(';', '_').replace('\\', '_');
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c >= 32 && c < 127) sb.append(c); else sb.append('_');
+        }
+        String result = sb.toString().trim();
+        return result.isEmpty() ? fallback : result;
     }
     
     @DeleteMapping("/{fileId}")
