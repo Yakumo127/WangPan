@@ -180,11 +180,14 @@ public class FileController {
             String username = auth.getName();
             Long userId = userService.getUserIdByUsername(username);
 
-            Path filePath = fileService.getFilePath(fileId, userId);
+            // 严格判断 403/404
+            File file = fileService.getFileForDownload(fileId, userId);
+            Path filePath = Path.of(file.getFilePath());
             Resource resource = new UrlResource(filePath.toUri());
 
             if (resource.exists() && resource.isReadable()) {
-                File file = fileService.getFile(fileId, userId);
+                // 计数
+                try { fileService.incrementDownloadCount(file.getId()); } catch (Exception ignore) {}
                 return buildDownloadResponse(request, file, filePath);
             } else {
                 return ResponseEntity.notFound().build();
@@ -201,7 +204,7 @@ public class FileController {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             String username = auth.getName();
             Long userId = userService.getUserIdByUsername(username);
-            File file = fileService.getFile(fileId, userId);
+            File file = fileService.getFileForDownload(fileId, userId);
             Path filePath = Path.of(file.getFilePath());
             return buildHeadResponseConditional(request, file, filePath);
         } catch (Exception e) {

@@ -137,6 +137,20 @@ public class FileService {
         return fileRepository.findByIdAndUserIdAndDeletedFalse(fileId, userId)
                 .orElseThrow(() -> new RuntimeException("文件不存在"));
     }
+
+    // 下载专用：区分 404 与 403
+    public File getFileForDownload(Long fileId, Long userId) {
+        java.util.Optional<File> opt = fileRepository.findByIdAndDeletedFalse(fileId);
+        if (opt.isEmpty()) {
+            throw new com.filemanager.exception.NotFoundException("文件不存在");
+        }
+        File file = opt.get();
+        Long ownerId = (file.getUser() != null ? file.getUser().getId() : null);
+        if (ownerId == null || !ownerId.equals(userId)) {
+            throw new com.filemanager.exception.ForbiddenException("无权限访问该文件");
+        }
+        return file;
+    }
     
     public List<File> getUserFiles(Long userId, Long folderId) {
         if (folderId == null) {
