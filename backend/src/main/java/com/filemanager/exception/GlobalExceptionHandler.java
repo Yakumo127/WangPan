@@ -10,27 +10,37 @@ import java.util.Map;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    private final com.filemanager.metrics.DownloadMetrics downloadMetrics;
+
+    public GlobalExceptionHandler(@org.springframework.beans.factory.annotation.Autowired(required = false)
+                                  com.filemanager.metrics.DownloadMetrics downloadMetrics) {
+        this.downloadMetrics = downloadMetrics;
+    }
+
     @ExceptionHandler(NotFoundException.class)
     public ResponseEntity<Map<String, String>> handleNotFound(NotFoundException ex) {
+        if (downloadMetrics != null) downloadMetrics.incError();
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(Map.of("message", ex.getMessage() == null ? "资源不存在" : ex.getMessage()));
     }
 
     @ExceptionHandler(ForbiddenException.class)
     public ResponseEntity<Map<String, String>> handleForbidden(ForbiddenException ex) {
+        if (downloadMetrics != null) downloadMetrics.incError();
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(Map.of("message", ex.getMessage() == null ? "没有权限" : ex.getMessage()));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, String>> handleBadRequest(IllegalArgumentException ex) {
+        if (downloadMetrics != null) downloadMetrics.incError();
         return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
     }
 
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Map<String, String>> handleRuntime(RuntimeException ex) {
+        if (downloadMetrics != null) downloadMetrics.incError();
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(Map.of("message", ex.getMessage() == null ? "服务器错误" : ex.getMessage()));
     }
 }
-

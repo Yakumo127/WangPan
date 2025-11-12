@@ -48,6 +48,7 @@ public class FileController {
     private final UserService userService;
     private final SystemSettingService systemSettingService;
     private final AuditLogService auditLogService;
+    private final com.filemanager.metrics.DownloadMetrics downloadMetrics;
     
     @PostMapping("/upload")
     public ResponseEntity<Map<String, Object>> uploadFile(
@@ -221,6 +222,8 @@ public class FileController {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
             }
             long total = java.nio.file.Files.size(filePath);
+            // 计数：请求总数
+            downloadMetrics.incRequest();
             String contentType = (file.getContentType() == null || file.getContentType().isBlank())
                     ? java.nio.file.Files.probeContentType(filePath)
                     : file.getContentType();
@@ -298,6 +301,8 @@ public class FileController {
                                     }
                                 }
                             };
+                            // 计数：分段下载字节
+                            downloadMetrics.incPartial(rangeLen);
                             return ResponseEntity.status(HttpStatus.PARTIAL_CONTENT)
                                     .contentType(MediaType.parseMediaType(contentType))
                                     .header(HttpHeaders.CONTENT_DISPOSITION, disposition)
@@ -311,6 +316,14 @@ public class FileController {
                                     .body(body);
                         } else {
                             // 多区间：multipart/byteranges
+                            long bytesSum = 0L;
+                            for (org.springframework.http.HttpRange r : ranges) {
+                                long s = r.getRangeStart(total);
+                                long e = r.getRangeEnd(total);
+                                if (s >= total || e >= total || s > e) continue;
+                                bytesSum += (e - s + 1);
+                            }
+                            downloadMetrics.incPartial(bytesSum);
                             final String boundary = "MULTIPART_BYTERANGES_" + java.util.UUID.randomUUID();
                             StreamingResponseBody body = outputStream -> {
                                 try (FileChannel fc = FileChannel.open(filePath, StandardOpenOption.READ)) {
@@ -368,6 +381,9 @@ public class FileController {
                     }
                 }
             };
+            // 计数：全量下载字节
+            downloadMetrics.incFull(total);
+            downloadMetrics.incHead();
             return ResponseEntity.ok()
                     .contentType(MediaType.parseMediaType(contentType))
                     .header(HttpHeaders.CONTENT_DISPOSITION, disposition)
@@ -408,6 +424,7 @@ public class FileController {
             String ifNoneMatch = request.getHeader("If-None-Match");
             long ifModifiedSince = request.getDateHeader("If-Modified-Since");
             if (ifNoneMatch != null && ifNoneMatch.contains(eTag)) {
+                downloadMetrics.incNotModified();
                 return ResponseEntity.status(HttpStatus.NOT_MODIFIED)
                         .eTag(eTag)
                         .lastModified(lastModified)
@@ -415,6 +432,7 @@ public class FileController {
                         .build();
             }
             if (ifModifiedSince != -1 && lastModified / 1000 <= ifModifiedSince / 1000) {
+                downloadMetrics.incNotModified();
                 return ResponseEntity.status(HttpStatus.NOT_MODIFIED)
                         .eTag(eTag)
                         .lastModified(lastModified)
