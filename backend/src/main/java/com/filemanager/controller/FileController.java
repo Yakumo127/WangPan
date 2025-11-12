@@ -130,39 +130,32 @@ public class FileController {
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<?> adminDownload(@PathVariable Long fileId, javax.servlet.http.HttpServletRequest request) {
         long start = System.currentTimeMillis();
-        try {
-            com.filemanager.entity.File file = fileService.getFileByIdForAdmin(fileId);
-            Path filePath = Path.of(file.getFilePath());
-            Resource resource = new UrlResource(filePath.toUri());
-            if (!resource.exists() || !resource.isReadable()) {
-                return ResponseEntity.notFound().build();
-            }
-
-            // 记录审计日志（管理员下载）
-            try {
-                Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-                String adminUsername = auth != null ? auth.getName() : null;
-                if (adminUsername != null) {
-                    Long adminId = userService.getUserIdByUsername(adminUsername);
-                    auditLogService.logSuccess(
-                            adminId,
-                            com.filemanager.entity.UserLog.ACTION_DOWNLOAD,
-                            com.filemanager.entity.UserLog.RESOURCE_FILE,
-                            file.getId(),
-                            file.getOriginalFilename(),
-                            "管理员下载文件：" + file.getOriginalFilename(),
-                            System.currentTimeMillis() - start
-                    );
-                }
-            } catch (Exception ignore) {}
-
-            // 计数口径一致
-            try { fileService.incrementDownloadCount(file.getId()); } catch (Exception ignore) {}
-
-            return buildDownloadResponse(request, file, filePath);
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().build();
+        com.filemanager.entity.File file = fileService.getFileByIdForAdmin(fileId);
+        Path filePath = Path.of(file.getFilePath());
+        if (!java.nio.file.Files.exists(filePath) || !java.nio.file.Files.isReadable(filePath)) {
+            throw new com.filemanager.exception.NotFoundException("文件不存在");
         }
+
+        // 记录审计日志（管理员下载）
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            String adminUsername = auth != null ? auth.getName() : null;
+            if (adminUsername != null) {
+                Long adminId = userService.getUserIdByUsername(adminUsername);
+                auditLogService.logSuccess(
+                        adminId,
+                        com.filemanager.entity.UserLog.ACTION_DOWNLOAD,
+                        com.filemanager.entity.UserLog.RESOURCE_FILE,
+                        file.getId(),
+                        file.getOriginalFilename(),
+                        "管理员下载文件：" + file.getOriginalFilename(),
+                        System.currentTimeMillis() - start
+                );
+            }
+        } catch (Exception ignore) {}
+
+        try { fileService.incrementDownloadCount(file.getId()); } catch (Exception ignore) {}
+        return buildDownloadResponse(request, file, filePath);
     }
     
     @GetMapping("/list")
@@ -182,54 +175,38 @@ public class FileController {
     
     @GetMapping("/download/{fileId}")
     public ResponseEntity<?> downloadFile(@PathVariable Long fileId, javax.servlet.http.HttpServletRequest request) {
-        try {
-            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-            String username = auth.getName();
-            Long userId = userService.getUserIdByUsername(username);
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String username = auth.getName();
+        Long userId = userService.getUserIdByUsername(username);
 
-            // 严格判断 403/404
-            File file = fileService.getFileForDownload(fileId, userId);
-            Path filePath = Path.of(file.getFilePath());
-            Resource resource = new UrlResource(filePath.toUri());
-
-            if (resource.exists() && resource.isReadable()) {
-                // 计数
-                try { fileService.incrementDownloadCount(file.getId()); } catch (Exception ignore) {}
-                return buildDownloadResponse(request, file, filePath);
-            } else {
-                return ResponseEntity.notFound().build();
-            }
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().build();
+        // 严格判断 403/404
+        File file = fileService.getFileForDownload(fileId, userId);
+        Path filePath = Path.of(file.getFilePath());
+        if (!java.nio.file.Files.exists(filePath) || !java.nio.file.Files.isReadable(filePath)) {
+            throw new com.filemanager.exception.NotFoundException("文件不存在");
         }
+        try { fileService.incrementDownloadCount(file.getId()); } catch (Exception ignore) {}
+        return buildDownloadResponse(request, file, filePath);
     }
 
     // HEAD: 用户下载
     @RequestMapping(value = "/download/{fileId}", method = RequestMethod.HEAD)
     public ResponseEntity<?> headDownload(@PathVariable Long fileId, javax.servlet.http.HttpServletRequest request) {
-        try {
-            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-            String username = auth.getName();
-            Long userId = userService.getUserIdByUsername(username);
-            File file = fileService.getFileForDownload(fileId, userId);
-            Path filePath = Path.of(file.getFilePath());
-            return buildHeadResponseConditional(request, file, filePath);
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().build();
-        }
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String username = auth.getName();
+        Long userId = userService.getUserIdByUsername(username);
+        File file = fileService.getFileForDownload(fileId, userId);
+        Path filePath = Path.of(file.getFilePath());
+        return buildHeadResponseConditional(request, file, filePath);
     }
 
     // HEAD: 管理员下载
     @RequestMapping(value = "/admin/download/{fileId}", method = RequestMethod.HEAD)
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<?> headAdminDownload(@PathVariable Long fileId, javax.servlet.http.HttpServletRequest request) {
-        try {
-            com.filemanager.entity.File file = fileService.getFileByIdForAdmin(fileId);
-            Path filePath = Path.of(file.getFilePath());
-            return buildHeadResponseConditional(request, file, filePath);
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().build();
-        }
+        com.filemanager.entity.File file = fileService.getFileByIdForAdmin(fileId);
+        Path filePath = Path.of(file.getFilePath());
+        return buildHeadResponseConditional(request, file, filePath);
     }
 
     // 构建下载响应：统一设置 Content-Type/Disposition/Length 及安全相关响应头

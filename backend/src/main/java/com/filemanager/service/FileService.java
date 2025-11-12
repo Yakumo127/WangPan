@@ -281,7 +281,7 @@ public class FileService {
 
     public File getFileByIdForAdmin(Long fileId) {
         return fileRepository.findByIdAndDeletedFalse(fileId)
-                .orElseThrow(() -> new RuntimeException("文件不存在"));
+                .orElseThrow(() -> new com.filemanager.exception.NotFoundException("文件不存在"));
     }
     
     // 回收站相关方法
