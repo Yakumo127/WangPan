@@ -376,13 +376,13 @@ public class FileService {
         return execTime;
     }
     
-    // 保留旧实现但不再对外暴露接口（危险操作）。
-    public void adminEmptyAllRecycleBin() {
-        List<File> files = fileRepository.findByDeletedTrue();
-        for (File file : files) {
-            adminScheduleDeleteFile(file.getId(), "批量清空");
-        }
-    }
+    // 注释：清空系统回收站（批量排期删除）旧实现，后端未对外开放对应路由，暂不使用。
+    // public void adminEmptyAllRecycleBin() {
+    //     List<File> files = fileRepository.findByDeletedTrue();
+    //     for (File file : files) {
+    //         adminScheduleDeleteFile(file.getId(), "批量清空");
+    //     }
+    // }
 
     // 用户回收站：彻底删除（移入系统回收站 + 释放配额，不物理删除）
     public void permanentDeleteFile(Long fileId, Long userId) {

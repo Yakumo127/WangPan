@@ -145,9 +145,10 @@ export function adminScheduleDeleteFile(id, reason) {
   })
 }
 
-export function adminEmptyAllRecycleBin() {
-  return request({
-    url: "/files/admin/recycle/bin/empty",
-    method: "delete"
-  })
-}
+// 注释：后端未开放该路由，前端暂不提供此API。
+// export function adminEmptyAllRecycleBin() {
+//   return request({
+//     url: "/files/admin/recycle/bin/empty",
+//     method: "delete"
+//   })
+// }
