@@ -56,6 +56,7 @@
                   </el-select>
                   <el-button size="small" type="primary" :disabled="!selectedTemplate" @click="applyTemplate">应用模板</el-button>
                   <span v-if="templatePreview" style="color:#666;">{{ templatePreview }}</span>
+                  <el-button size="small" @click="openTemplateDialog">模板配置</el-button>
                 </div>
                 <div class="quick-check" style="display:flex; align-items:center; gap:8px;">
                   <span class="qc-label" style="color:#666;">文件名快速校验：</span>
@@ -125,14 +126,52 @@
                 <div>差异：</div>
                 <ul style="margin:4px 0 0 16px; line-height:1.6;">
                   <li v-if="importDiff.allowAllChanged">allowAll：{{ importDiff.allowAllFrom ? '开' : '关' }} → {{ importDiff.allowAllTo ? '开' : '关' }}</li>
-                  <li>新增后缀：{{ (importDiff.added||[]).length }} 个</li>
-                  <li>移除后缀：{{ (importDiff.removed||[]).length }} 个</li>
+                  <li>
+                    新增后缀：{{ (importDiff.added||[]).length }} 个
+                    <template v-if="(importDiff.added||[]).length">
+                      <a href="javascript:void(0)" @click="showImportDiffDetails = !showImportDiffDetails" style="margin-left:8px;">{{ showImportDiffDetails ? '收起' : '查看详情' }}</a>
+                    </template>
+                  </li>
+                  <li>
+                    移除后缀：{{ (importDiff.removed||[]).length }} 个
+                  </li>
                 </ul>
+                <div v-if="showImportDiffDetails" style="margin:6px 0 0 16px; display:flex; gap:24px;">
+                  <div>
+                    <div style="font-weight:600;">新增后缀：</div>
+                    <ul style="margin:4px 0 0 16px; max-height:120px; overflow:auto;">
+                      <li v-for="s in importDiff.added" :key="'add-'+s">{{ s }}</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <div style="font-weight:600;">移除后缀：</div>
+                    <ul style="margin:4px 0 0 16px; max-height:120px; overflow:auto;">
+                      <li v-for="s in importDiff.removed" :key="'rm-'+s">{{ s }}</li>
+                    </ul>
+                  </div>
+                </div>
               </div>
             </div>
             <template #footer>
               <el-button @click="showImportDialog = false">取消</el-button>
               <el-button type="primary" :loading="importing" @click="confirmImport">确定导入</el-button>
+            </template>
+          </el-dialog>
+
+          <!-- 模板配置对话框 -->
+          <el-dialog v-model="showTemplateDialog" title="上传策略模板配置（JSON）" width="720px">
+            <div style="display:flex; flex-direction:column; gap:10px;">
+              <el-alert title="编辑模板集合（键为模板名，值为 { allowAll, allowedSuffixes }）。保存后可在模板选择中使用。" type="info" show-icon />
+              <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <el-button size="small" @click="exportTemplates">导出模板JSON</el-button>
+                <el-button size="small" type="warning" @click="resetTemplatesToDefault">恢复默认模板</el-button>
+              </div>
+              <el-input v-model="templatesJson" type="textarea" :rows="16" placeholder='{"imageOnly":{"allowAll":false,"allowedSuffixes":["jpg","png"]}}' />
+              <div v-if="templatesPreview" style="color:#666;">预览：{{ templatesPreview }}</div>
+            </div>
+            <template #footer>
+              <el-button @click="showTemplateDialog = false">取消</el-button>
+              <el-button type="primary" :loading="savingTemplates" @click="saveTemplatesFromJson">保存模板</el-button>
             </template>
           </el-dialog>
         </el-card>
@@ -403,6 +442,10 @@ export default {
     const importText = ref("")
     const importing = ref(false)
     const selectedTemplate = ref("")
+    const showImportDiffDetails = ref(false)
+    const showTemplateDialog = ref(false)
+    const templatesJson = ref("")
+    const savingTemplates = ref(false)
     
     const recycleStats = ref({
       totalItems: 0,
@@ -893,24 +936,20 @@ export default {
       } catch { return null }
     })
 
-    const templateOptions = [
-      { value: 'allowAll', label: '全允许（不限制）' },
-      { value: 'imageOnly', label: '仅图片' },
-      { value: 'office', label: '办公文档' },
-      { value: 'common', label: '常用（图片+文档+压缩）' },
-      { value: 'media', label: '图片+音视频' }
-    ]
-    const templates = {
+    const defaultTemplates = {
       allowAll: { allowAll: true, allowedSuffixes: [] },
       imageOnly: { allowAll: false, allowedSuffixes: ['jpg','jpeg','png','gif','webp','bmp','svg'] },
       office: { allowAll: false, allowedSuffixes: ['pdf','doc','docx','xls','xlsx','ppt','pptx','txt','md'] },
       common: { allowAll: false, allowedSuffixes: ['jpg','jpeg','png','gif','webp','pdf','doc','docx','xls','xlsx','ppt','pptx','txt','zip','rar','7z'] },
       media: { allowAll: false, allowedSuffixes: ['jpg','jpeg','png','gif','webp','mp4','webm','mp3','wav'] }
     }
+    const TEMPLATES_KEY = 'upload_policy_templates'
+    const templatesMap = ref({ ...defaultTemplates })
+    const templateOptions = computed(() => Object.keys(templatesMap.value).map(k => ({ value: k, label: k })))
     const templatePreview = computed(() => {
       const key = selectedTemplate.value
-      if (!key || !templates[key]) return ''
-      const diff = getPolicyDiff(uploadPolicy.value, templates[key])
+      if (!key || !templatesMap.value[key]) return ''
+      const diff = getPolicyDiff(uploadPolicy.value, templatesMap.value[key])
       const parts = []
       if (diff.allowAllChanged) parts.push(`allowAll: ${diff.allowAllFrom ? '开' : '关'} → ${diff.allowAllTo ? '开' : '关'}`)
       if (diff.added.length) parts.push(`将新增 ${diff.added.length}`)
@@ -919,12 +958,64 @@ export default {
     })
     const applyTemplate = async () => {
       const key = selectedTemplate.value
-      const t = templates[key]
+      const t = templatesMap.value[key]
       if (!t) return
       uploadPolicy.value.allowAll = !!t.allowAll
       uploadPolicy.value.allowedSuffixes = normalizeSuffixes(t.allowedSuffixes || [])
       await saveUploadPolicy()
       ElMessage.success('模板已应用并保存')
+    }
+
+    // 模板配置：打开、导出、恢复默认、保存
+    const openTemplateDialog = () => {
+      try {
+        templatesJson.value = JSON.stringify(templatesMap.value, null, 2)
+      } catch { templatesJson.value = '' }
+      showTemplateDialog.value = true
+    }
+    const exportTemplates = () => {
+      try {
+        const blob = new Blob([JSON.stringify(templatesMap.value, null, 2)], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `upload-policy-templates-${new Date().toISOString().replace(/[:.]/g,'-')}.json`
+        a.click()
+        URL.revokeObjectURL(url)
+      } catch { ElMessage.error('导出模板失败') }
+    }
+    const resetTemplatesToDefault = () => {
+      templatesMap.value = { ...defaultTemplates }
+      try { localStorage.setItem(TEMPLATES_KEY, JSON.stringify(templatesMap.value)) } catch {}
+      templatesJson.value = JSON.stringify(templatesMap.value, null, 2)
+      ElMessage.success('已恢复默认模板')
+    }
+    const saveTemplatesFromJson = () => {
+      try {
+        savingTemplates.value = true
+        const obj = JSON.parse(templatesJson.value || '{}')
+        // 基本校验
+        const next = {}
+        for (const [k, v] of Object.entries(obj)) {
+          if (!k || typeof v !== 'object' || v == null) continue
+          const allowAll = !!v.allowAll
+          const suffixes = normalizeSuffixes(v.allowedSuffixes || [])
+          if (!allowAll && suffixes.length === 0) continue
+          next[k] = { allowAll, allowedSuffixes: suffixes }
+        }
+        if (Object.keys(next).length === 0) {
+          ElMessage.error('模板内容无效或为空')
+          return
+        }
+        templatesMap.value = next
+        try { localStorage.setItem(TEMPLATES_KEY, JSON.stringify(templatesMap.value)) } catch {}
+        showTemplateDialog.value = false
+        ElMessage.success('模板已保存')
+      } catch {
+        ElMessage.error('模板JSON格式不正确')
+      } finally {
+        savingTemplates.value = false
+      }
     }
     
     // 重置配置
@@ -950,6 +1041,14 @@ export default {
         const pol = await getUploadPolicy()
         uploadPolicy.value.allowAll = !!pol.allowAll
         uploadPolicy.value.allowedSuffixes = Array.isArray(pol.allowedSuffixes) ? normalizeSuffixes(pol.allowedSuffixes) : []
+        // 加载自定义模板
+        try {
+          const saved = localStorage.getItem(TEMPLATES_KEY)
+          if (saved) {
+            const obj = JSON.parse(saved)
+            if (obj && typeof obj === 'object') templatesMap.value = obj
+          }
+        } catch {}
       } catch (e) {}
       nextTick(() => { loadRecycleBinData() })
     })
@@ -982,10 +1081,19 @@ export default {
       onImportFileChange,
       importing,
       confirmImport,
+      showImportDiffDetails,
       selectedTemplate,
       templateOptions,
       templatePreview,
       applyTemplate,
+      openTemplateDialog,
+      showTemplateDialog,
+      templatesJson,
+      templatesPreview,
+      savingTemplates,
+      exportTemplates,
+      resetTemplatesToDefault,
+      saveTemplatesFromJson,
       addCommonSuffixes,
       clearSuffixes,
       saveUploadPolicy,
