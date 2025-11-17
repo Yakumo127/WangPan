@@ -82,9 +82,9 @@ public class SystemSettingService {
         systemConfigRepository.save(cfg);
     }
 
-    // 上传策略：是否不限制
+    // 上传策略：是否不限制（默认关闭更安全）
     public boolean isUploadAllowAll() {
-        return getBoolean(KEY_UPLOAD_ALLOW_ALL, true);
+        return getBoolean(KEY_UPLOAD_ALLOW_ALL, false);
     }
 
     // 上传策略：获取后缀列表（小写、去空）

@@ -73,6 +73,71 @@ public class FileController {
         }
     }
 
+    // 秒传：根据文件哈希检查是否已存在
+    @PostMapping("/exists")
+    public ResponseEntity<Map<String, Object>> checkFileExists(@RequestBody Map<String, String> body) {
+        String fileHash = body == null ? null : body.get("fileHash");
+        if (fileHash == null || fileHash.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "缺少 fileHash 参数"));
+        }
+        java.util.Optional<File> opt = fileService.findByHashIfExists(fileHash);
+        if (opt.isPresent()) {
+            File f = opt.get();
+            return ResponseEntity.ok(Map.of(
+                    "exists", true,
+                    "fileId", f.getId(),
+                    "filename", f.getOriginalFilename(),
+                    "size", f.getSize()
+            ));
+        }
+        return ResponseEntity.ok(Map.of("exists", false));
+    }
+
+    // 分片上传：接收单个分片
+    @PostMapping("/chunk")
+    public ResponseEntity<Map<String, Object>> uploadChunk(
+            @RequestParam("file") MultipartFile chunk,
+            @RequestParam("fileHash") String fileHash,
+            @RequestParam("chunkNumber") Integer chunkNumber,
+            @RequestParam("totalChunks") Integer totalChunks
+    ) {
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            String username = auth.getName();
+            Long userId = userService.getUserIdByUsername(username);
+            fileService.saveChunk(chunk, userId, fileHash, chunkNumber, totalChunks);
+            return ResponseEntity.ok(Map.of("message", "分片上传成功"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    // 分片合并：将已上传分片合并为最终文件
+    @PostMapping("/merge")
+    public ResponseEntity<Map<String, Object>> mergeChunks(@RequestBody Map<String, Object> body) {
+        try {
+            String fileHash = body.get("fileHash") == null ? null : body.get("fileHash").toString();
+            String filename = body.get("filename") == null ? null : body.get("filename").toString();
+            Integer totalChunks = body.get("totalChunks") instanceof Number ? ((Number) body.get("totalChunks")).intValue() : null;
+            Long folderId = body.get("folderId") instanceof Number ? ((Number) body.get("folderId")).longValue() : null;
+
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            String username = auth.getName();
+            Long userId = userService.getUserIdByUsername(username);
+
+            File saved = fileService.mergeChunks(userId, fileHash, filename, totalChunks, folderId);
+            return ResponseEntity.ok(Map.of(
+                    "message", "文件合并成功",
+                    "fileId", saved.getId(),
+                    "filename", saved.getOriginalFilename(),
+                    "size", saved.getSize(),
+                    "uploadTime", saved.getCreateTime()
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
     // 管理员：分页获取全量文件（支持关键字和状态筛选）
     @GetMapping("/admin/list")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")

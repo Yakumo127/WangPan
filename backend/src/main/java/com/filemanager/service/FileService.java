@@ -13,6 +13,10 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -60,12 +64,154 @@ public class FileService {
     
     public File uploadFile(MultipartFile file, Long userId, Long folderId) throws IOException {
         long start = System.currentTimeMillis();
-        // 配额校验
+        // 校验用户存在
         User userEntity = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("用户不存在"));
+
         // 上传策略校验：后缀白名单（allowAll=false 时生效）
         if (!systemSettingService.isUploadAllowAll()) {
-            String originalFilename = file.getOriginalFilename();
+            String originalFilenameChk = file.getOriginalFilename();
+            String ext = getFileExtension(originalFilenameChk);
+            String suffix = (ext == null) ? "" : ext.replaceFirst("^\\.", "").toLowerCase();
+            java.util.List<String> allowed = systemSettingService.getAllowedSuffixes();
+            if (suffix.isEmpty() || allowed.isEmpty() || !allowed.contains(suffix)) {
+                String allowStr = String.join(",", allowed);
+                throw new RuntimeException(allowed.isEmpty()
+                        ? "当前未配置允许的后缀，已禁止上传，请联系管理员"
+                        : (suffix.isEmpty() ? "不允许上传无后缀文件" : ("不允许上传该类型文件（仅允许：" + allowStr + ")")));
+            }
+        }
+
+        // 原子配额扣减（并发安全）——在写盘前预占额度，失败将随事务回滚
+        long size = file.getSize();
+        if (size < 0) size = 0; // 理论上不会，但避免异常值
+        int updated = userRepository.tryUseQuota(userId, size);
+        if (updated == 0) {
+            throw new RuntimeException("存储空间不足，无法上传该文件");
+        }
+
+        // 创建存储目录
+        Path uploadPath = Paths.get(storagePath, "user_" + userId);
+        if (!Files.exists(uploadPath)) {
+            Files.createDirectories(uploadPath);
+        }
+
+        // 生成文件名与路径
+        String originalFilename = file.getOriginalFilename();
+        String fileExtension = getFileExtension(originalFilename);
+        String newFilename = UUID.randomUUID().toString() + fileExtension;
+        Path filePath = uploadPath.resolve(newFilename);
+
+        String fileHashHex = null;
+        boolean writeOk = false;
+        try {
+            // 一次 IO：边写盘边计算哈希
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            try (InputStream in = new BufferedInputStream(file.getInputStream());
+                 OutputStream out = new BufferedOutputStream(Files.newOutputStream(filePath))) {
+                byte[] buffer = new byte[8192];
+                int n;
+                while ((n = in.read(buffer)) != -1) {
+                    out.write(buffer, 0, n);
+                    digest.update(buffer, 0, n);
+                }
+                out.flush();
+            }
+            byte[] hashBytes = digest.digest();
+            StringBuilder hex = new StringBuilder(hashBytes.length * 2);
+            for (byte b : hashBytes) {
+                String h = Integer.toHexString(0xff & b);
+                if (h.length() == 1) hex.append('0');
+                hex.append(h);
+            }
+            fileHashHex = hex.toString();
+            writeOk = true;
+
+            // 目标文件夹归属校验（防越权）
+            Folder folder = null;
+            if (folderId != null) {
+                folder = folderRepository.findByIdAndUserIdAndDeletedFalse(folderId, userId);
+                if (folder == null) {
+                    throw new RuntimeException("目标文件夹不存在或无权限");
+                }
+            }
+
+            // 创建文件记录（避免依赖 Lombok builder）
+            File fileEntity = new File();
+            fileEntity.setFilename(newFilename);
+            fileEntity.setOriginalFilename(originalFilename);
+            fileEntity.setContentType(file.getContentType());
+            fileEntity.setSize(size);
+            fileEntity.setFilePath(filePath.toString());
+            fileEntity.setFileHash(fileHashHex);
+            fileEntity.setUser(userEntity);
+            fileEntity.setFolder(folder);
+            fileEntity.setCreateTime(LocalDateTime.now());
+            fileEntity.setUpdateTime(LocalDateTime.now());
+            fileEntity.setDeleted(false);
+            fileEntity.setDownloadCount(0);
+
+            File saved = fileRepository.save(fileEntity);
+            try { auditLogService.logSuccess(userId, com.filemanager.entity.UserLog.ACTION_UPLOAD,
+                    com.filemanager.entity.UserLog.RESOURCE_FILE, saved.getId(), saved.getOriginalFilename(),
+                    "上传文件：" + saved.getOriginalFilename() + "（" + saved.getSize() + "字节）",
+                    System.currentTimeMillis() - start); } catch (Exception ignore) {}
+            return saved;
+        } catch (Exception e) {
+            // 失败兜底：删除落地的物理文件
+            try {
+                if (filePath != null && Files.exists(filePath)) {
+                    Files.deleteIfExists(filePath);
+                }
+            } catch (Exception ignore) {}
+            // 抛出运行时异常以回滚事务（配额预占将回滚）
+            if (e instanceof RuntimeException re) throw re;
+            throw new RuntimeException("文件上传失败", e);
+        }
+    }
+
+    // 秒传：根据文件哈希判断是否存在（未删除）
+    public java.util.Optional<File> findByHashIfExists(String fileHash) {
+        if (fileHash == null || fileHash.isBlank()) return java.util.Optional.empty();
+        return fileRepository.findFirstByFileHashAndDeletedFalse(fileHash);
+    }
+
+    // 分片：保存单个分片到 {storagePath}/chunks/user_{uid}/{hash}/{chunkNumber}.part
+    public void saveChunk(MultipartFile chunk,
+                          Long userId,
+                          String fileHash,
+                          Integer chunkNumber,
+                          Integer totalChunks) throws IOException {
+        if (chunk == null || chunk.isEmpty()) throw new IllegalArgumentException("分片不能为空");
+        if (fileHash == null || fileHash.isBlank()) throw new IllegalArgumentException("缺少文件哈希");
+        if (chunkNumber == null || chunkNumber < 1) throw new IllegalArgumentException("分片序号不合法");
+        if (totalChunks == null || totalChunks < 1) throw new IllegalArgumentException("总分片数不合法");
+
+        Path dir = Paths.get(storagePath, "chunks", "user_" + userId, fileHash);
+        if (!Files.exists(dir)) Files.createDirectories(dir);
+        Path partPath = dir.resolve("chunk_" + chunkNumber + ".part");
+        try (InputStream in = new BufferedInputStream(chunk.getInputStream());
+             OutputStream out = new BufferedOutputStream(Files.newOutputStream(partPath, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING))) {
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
+            out.flush();
+        }
+    }
+
+    // 分片：合并分片为最终文件并入库
+    public File mergeChunks(Long userId,
+                            String fileHash,
+                            String originalFilename,
+                            Integer totalChunks,
+                            Long folderId) throws IOException {
+        long start = System.currentTimeMillis();
+        if (fileHash == null || fileHash.isBlank()) throw new IllegalArgumentException("缺少文件哈希");
+        if (originalFilename == null || originalFilename.isBlank()) throw new IllegalArgumentException("缺少原文件名");
+        if (totalChunks == null || totalChunks < 1) throw new IllegalArgumentException("总分片数不合法");
+
+        // 上传策略校验
+        if (!systemSettingService.isUploadAllowAll()) {
             String ext = getFileExtension(originalFilename);
             String suffix = (ext == null) ? "" : ext.replaceFirst("^\\.", "").toLowerCase();
             java.util.List<String> allowed = systemSettingService.getAllowedSuffixes();
@@ -76,61 +222,114 @@ public class FileService {
                         : (suffix.isEmpty() ? "不允许上传无后缀文件" : ("不允许上传该类型文件（仅允许：" + allowStr + ")")));
             }
         }
-        if (!userEntity.hasEnoughQuota(file.getSize())) {
-            throw new RuntimeException("存储空间不足，无法上传该文件");
+
+        Path chunkDir = Paths.get(storagePath, "chunks", "user_" + userId, fileHash);
+        if (!Files.exists(chunkDir)) throw new RuntimeException("分片不存在或已过期");
+
+        // 计算总大小，预占配额（并发安全）
+        long totalSize = 0L;
+        for (int i = 1; i <= totalChunks; i++) {
+            Path part = chunkDir.resolve("chunk_" + i + ".part");
+            if (!Files.exists(part)) throw new RuntimeException("缺少分片：" + i);
+            totalSize += Files.size(part);
         }
-        // 创建存储目录
+        int ok = userRepository.tryUseQuota(userId, totalSize);
+        if (ok == 0) throw new RuntimeException("存储空间不足，无法合并该文件");
+
+        // 确保用户目录
         Path uploadPath = Paths.get(storagePath, "user_" + userId);
-        if (!Files.exists(uploadPath)) {
-            Files.createDirectories(uploadPath);
+        if (!Files.exists(uploadPath)) Files.createDirectories(uploadPath);
+
+        String ext = getFileExtension(originalFilename);
+        String newFilename = UUID.randomUUID().toString() + ext;
+        Path target = uploadPath.resolve(newFilename);
+
+        MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance("SHA-256");
+        } catch (Exception e) { throw new RuntimeException("初始化哈希失败", e); }
+
+        try (OutputStream out = new BufferedOutputStream(Files.newOutputStream(target, java.nio.file.StandardOpenOption.CREATE_NEW))) {
+            byte[] buf = new byte[8192];
+            for (int i = 1; i <= totalChunks; i++) {
+                Path part = chunkDir.resolve("chunk_" + i + ".part");
+                try (InputStream in = new BufferedInputStream(Files.newInputStream(part))) {
+                    int n; while ((n = in.read(buf)) != -1) { out.write(buf, 0, n); digest.update(buf, 0, n); }
+                }
+            }
+            out.flush();
+        } catch (Exception e) {
+            try { Files.deleteIfExists(target); } catch (Exception ignore) {}
+            throw new RuntimeException("合并分片失败", e);
         }
-        
-        // 生成文件名
-        String originalFilename = file.getOriginalFilename();
-        String fileExtension = getFileExtension(originalFilename);
-        String newFilename = UUID.randomUUID().toString() + fileExtension;
-        Path filePath = uploadPath.resolve(newFilename);
-        
-        // 保存文件
-        Files.copy(file.getInputStream(), filePath);
-        
-        // 计算文件哈希
-        String fileHash = calculateFileHash(filePath);
-        
-        // 查找用户（实体）
-        User user = userEntity;
-        
-        // 查找文件夹
+
+        // 校验哈希一致
+        String mergedHash = toHex(digest.digest());
+        if (!mergedHash.equalsIgnoreCase(fileHash)) {
+            try { Files.deleteIfExists(target); } catch (Exception ignore) {}
+            throw new RuntimeException("文件校验失败，哈希不一致");
+        }
+
+        // 文件夹归属校验
         Folder folder = null;
         if (folderId != null) {
-            folder = folderRepository.findById(folderId)
-                    .orElseThrow(() -> new RuntimeException("文件夹不存在"));
+            folder = folderRepository.findByIdAndUserIdAndDeletedFalse(folderId, userId);
+            if (folder == null) throw new RuntimeException("目标文件夹不存在或无权限");
         }
-        
-        // 创建文件记录（避免依赖 Lombok builder）
+
+        // 创建记录
         File fileEntity = new File();
         fileEntity.setFilename(newFilename);
         fileEntity.setOriginalFilename(originalFilename);
-        fileEntity.setContentType(file.getContentType());
-        fileEntity.setSize(file.getSize());
-        fileEntity.setFilePath(filePath.toString());
-        fileEntity.setFileHash(fileHash);
-        fileEntity.setUser(user);
+        fileEntity.setContentType(guessContentTypeByName(originalFilename));
+        fileEntity.setSize(totalSize);
+        fileEntity.setFilePath(target.toString());
+        fileEntity.setFileHash(mergedHash);
+        fileEntity.setUser(userRepository.findById(userId).orElseThrow(() -> new RuntimeException("用户不存在")));
         fileEntity.setFolder(folder);
         fileEntity.setCreateTime(LocalDateTime.now());
         fileEntity.setUpdateTime(LocalDateTime.now());
         fileEntity.setDeleted(false);
         fileEntity.setDownloadCount(0);
-        
         File saved = fileRepository.save(fileEntity);
-        // 扣减配额
-        user.useQuota(file.getSize());
-        userRepository.save(user);
+
+        // 清理分片目录
+        try { deleteDirectoryRecursively(chunkDir); } catch (Exception ignore) {}
+
         try { auditLogService.logSuccess(userId, com.filemanager.entity.UserLog.ACTION_UPLOAD,
                 com.filemanager.entity.UserLog.RESOURCE_FILE, saved.getId(), saved.getOriginalFilename(),
-                "上传文件：" + saved.getOriginalFilename() + "（" + saved.getSize() + "字节）",
+                "合并上传文件：" + saved.getOriginalFilename() + "（" + saved.getSize() + "字节）",
                 System.currentTimeMillis() - start); } catch (Exception ignore) {}
         return saved;
+    }
+
+    private void deleteDirectoryRecursively(Path dir) throws IOException {
+        if (!Files.exists(dir)) return;
+        java.nio.file.Files.walk(dir)
+                .sorted(java.util.Comparator.reverseOrder())
+                .forEach(p -> { try { java.nio.file.Files.deleteIfExists(p); } catch (IOException ignore) {} });
+    }
+
+    private String toHex(byte[] bytes) {
+        StringBuilder hex = new StringBuilder(bytes.length * 2);
+        for (byte b : bytes) {
+            String h = Integer.toHexString(0xff & b);
+            if (h.length() == 1) hex.append('0');
+            hex.append(h);
+        }
+        return hex.toString();
+    }
+
+    private String guessContentTypeByName(String name) {
+        if (name == null) return "application/octet-stream";
+        String lower = name.toLowerCase();
+        if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+        if (lower.endsWith(".png")) return "image/png";
+        if (lower.endsWith(".gif")) return "image/gif";
+        if (lower.endsWith(".webp")) return "image/webp";
+        if (lower.endsWith(".pdf")) return "application/pdf";
+        if (lower.endsWith(".txt")) return "text/plain";
+        return "application/octet-stream";
     }
     
     public File getFile(Long fileId, Long userId) {
@@ -661,10 +860,15 @@ public class FileService {
     private String calculateFileHash(Path filePath) throws IOException {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] fileBytes = Files.readAllBytes(filePath);
-            byte[] hashBytes = digest.digest(fileBytes);
-            
-            StringBuilder hexString = new StringBuilder();
+            try (InputStream in = new BufferedInputStream(Files.newInputStream(filePath))) {
+                byte[] buffer = new byte[8192];
+                int n;
+                while ((n = in.read(buffer)) != -1) {
+                    digest.update(buffer, 0, n);
+                }
+            }
+            byte[] hashBytes = digest.digest();
+            StringBuilder hexString = new StringBuilder(hashBytes.length * 2);
             for (byte b : hashBytes) {
                 String hex = Integer.toHexString(0xff & b);
                 if (hex.length() == 1) {
@@ -672,7 +876,6 @@ public class FileService {
                 }
                 hexString.append(hex);
             }
-            
             return hexString.toString();
         } catch (Exception e) {
             throw new RuntimeException("文件哈希计算失败", e);
