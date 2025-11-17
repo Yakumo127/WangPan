@@ -1,0 +1,93 @@
+@startuml
+title 企业文件管理系统 - 分片上传与合并 时序图（2025-11-17）
+
+actor 用户 as User
+participant "浏览器/文件列表页\n(List.vue)" as UI
+participant "Axios\nrequest.js" as Axios
+participant "文件控制器\nFileController" as Ctrl
+participant "文件服务\nFileService" as Svc
+participant "系统设置服务\nSystemSettingService" as Setting
+database "UserRepository" as UserRepo
+database "FolderRepository" as FolderRepo
+database "FileRepository" as FileRepo
+participant "文件系统\n(FS)" as FS
+participant "审计日志\nAuditLogService" as Audit
+
+== 预处理/秒传 ==
+User -> UI: 选择大文件
+UI -> UI: 计算 SHA-256 (前端)
+UI -> Axios: POST /api/files/exists { fileHash }
+Axios -> Ctrl: checkFileExists
+Ctrl -> Svc: findByHashIfExists(userId, hash)
+Svc -> FileRepo: 按 userId+hash 查询
+alt 存在
+  Ctrl --> Axios: { exists: true, ... }
+  Axios --> UI: 直接完成（秒传）
+  return
+else 不存在
+  Ctrl --> Axios: { exists: false }
+end
+
+== 分片上传 ==
+loop for chunk = 1..N (并发<=3)
+  UI -> Axios: POST /api/files/chunk\n{ file=part, fileHash, chunkNumber, totalChunks }
+  Axios -> Ctrl: uploadChunk
+  Ctrl -> Svc: saveChunk(userId, hash, partNo, total)
+  Svc -> FS: 保存至 chunks/user_<id>/<hash>/chunk_<n>.part
+  Svc --> Ctrl: 成功
+  Ctrl --> Axios: 200 { message }
+end
+
+== 合并前核对缺片 ==
+UI -> Axios: GET /api/files/chunk/status?fileHash&totalChunks
+Axios -> Ctrl: chunkStatus
+Ctrl -> Svc: listUploadedChunks(userId, hash)
+Svc -> FS: 列举 chunk_*.part
+Ctrl --> Axios: { uploaded, missing?, totalChunks? }
+opt 存在 missing
+  UI -> Axios: 逐个补传 missing 分片（与上同）
+end
+
+== 合并 ==
+UI -> Axios: POST /api/files/merge\n{ fileHash, filename, totalChunks, folderId? }
+Axios -> Ctrl: mergeChunks
+group 策略/配额
+Ctrl -> Svc: mergeChunks(...)
+Svc -> Setting: isUploadAllowAll()/getAllowedSuffixes()
+alt 后缀拒绝
+  Svc --> Ctrl: 400 { message }
+  Ctrl --> Axios: 400 { message }
+  Axios --> UI: 提示失败
+  return
+end
+Svc -> FS: 计算各分片总大小
+Svc -> UserRepo: tryUseQuota(userId, totalSize)
+alt 空间不足
+  Svc --> Ctrl: 400 { message }
+  Ctrl --> Axios: 400 { message }
+  Axios --> UI: 提示存储不足
+  return
+end
+end
+group 合并与落盘
+Svc -> FS: ensureDir(storagePath/user_<id>)
+Svc -> FS: 依序读取分片流式写入目标并累计哈希
+Svc -> Svc: 校验目标哈希 == fileHash
+alt 不一致
+  Svc -> FS: 删除目标文件
+  Svc --> Ctrl: 400 { message }
+  Ctrl --> Axios: 400 { message }
+  Axios --> UI: 提示失败（可稍后续传）
+  return
+end
+Svc -> FolderRepo: findByIdAndUserIdAndDeletedFalse(folderId, userId)
+Svc -> FileRepo: save(File记录)
+Svc -> FS: 删除分片目录
+Svc -> Audit: logSuccess(UPLOAD)
+end
+
+Ctrl --> Axios: 200 { fileId, filename, size, uploadTime }
+Axios --> UI: 刷新列表并提示成功
+
+@enduml
+

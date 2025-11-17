@@ -1,0 +1,61 @@
+@startuml
+title 企业文件管理系统 - 文件上传（直传）时序图（2025-11-17）
+
+actor 用户 as User
+participant "浏览器/文件列表页\n(List.vue)" as UI
+participant "Axios\nrequest.js" as Axios
+participant "文件控制器\nFileController" as Ctrl
+participant "文件服务\nFileService" as Svc
+participant "系统设置服务\nSystemSettingService" as Setting
+participant "用户服务\nUserService" as UserSvc
+database "UserRepository" as UserRepo
+database "FolderRepository" as FolderRepo
+database "FileRepository" as FileRepo
+participant "文件系统\n(FS)" as FS
+participant "审计日志\nAuditLogService" as Audit
+
+User -> UI: 选择文件并点击上传
+UI -> Axios: POST /api/files/upload\nAuthorization: Bearer <token>\nfile, folderId?
+Axios -> Ctrl: uploadFile(file, folderId)
+Ctrl -> UserSvc: getUserIdByUsername(token.subject)
+Ctrl -> Svc: uploadFile(file, userId, folderId)
+
+group 策略/配额与校验
+Svc -> Setting: isUploadAllowAll()
+alt allowAll=false
+  Svc -> Setting: getAllowedSuffixes()
+  alt 后缀不在白名单/为空
+    Svc --> Ctrl: 抛出 400 { message }
+    Ctrl --> Axios: 400 { message }
+    Axios --> UI: 提示失败
+    return
+  end
+end
+Svc -> UserRepo: tryUseQuota(userId, file.size)
+alt 预占失败(空间不足)
+  Svc --> Ctrl: 抛出 400 { message }
+  Ctrl --> Axios: 400 { message }
+  Axios --> UI: 提示存储不足
+  return
+end
+end
+
+group 写盘与记录
+Svc -> FS: ensureDir(storagePath/user_<id>)
+Svc -> FS: 流式写入文件并计算SHA-256
+Svc -> FolderRepo: findByIdAndUserIdAndDeletedFalse(folderId, userId)
+alt 目标文件夹无权限/不存在
+  Svc --> Ctrl: 抛出 400 { message }
+  Ctrl --> Axios: 400 { message }
+  Axios --> UI: 提示失败
+  return
+end
+Svc -> FileRepo: save(File{path,hash,size,owner,...})
+Svc -> Audit: logSuccess(UPLOAD)
+end
+
+Ctrl --> Axios: 200 { fileId, filename, size, uploadTime }
+Axios --> UI: 刷新列表并提示成功
+
+@enduml
+

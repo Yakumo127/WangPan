@@ -1,0 +1,30 @@
+@startuml
+title 企业文件管理系统 - 分片上传与合并 UML 活动图（2025-11-17）
+
+start
+:前端计算SHA-256;
+:POST /api/files/exists {fileHash};
+if (exists?) then (是)
+  :秒传成功→提示成功;
+  stop
+else (否)
+  :按10MB分片，设置并发3/每片重试3;
+  :循环提交 /api/files/chunk;
+  :GET /api/files/chunk/status?fileHash&totalChunks;
+  if (存在 missing?) then (是)
+    :逐个补传缺失分片;
+  endif
+  :提示“开始合并...”;
+  :POST /api/files/merge {fileHash, filename, totalChunks, folderId?};
+  if (合并失败?) then (是)
+    :提示失败且告知72小时内可断点续传;
+    stop
+  else (否)
+    :返回200 {fileId,...};
+    :提示成功刷新列表;
+    stop
+  endif
+endif
+
+@enduml
+

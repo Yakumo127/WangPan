@@ -1,0 +1,35 @@
+@startuml
+title 企业文件管理系统 - 文件上传（直传）UML 活动图（2025-11-17）
+
+start
+:前端选择文件并点击上传;
+:提交 POST /api/files/upload\n(file, folderId?);
+:后端解析 userId (JWT);
+:检查上传策略\n(allowAll / allowedSuffixes);
+if (后缀拒绝?) then (是)
+  :返回400 {message};
+  stop
+else (否)
+  :预占配额 tryUseQuota(size);
+  if (不足?) then (是)
+    :返回400 {message: 存储空间不足};
+    stop
+  else (否)
+    :确保目录 user_<id> 存在;
+    :流式写入文件并计算SHA-256;
+    :校验 folderId 归属(可选);
+    if (无权限?) then (是)
+      :删除物理文件;
+      :返回400 {message};
+      stop
+    else (否)
+      :保存文件记录(FileRepository);
+      :记录审计日志(AuditLogService);
+      :返回200 {fileId,...};
+      :前端提示成功;
+      stop
+    endif
+  endif
+endif
+
+@enduml
