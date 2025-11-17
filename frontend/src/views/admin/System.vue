@@ -35,6 +35,22 @@
               <el-button style="margin-left:8px;" @click="addCommonSuffixes">常用后缀</el-button>
               <el-button style="margin-left:8px;" @click="clearSuffixes">清空</el-button>
               <el-button type="primary" style="margin-left:8px;" :disabled="!canSavePolicy" @click="saveUploadPolicy">保存上传策略</el-button>
+              <div class="suffix-tools" style="margin-top:8px; display:flex; flex-direction:column; gap:8px;">
+                <div class="category-buttons" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                  <span class="cat-label" style="color:#666;">快速添加分类：</span>
+                  <el-button size="small" @click="addCategory('image')">图片</el-button>
+                  <el-button size="small" @click="addCategory('document')">文档</el-button>
+                  <el-button size="small" @click="addCategory('archive')">压缩</el-button>
+                  <el-button size="small" @click="addCategory('audio')">音频</el-button>
+                  <el-button size="small" @click="addCategory('video')">视频</el-button>
+                </div>
+                <div class="quick-check" style="display:flex; align-items:center; gap:8px;">
+                  <span class="qc-label" style="color:#666;">文件名快速校验：</span>
+                  <el-input v-model="testFilename" placeholder="如：report.pdf" style="max-width:280px;" clearable />
+                  <el-tag v-if="testAllowed !== null" :type="testAllowed ? 'success' : 'danger'">{{ testHint }}</el-tag>
+                  <span v-else class="hint" style="color:#999;">输入文件名以校验是否允许上传</span>
+                </div>
+              </div>
               <div class="form-hint" :class="{ error: !canSavePolicy }" style="margin-top:6px;">
                 <template v-if="!canSavePolicy">
                   <span v-if="invalidSuffixes.length > 0">存在非法后缀：{{ invalidSuffixes.join(', ') }}（仅允许小写字母和数字，不含点）</span>
@@ -296,7 +312,7 @@
 </template>
 
 <script>
-import { ref, onMounted, nextTick } from "vue"
+import { ref, onMounted, nextTick, computed } from "vue"
 import { ElMessage, ElMessageBox } from "element-plus"
 import { Delete, Refresh, Search, Document, User, Calendar, DataLine, RefreshLeft } from "@element-plus/icons-vue"
 import { getAllRecycleBinFiles, adminRestoreFile, adminScheduleDeleteFile } from "@/api/file"
@@ -670,6 +686,36 @@ export default {
         ElMessage.warning('已自动忽略非法后缀（仅允许小写字母和数字，不含点）')
       }
     }
+    const categories = {
+      image: ['jpg','jpeg','png','gif','webp','bmp','svg'],
+      document: ['pdf','doc','docx','xls','xlsx','ppt','pptx','txt','md'],
+      archive: ['zip','rar','7z','tar','gz','bz2'],
+      audio: ['mp3','wav','flac','aac','ogg'],
+      video: ['mp4','avi','mkv','mov','webm']
+    }
+    const addCategory = (key) => {
+      const list = categories[key] || []
+      const before = new Set(uploadPolicy.value.allowedSuffixes || [])
+      uploadPolicy.value.allowedSuffixes = normalizeSuffixes([...(uploadPolicy.value.allowedSuffixes||[]), ...list])
+      const after = new Set(uploadPolicy.value.allowedSuffixes)
+      let added = 0
+      for (const s of after) if (!before.has(s)) added++
+      if (added > 0) ElMessage.success(`已添加 ${added} 个后缀`)
+    }
+    const testFilename = ref("")
+    const testInfo = computed(() => {
+      const name = (testFilename.value || '').trim()
+      if (!name) return { allowed: null, hint: '' }
+      if (uploadPolicy.value.allowAll) return { allowed: true, hint: '允许（未限制类型）' }
+      const idx = name.lastIndexOf('.')
+      if (idx < 0) return { allowed: false, hint: '不允许：无后缀' }
+      const ext = name.slice(idx + 1).toLowerCase()
+      if (!/^[a-z0-9]+$/.test(ext)) return { allowed: false, hint: `不允许：非法后缀“${ext}”` }
+      const ok = (uploadPolicy.value.allowedSuffixes || []).includes(ext)
+      return { allowed: ok, hint: ok ? '允许' : `不允许：未在白名单中（${ext}）` }
+    })
+    const testAllowed = computed(() => testInfo.value.allowed)
+    const testHint = computed(() => testInfo.value.hint)
     const canSavePolicy = computed(() => {
       if (uploadPolicy.value.allowAll) return true
       return (uploadPolicy.value.allowedSuffixes && uploadPolicy.value.allowedSuffixes.length > 0) && (invalidSuffixes.value.length === 0)
@@ -750,6 +796,13 @@ export default {
       canSavePolicy,
       onAllowAllChange,
       onSuffixesChange,
+      addCommonSuffixes,
+      clearSuffixes,
+      saveUploadPolicy,
+      addCategory,
+      testFilename,
+      testAllowed,
+      testHint,
       recycleStats,
       formatFileSize,
       formatStorage,
