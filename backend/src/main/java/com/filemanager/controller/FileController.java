@@ -143,13 +143,23 @@ public class FileController {
 
     // 分片状态：查询已上传的分片编号（断点续传）
     @GetMapping("/chunk/status")
-    public ResponseEntity<Map<String, Object>> chunkStatus(@RequestParam("fileHash") String fileHash) {
+    public ResponseEntity<Map<String, Object>> chunkStatus(@RequestParam("fileHash") String fileHash,
+                                                           @RequestParam(value = "totalChunks", required = false) Integer totalChunks) {
         try {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             String username = auth.getName();
             Long userId = userService.getUserIdByUsername(username);
             java.util.List<Integer> uploaded = fileService.listUploadedChunks(userId, fileHash);
-            return ResponseEntity.ok(Map.of("uploaded", uploaded));
+            java.util.Map<String, Object> resp = new java.util.HashMap<>();
+            resp.put("uploaded", uploaded);
+            if (totalChunks != null && totalChunks > 0) {
+                java.util.Set<Integer> set = new java.util.HashSet<>(uploaded);
+                java.util.List<Integer> missing = new java.util.ArrayList<>();
+                for (int i = 1; i <= totalChunks; i++) if (!set.contains(i)) missing.add(i);
+                resp.put("missing", missing);
+                resp.put("totalChunks", totalChunks);
+            }
+            return ResponseEntity.ok(resp);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }

@@ -336,7 +336,7 @@ const uploadInChunksWithRetryAndResume = async (elFile, progressIndex, fileHash,
   const doneSet = new Set(resume.done || [])
   // 从服务端获取已收分片，优先使用服务端记录增强跨端断点能力
   try {
-    const status = await getChunkStatus(fileHash)
+    const status = await getChunkStatus(fileHash, totalChunks)
     if (status && Array.isArray(status.uploaded)) {
       status.uploaded.forEach(n => doneSet.add(n))
     }

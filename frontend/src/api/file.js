@@ -59,11 +59,11 @@ export function mergeChunks(payload) {
 }
 
 // 获取已上传分片编号列表（用于断点续传）
-export function getChunkStatus(fileHash) {
+export function getChunkStatus(fileHash, totalChunks) {
   return request({
     url: "/files/chunk/status",
     method: "get",
-    params: { fileHash },
+    params: totalChunks ? { fileHash, totalChunks } : { fileHash },
     timeout: 30000
   })
 }

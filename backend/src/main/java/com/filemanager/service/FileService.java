@@ -350,6 +350,46 @@ public class FileService {
         if (lower.endsWith(".txt")) return "text/plain";
         return "application/octet-stream";
     }
+
+    // 清理超过保留期的分片目录（单位：小时）
+    public int cleanupExpiredChunks(long olderThanHours) {
+        if (olderThanHours <= 0) return 0;
+        Path chunksRoot = Paths.get(storagePath, "chunks");
+        if (!Files.exists(chunksRoot) || !Files.isDirectory(chunksRoot)) return 0;
+        long now = System.currentTimeMillis();
+        long thresholdMs = olderThanHours * 3600_000L;
+        final int[] count = {0};
+        try (java.util.stream.Stream<Path> users = Files.list(chunksRoot)) {
+            users.filter(p -> Files.isDirectory(p) && p.getFileName().toString().startsWith("user_"))
+                    .forEach(userDir -> {
+                        try (java.util.stream.Stream<Path> hashes = Files.list(userDir)) {
+                            hashes.filter(Files::isDirectory).forEach(hashDir -> {
+                                long latest = getLatestModifiedMillis(hashDir);
+                                if (latest > 0 && (now - latest) > thresholdMs) {
+                                    try {
+                                        deleteDirectoryRecursively(hashDir);
+                                        count[0]++;
+                                    } catch (IOException ignore) {}
+                                }
+                            });
+                        } catch (IOException ignore) {}
+                    });
+        } catch (IOException ignore) {}
+        return count[0];
+    }
+
+    private long getLatestModifiedMillis(Path dir) {
+        long[] latest = {0L};
+        try (java.util.stream.Stream<Path> stream = java.nio.file.Files.walk(dir)) {
+            stream.forEach(p -> {
+                try {
+                    long m = java.nio.file.Files.getLastModifiedTime(p).toMillis();
+                    if (m > latest[0]) latest[0] = m;
+                } catch (IOException ignore) {}
+            });
+        } catch (IOException ignore) {}
+        return latest[0];
+    }
     
     public File getFile(Long fileId, Long userId) {
         return fileRepository.findByIdAndUserIdAndDeletedFalse(fileId, userId)
