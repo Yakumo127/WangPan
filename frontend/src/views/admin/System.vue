@@ -167,7 +167,21 @@
                 <el-button size="small" type="warning" @click="resetTemplatesToDefault">恢复默认模板</el-button>
               </div>
               <el-input v-model="templatesJson" type="textarea" :rows="16" placeholder='{"imageOnly":{"allowAll":false,"allowedSuffixes":["jpg","png"]}}' />
-              <div v-if="templatesPreview" style="color:#666;">预览：{{ templatesPreview }}</div>
+              <div v-if="templatesPreview" style="color:#666;">概览：{{ templatesPreview }}</div>
+              <div v-if="validationReport && validationReport.length" style="color:#666;">
+                <div>校验报告：</div>
+                <ul style="margin:4px 0 0 16px; line-height:1.6;">
+                  <li v-for="(msg, idx) in validationReport" :key="'val-'+idx">{{ msg }}</li>
+                </ul>
+              </div>
+              <div style="color:#666; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <span>应用预览：</span>
+                <el-select v-model="selectedPreviewKey" placeholder="选择模板" style="min-width:200px;">
+                  <el-option v-for="opt in candidateOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+                </el-select>
+                <span v-if="applyPreviewText">{{ applyPreviewText }}</span>
+                <span v-else class="hint">选择上方 JSON 中的模板名以查看与当前策略的变更</span>
+              </div>
             </div>
             <template #footer>
               <el-button @click="showTemplateDialog = false">取消</el-button>
@@ -1017,6 +1031,58 @@ export default {
         savingTemplates.value = false
       }
     }
+
+    // 模板JSON解析/校验与应用预览（对话框内）
+    const selectedPreviewKey = ref("")
+    const parseTemplateJsonSafe = () => {
+      try { return JSON.parse(templatesJson.value || '{}') } catch { return null }
+    }
+    const normalizedFromRaw = (raw) => {
+      const result = {}
+      for (const [k, v] of Object.entries(raw || {})) {
+        if (!k || typeof v !== 'object' || v == null) continue
+        const allowAll = !!v.allowAll
+        const suffixes = normalizeSuffixes(v.allowedSuffixes || [])
+        if (!allowAll && suffixes.length === 0) continue
+        result[k] = { allowAll, allowedSuffixes: suffixes }
+      }
+      return result
+    }
+    const candidatesMap = computed(() => normalizedFromRaw(parseTemplateJsonSafe()))
+    const candidateOptions = computed(() => Object.keys(candidatesMap.value || {}).map(k => ({ value: k, label: k })))
+    const templatesPreview = computed(() => {
+      const raw = parseTemplateJsonSafe()
+      if (!raw) return 'JSON 格式不正确'
+      const norm = normalizedFromRaw(raw)
+      return `模板总数：${Object.keys(raw).length}，有效模板：${Object.keys(norm).length}`
+    })
+    const validationReport = computed(() => {
+      const raw = parseTemplateJsonSafe()
+      if (!raw) return ['JSON 格式不正确']
+      const report = []
+      for (const [k, v] of Object.entries(raw)) {
+        if (!k || typeof v !== 'object' || v == null) { report.push(`模板“${k}”无效：值需为对象`); continue }
+        const allowAll = !!v.allowAll
+        const inputList = Array.isArray(v.allowedSuffixes) ? v.allowedSuffixes : []
+        const normalized = normalizeSuffixes(inputList)
+        const invalid = inputList.map(x => String(x||'').trim().toLowerCase().replace(/^\./,''))
+                                 .filter(x => !/^[a-z0-9]+$/.test(x))
+        if (!allowAll && normalized.length === 0) report.push(`模板“${k}”：allowAll=false 但白名单为空（将被忽略）`)
+        if (invalid.length > 0) report.push(`模板“${k}”：发现非法后缀 ${invalid.join(', ')}（将被忽略）`)
+      }
+      if (report.length === 0) report.push('未发现问题')
+      return report
+    })
+    const applyPreviewText = computed(() => {
+      const key = selectedPreviewKey.value
+      const candidate = candidatesMap.value ? candidatesMap.value[key] : null
+      if (!candidate) return ''
+      const diff = getPolicyDiff(uploadPolicy.value, candidate)
+      const parts = []
+      if (diff.allowAllChanged) parts.push(`allowAll: ${diff.allowAllFrom ? '开' : '关'} → ${diff.allowAllTo ? '开' : '关'}`)
+      parts.push(`新增 ${diff.added.length}，移除 ${diff.removed.length}`)
+      return parts.join('；')
+    })
     
     // 重置配置
     const resetConfig = () => {
@@ -1090,6 +1156,10 @@ export default {
       showTemplateDialog,
       templatesJson,
       templatesPreview,
+      validationReport,
+      candidateOptions,
+      selectedPreviewKey,
+      applyPreviewText,
       savingTemplates,
       exportTemplates,
       resetTemplatesToDefault,
