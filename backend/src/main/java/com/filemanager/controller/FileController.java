@@ -80,7 +80,10 @@ public class FileController {
         if (fileHash == null || fileHash.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("message", "缺少 fileHash 参数"));
         }
-        java.util.Optional<File> opt = fileService.findByHashIfExists(fileHash);
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String username = auth.getName();
+        Long userId = userService.getUserIdByUsername(username);
+        java.util.Optional<File> opt = fileService.findByHashIfExists(userId, fileHash);
         if (opt.isPresent()) {
             File f = opt.get();
             return ResponseEntity.ok(Map.of(

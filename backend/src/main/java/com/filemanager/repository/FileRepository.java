@@ -64,8 +64,8 @@ public interface FileRepository extends JpaRepository<File, Long> {
     // 按ID查询非删除文件（用于公开缩略图等场景）
     Optional<File> findByIdAndDeletedFalse(Long fileId);
 
-    // 通过 SHA-256 哈希查找（用于秒传）
-    Optional<File> findFirstByFileHashAndDeletedFalse(String fileHash);
+    // 通过 SHA-256 哈希查找（用于秒传：限定当前用户以避免跨用户物理路径复用问题）
+    Optional<File> findFirstByFileHashAndUserIdAndDeletedFalse(String fileHash, Long userId);
 
     // 管理员分页查询（全量）
     Page<File> findByDeletedFalse(Pageable pageable);

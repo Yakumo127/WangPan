@@ -171,9 +171,9 @@ public class FileService {
     }
 
     // 秒传：根据文件哈希判断是否存在（未删除）
-    public java.util.Optional<File> findByHashIfExists(String fileHash) {
-        if (fileHash == null || fileHash.isBlank()) return java.util.Optional.empty();
-        return fileRepository.findFirstByFileHashAndDeletedFalse(fileHash);
+    public java.util.Optional<File> findByHashIfExists(Long userId, String fileHash) {
+        if (fileHash == null || fileHash.isBlank() || userId == null) return java.util.Optional.empty();
+        return fileRepository.findFirstByFileHashAndUserIdAndDeletedFalse(fileHash, userId);
     }
 
     // 分片：保存单个分片到 {storagePath}/chunks/user_{uid}/{hash}/{chunkNumber}.part
