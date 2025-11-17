@@ -135,7 +135,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, Refresh, Search, Document, Download, Delete, Edit } from '@element-plus/icons-vue'
-import { getFileList, uploadFile, downloadFile as downloadFileApi, deleteFile as deleteFileApi, searchFiles as searchFilesApi, renameFile as renameFileApi } from '@/api/file'
+import { getFileList, uploadFile, downloadFile as downloadFileApi, deleteFile as deleteFileApi, searchFiles as searchFilesApi, renameFile as renameFileApi, checkFileExists, uploadChunk as uploadChunkApi, mergeChunks } from '@/api/file'
 import { getFolderList } from '@/api/folder'
 
 const loading = ref(false)
@@ -225,6 +225,14 @@ const handleFileRemove = (file) => {
   }
 }
 
+// 计算 SHA-256（注意：会读取整个文件到内存，100MB 内可接受；如需更大文件，应改为增量哈希库）
+const sha256Hex = async (file) => {
+  const buf = await file.arrayBuffer()
+  const hash = await crypto.subtle.digest('SHA-256', buf)
+  const bytes = new Uint8Array(hash)
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
 const uploadFilesFunc = async () => {
   if (uploadFiles.value.length === 0) {
     ElMessage.warning('请选择要上传的文件')
@@ -242,29 +250,56 @@ const uploadFilesFunc = async () => {
     const MAX_MB = 100
     const MAX_BYTES = MAX_MB * 1024 * 1024
     for (let i = 0; i < uploadFiles.value.length; i++) {
-      const file = uploadFiles.value[i]
+      const elFile = uploadFiles.value[i]
+      const raw = elFile.raw
       // 前置大小校验，避免后端 413
-      if (file.size > MAX_BYTES) {
+      if (raw.size > MAX_BYTES) {
         uploadProgress.value[i].status = 'exception'
         uploadProgress.value[i].percent = 0
-        ElMessage.error(`文件 "${file.name}" 超过 ${MAX_MB}MB 限制`)
+        ElMessage.error(`文件 "${elFile.name}" 超过 ${MAX_MB}MB 限制`)
         continue
       }
 
-      const formData = new FormData()
-      formData.append('file', file.raw)
-      if (uploadForm.folderId) {
-        formData.append('folderId', uploadForm.folderId)
+      uploadProgress.value[i].status = 'uploading'
+
+      // 1) 计算哈希并秒传判断（同一用户同哈希文件已存在则跳过）
+      let fileHash = ''
+      try {
+        fileHash = await sha256Hex(raw)
+      } catch (e) {
+        console.warn('计算哈希失败，退回直传：', e)
       }
 
-      uploadProgress.value[i].status = 'uploading'
-      await uploadFile(formData, (progressEvent) => {
-        const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total)
-        uploadProgress.value[i].percent = percent
-      })
+      if (fileHash) {
+        try {
+          const existsResp = await checkFileExists(fileHash)
+          if (existsResp && existsResp.exists) {
+            uploadProgress.value[i].status = 'success'
+            uploadProgress.value[i].percent = 100
+            continue
+          }
+        } catch (e) {
+          // 秒传检查失败不影响上传，继续走上传逻辑
+        }
+      }
 
-      uploadProgress.value[i].status = 'success'
-      uploadProgress.value[i].percent = 100
+      // 2) 大小阈值：>10MB 走分片上传，否则直传
+      const CHUNK_SIZE = 10 * 1024 * 1024
+      if (raw.size > CHUNK_SIZE && fileHash) {
+        await uploadInChunksWithRetryAndResume(elFile, i, fileHash, CHUNK_SIZE)
+      } else {
+        const formData = new FormData()
+        formData.append('file', raw)
+        if (uploadForm.folderId) {
+          formData.append('folderId', uploadForm.folderId)
+        }
+        await uploadFile(formData, (progressEvent) => {
+          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+          uploadProgress.value[i].percent = percent
+        })
+        uploadProgress.value[i].status = 'success'
+        uploadProgress.value[i].percent = 100
+      }
     }
     
     ElMessage.success('文件上传成功')
@@ -283,6 +318,86 @@ const uploadFilesFunc = async () => {
   } finally {
     uploading.value = false
   }
+}
+
+// 分片上传（含并发、重试、断点续传-基于本地存储，跨会话可恢复，但服务器端不校验已有分片列表）
+const uploadInChunksWithRetryAndResume = async (elFile, progressIndex, fileHash, CHUNK_SIZE) => {
+  const raw = elFile.raw
+  const totalChunks = Math.ceil(raw.size / CHUNK_SIZE)
+  const CONCURRENCY = 3
+  const MAX_RETRIES = 3
+  const resumeKey = `upload_resume_${fileHash}`
+  let resume = { done: [], totalChunks }
+  try {
+    const saved = localStorage.getItem(resumeKey)
+    if (saved) resume = Object.assign(resume, JSON.parse(saved))
+  } catch {}
+
+  const doneSet = new Set(resume.done || [])
+  let completed = doneSet.size
+
+  const tasks = []
+  for (let n = 1; n <= totalChunks; n++) {
+    if (!doneSet.has(n)) tasks.push(n)
+  }
+
+  let pointer = 0
+  const updateProgress = () => {
+    const percent = Math.round((completed / totalChunks) * 100)
+    uploadProgress.value[progressIndex].percent = percent
+  }
+  updateProgress()
+
+  const uploadOne = async (chunkNumber) => {
+    const start = (chunkNumber - 1) * CHUNK_SIZE
+    const end = Math.min(start + CHUNK_SIZE, raw.size)
+    const blob = raw.slice(start, end)
+    const formData = new FormData()
+    formData.append('file', blob)
+    formData.append('fileHash', fileHash)
+    formData.append('chunkNumber', String(chunkNumber))
+    formData.append('totalChunks', String(totalChunks))
+
+    let attempt = 0
+    while (attempt < MAX_RETRIES) {
+      try {
+        await uploadChunkApi(formData)
+        // 标记完成并持久化
+        doneSet.add(chunkNumber)
+        completed = doneSet.size
+        localStorage.setItem(resumeKey, JSON.stringify({ done: Array.from(doneSet), totalChunks }))
+        updateProgress()
+        return
+      } catch (e) {
+        attempt++
+        if (attempt >= MAX_RETRIES) throw e
+        await new Promise(r => setTimeout(r, 500 * attempt))
+      }
+    }
+  }
+
+  const worker = async () => {
+    while (true) {
+      let idx
+      if (pointer >= tasks.length) return
+      idx = pointer
+      pointer++
+      const n = tasks[idx]
+      await uploadOne(n)
+    }
+  }
+
+  const workers = []
+  const pc = Math.min(CONCURRENCY, tasks.length)
+  for (let w = 0; w < pc; w++) workers.push(worker())
+  await Promise.all(workers)
+
+  // 全部分片完成，调用合并
+  await mergeChunks({ fileHash, filename: raw.name, totalChunks, folderId: uploadForm.folderId || null })
+  uploadProgress.value[progressIndex].status = 'success'
+  uploadProgress.value[progressIndex].percent = 100
+  // 清理断点续传记录
+  try { localStorage.removeItem(resumeKey) } catch {}
 }
 
 // 下载文件
