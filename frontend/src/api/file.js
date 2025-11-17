@@ -27,6 +27,37 @@ export function uploadFile(data, onUploadProgress) {
   })
 }
 
+// 秒传：根据文件哈希检查是否已存在
+export function checkFileExists(fileHash) {
+  return request({
+    url: "/files/exists",
+    method: "post",
+    data: { fileHash },
+    timeout: 30000
+  })
+}
+
+// 分片上传：上传单个分片
+export function uploadChunk(data, onUploadProgress) {
+  return request({
+    url: "/files/chunk",
+    method: "post",
+    data,
+    onUploadProgress,
+    timeout: 300000
+  })
+}
+
+// 分片合并：在服务端合并所有分片
+export function mergeChunks(payload) {
+  return request({
+    url: "/files/merge",
+    method: "post",
+    data: payload,
+    timeout: 300000
+  })
+}
+
 export function downloadFile(id) {
   return request({
     url: `/files/download/${id}`,

@@ -52,6 +52,9 @@ service.interceptors.response.use(
           removeToken()
           window.location.href = '/login'
           break
+        case 413:
+          ElMessage.error('文件过大，超出限制')
+          break
         case 403:
           ElMessage.error('拒绝访问')
           break

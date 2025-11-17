@@ -239,22 +239,30 @@ const uploadFilesFunc = async () => {
   }))
 
   try {
+    const MAX_MB = 100
+    const MAX_BYTES = MAX_MB * 1024 * 1024
     for (let i = 0; i < uploadFiles.value.length; i++) {
       const file = uploadFiles.value[i]
+      // 前置大小校验，避免后端 413
+      if (file.size > MAX_BYTES) {
+        uploadProgress.value[i].status = 'exception'
+        uploadProgress.value[i].percent = 0
+        ElMessage.error(`文件 "${file.name}" 超过 ${MAX_MB}MB 限制`)
+        continue
+      }
+
       const formData = new FormData()
       formData.append('file', file.raw)
-      
       if (uploadForm.folderId) {
         formData.append('folderId', uploadForm.folderId)
       }
 
       uploadProgress.value[i].status = 'uploading'
-      
       await uploadFile(formData, (progressEvent) => {
         const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total)
         uploadProgress.value[i].percent = percent
       })
-      
+
       uploadProgress.value[i].status = 'success'
       uploadProgress.value[i].percent = 100
     }
