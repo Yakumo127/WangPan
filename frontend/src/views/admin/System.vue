@@ -44,6 +44,11 @@
                   <el-button size="small" @click="addCategory('audio')">音频</el-button>
                   <el-button size="small" @click="addCategory('video')">视频</el-button>
                 </div>
+                <div class="policy-ops" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                  <span class="cat-label" style="color:#666;">策略导入/导出：</span>
+                  <el-button size="small" @click="exportPolicy">导出JSON</el-button>
+                  <el-button size="small" type="primary" @click="openImportDialog">导入JSON</el-button>
+                </div>
                 <div class="quick-check" style="display:flex; align-items:center; gap:8px;">
                   <span class="qc-label" style="color:#666;">文件名快速校验：</span>
                   <el-input v-model="testFilename" placeholder="如：report.pdf" style="max-width:280px;" clearable />
@@ -94,6 +99,26 @@
               <el-button @click="resetConfig">重置</el-button>
             </el-form-item>
           </el-form>
+          <!-- 策略导入对话框 -->
+          <el-dialog v-model="showImportDialog" title="导入上传策略（JSON）" width="520px">
+            <div style="display:flex; flex-direction:column; gap:10px;">
+              <el-alert title="仅支持 allowAll 和 allowedSuffixes 字段；导入后将覆盖当前策略。" type="info" show-icon />
+              <div>
+                <input type="file" accept="application/json,.json" @change="onImportFileChange" />
+              </div>
+              <el-input
+                v-model="importText"
+                type="textarea"
+                :rows="8"
+                placeholder='可粘贴策略JSON，如：{"allowAll":false,"allowedSuffixes":["jpg","pdf"]}'
+              />
+              <div v-if="importPreview" style="color:#666;">预览：{{ importPreview }}</div>
+            </div>
+            <template #footer>
+              <el-button @click="showImportDialog = false">取消</el-button>
+              <el-button type="primary" :loading="importing" @click="confirmImport">确定导入</el-button>
+            </template>
+          </el-dialog>
         </el-card>
       </el-tab-pane>
       
@@ -358,6 +383,9 @@ export default {
     })
     const uploadPolicy = ref({ allowAll: true, allowedSuffixes: [] })
     const invalidSuffixes = ref([])
+    const showImportDialog = ref(false)
+    const importText = ref("")
+    const importing = ref(false)
     
     const recycleStats = ref({
       totalItems: 0,
@@ -749,6 +777,82 @@ export default {
         ElMessage.error('保存失败')
       }
     }
+
+    // 策略导出（JSON 文件）
+    const exportPolicy = async () => {
+      try {
+        // 以当前状态导出，也可先刷新一次 getUploadPolicy()
+        const payload = {
+          allowAll: !!uploadPolicy.value.allowAll,
+          allowedSuffixes: normalizeSuffixes(uploadPolicy.value.allowedSuffixes),
+          version: 1,
+          exportedAt: new Date().toISOString()
+        }
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `upload-policy-${new Date().toISOString().replace(/[:.]/g,'-')}.json`
+        a.click()
+        URL.revokeObjectURL(url)
+      } catch (e) {
+        ElMessage.error('导出失败')
+      }
+    }
+
+    const openImportDialog = () => {
+      importText.value = ''
+      showImportDialog.value = true
+    }
+    const onImportFileChange = (e) => {
+      try {
+        const file = e.target?.files?.[0]
+        if (!file) return
+        const reader = new FileReader()
+        reader.onload = () => {
+          try { importText.value = String(reader.result || '') } catch {}
+        }
+        reader.readAsText(file)
+        // 清空 input 以便可重复选择同一文件
+        e.target.value = ''
+      } catch {}
+    }
+
+    const importPreview = computed(() => {
+      const txt = (importText.value || '').trim()
+      if (!txt) return ''
+      try {
+        const obj = JSON.parse(txt)
+        const allowAll = !!obj.allowAll
+        const suffixes = normalizeSuffixes(obj.allowedSuffixes || [])
+        return allowAll ? '策略：允许全部文件类型' : `策略：白名单后缀（${suffixes.length}）：${suffixes.join(', ')}`
+      } catch {
+        return 'JSON 格式不正确'
+      }
+    })
+
+    const confirmImport = async () => {
+      try {
+        importing.value = true
+        const obj = JSON.parse(importText.value || '{}')
+        const allowAll = !!obj.allowAll
+        const suffixes = normalizeSuffixes(obj.allowedSuffixes || [])
+        if (!allowAll && suffixes.length === 0) {
+          ElMessage.error('导入的策略为空白白名单，请添加后缀或开启允许全部')
+          return
+        }
+        await updateUploadPolicy({ allowAll, allowedSuffixes: suffixes })
+        uploadPolicy.value.allowAll = allowAll
+        uploadPolicy.value.allowedSuffixes = suffixes
+        invalidSuffixes.value = []
+        showImportDialog.value = false
+        ElMessage.success('策略导入成功')
+      } catch (e) {
+        ElMessage.error('导入失败，请检查JSON内容')
+      } finally {
+        importing.value = false
+      }
+    }
     
     // 重置配置
     const resetConfig = () => {
@@ -796,6 +900,14 @@ export default {
       canSavePolicy,
       onAllowAllChange,
       onSuffixesChange,
+      exportPolicy,
+      openImportDialog,
+      showImportDialog,
+      importText,
+      importPreview,
+      onImportFileChange,
+      importing,
+      confirmImport,
       addCommonSuffixes,
       clearSuffixes,
       saveUploadPolicy,
