@@ -49,6 +49,14 @@
                   <el-button size="small" @click="exportPolicy">导出JSON</el-button>
                   <el-button size="small" type="primary" @click="openImportDialog">导入JSON</el-button>
                 </div>
+                <div class="template-ops" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                  <span class="cat-label" style="color:#666;">模板：</span>
+                  <el-select v-model="selectedTemplate" placeholder="选择模板" style="min-width:220px;">
+                    <el-option v-for="opt in templateOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+                  </el-select>
+                  <el-button size="small" type="primary" :disabled="!selectedTemplate" @click="applyTemplate">应用模板</el-button>
+                  <span v-if="templatePreview" style="color:#666;">{{ templatePreview }}</span>
+                </div>
                 <div class="quick-check" style="display:flex; align-items:center; gap:8px;">
                   <span class="qc-label" style="color:#666;">文件名快速校验：</span>
                   <el-input v-model="testFilename" placeholder="如：report.pdf" style="max-width:280px;" clearable />
@@ -113,6 +121,14 @@
                 placeholder='可粘贴策略JSON，如：{"allowAll":false,"allowedSuffixes":["jpg","pdf"]}'
               />
               <div v-if="importPreview" style="color:#666;">预览：{{ importPreview }}</div>
+              <div v-if="importDiff" style="color:#666;">
+                <div>差异：</div>
+                <ul style="margin:4px 0 0 16px; line-height:1.6;">
+                  <li v-if="importDiff.allowAllChanged">allowAll：{{ importDiff.allowAllFrom ? '开' : '关' }} → {{ importDiff.allowAllTo ? '开' : '关' }}</li>
+                  <li>新增后缀：{{ (importDiff.added||[]).length }} 个</li>
+                  <li>移除后缀：{{ (importDiff.removed||[]).length }} 个</li>
+                </ul>
+              </div>
             </div>
             <template #footer>
               <el-button @click="showImportDialog = false">取消</el-button>
@@ -386,6 +402,7 @@ export default {
     const showImportDialog = ref(false)
     const importText = ref("")
     const importing = ref(false)
+    const selectedTemplate = ref("")
     
     const recycleStats = ref({
       totalItems: 0,
@@ -853,6 +870,62 @@ export default {
         importing.value = false
       }
     }
+
+    // 策略差异计算（导入/模板预览复用）
+    const getPolicyDiff = (curr, next) => {
+      const c = { allowAll: !!curr.allowAll, allowedSuffixes: normalizeSuffixes(curr.allowedSuffixes || []) }
+      const n = { allowAll: !!next.allowAll, allowedSuffixes: normalizeSuffixes(next.allowedSuffixes || []) }
+      const cSet = new Set(c.allowedSuffixes)
+      const nSet = new Set(n.allowedSuffixes)
+      const added = Array.from(nSet).filter(x => !cSet.has(x))
+      const removed = Array.from(cSet).filter(x => !nSet.has(x))
+      const allowAllChanged = c.allowAll !== n.allowAll
+      return { allowAllChanged, allowAllFrom: c.allowAll, allowAllTo: n.allowAll, added, removed }
+    }
+
+    const importDiff = computed(() => {
+      const txt = (importText.value || '').trim()
+      if (!txt) return null
+      try {
+        const obj = JSON.parse(txt)
+        const next = { allowAll: !!obj.allowAll, allowedSuffixes: normalizeSuffixes(obj.allowedSuffixes || []) }
+        return getPolicyDiff(uploadPolicy.value, next)
+      } catch { return null }
+    })
+
+    const templateOptions = [
+      { value: 'allowAll', label: '全允许（不限制）' },
+      { value: 'imageOnly', label: '仅图片' },
+      { value: 'office', label: '办公文档' },
+      { value: 'common', label: '常用（图片+文档+压缩）' },
+      { value: 'media', label: '图片+音视频' }
+    ]
+    const templates = {
+      allowAll: { allowAll: true, allowedSuffixes: [] },
+      imageOnly: { allowAll: false, allowedSuffixes: ['jpg','jpeg','png','gif','webp','bmp','svg'] },
+      office: { allowAll: false, allowedSuffixes: ['pdf','doc','docx','xls','xlsx','ppt','pptx','txt','md'] },
+      common: { allowAll: false, allowedSuffixes: ['jpg','jpeg','png','gif','webp','pdf','doc','docx','xls','xlsx','ppt','pptx','txt','zip','rar','7z'] },
+      media: { allowAll: false, allowedSuffixes: ['jpg','jpeg','png','gif','webp','mp4','webm','mp3','wav'] }
+    }
+    const templatePreview = computed(() => {
+      const key = selectedTemplate.value
+      if (!key || !templates[key]) return ''
+      const diff = getPolicyDiff(uploadPolicy.value, templates[key])
+      const parts = []
+      if (diff.allowAllChanged) parts.push(`allowAll: ${diff.allowAllFrom ? '开' : '关'} → ${diff.allowAllTo ? '开' : '关'}`)
+      if (diff.added.length) parts.push(`将新增 ${diff.added.length}`)
+      if (diff.removed.length) parts.push(`将移除 ${diff.removed.length}`)
+      return parts.length ? `变更预览：${parts.join('，')}` : '与当前一致'
+    })
+    const applyTemplate = async () => {
+      const key = selectedTemplate.value
+      const t = templates[key]
+      if (!t) return
+      uploadPolicy.value.allowAll = !!t.allowAll
+      uploadPolicy.value.allowedSuffixes = normalizeSuffixes(t.allowedSuffixes || [])
+      await saveUploadPolicy()
+      ElMessage.success('模板已应用并保存')
+    }
     
     // 重置配置
     const resetConfig = () => {
@@ -905,9 +978,14 @@ export default {
       showImportDialog,
       importText,
       importPreview,
+      importDiff,
       onImportFileChange,
       importing,
       confirmImport,
+      selectedTemplate,
+      templateOptions,
+      templatePreview,
+      applyTemplate,
       addCommonSuffixes,
       clearSuffixes,
       saveUploadPolicy,
