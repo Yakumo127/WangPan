@@ -107,11 +107,16 @@ public class SystemSettingService {
     }
 
     public void setAllowedSuffixes(java.util.List<String> suffixes, com.filemanager.entity.User updatedBy) {
-        String joined = (suffixes == null || suffixes.isEmpty()) ? "" : String.join(",", suffixes.stream().map(s -> {
-            String v = s == null ? "" : s.trim().toLowerCase();
-            if (v.startsWith(".")) v = v.substring(1);
-            return v;
-        }).filter(s -> !s.isEmpty()).toList());
+        String joined = (suffixes == null || suffixes.isEmpty()) ? "" : String.join(",",
+                suffixes.stream().map(s -> {
+                    String v = s == null ? "" : s.trim().toLowerCase();
+                    if (v.startsWith(".")) v = v.substring(1);
+                    return v;
+                })
+                // 仅保留字母数字的简单后缀，过滤非法字符
+                .filter(s -> !s.isEmpty() && s.matches("[a-z0-9]+"))
+                .distinct()
+                .toList());
         setString(KEY_UPLOAD_ALLOWED_SUFFIXES, joined, "允许的上传文件后缀（逗号分隔，小写，不含点）", updatedBy);
     }
 

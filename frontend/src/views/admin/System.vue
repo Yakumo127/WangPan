@@ -25,15 +25,25 @@
             </el-form-item>
             
             <el-form-item label="不限制上传类型">
-              <el-switch v-model="uploadPolicy.allowAll" @change="saveUploadPolicy" />
+              <el-switch v-model="uploadPolicy.allowAll" @change="onAllowAllChange" />
               <span class="tip" style="margin-left:8px;">开启后，所有文件均可上传</span>
             </el-form-item>
             <el-form-item label="允许的文件后缀" v-if="!uploadPolicy.allowAll">
-              <el-select v-model="uploadPolicy.allowedSuffixes" multiple filterable allow-create default-first-option placeholder="输入后按回车添加，如：jpg、pdf、zip">
+              <el-select v-model="uploadPolicy.allowedSuffixes" multiple filterable allow-create default-first-option placeholder="输入后按回车添加，如：jpg、pdf、zip" @change="onSuffixesChange">
                 <el-option v-for="s in uploadPolicy.allowedSuffixes" :key="s" :label="s" :value="s" />
               </el-select>
               <el-button style="margin-left:8px;" @click="addCommonSuffixes">常用后缀</el-button>
-              <el-button type="primary" style="margin-left:8px;" @click="saveUploadPolicy">保存上传策略</el-button>
+              <el-button style="margin-left:8px;" @click="clearSuffixes">清空</el-button>
+              <el-button type="primary" style="margin-left:8px;" :disabled="!canSavePolicy" @click="saveUploadPolicy">保存上传策略</el-button>
+              <div class="form-hint" :class="{ error: !canSavePolicy }" style="margin-top:6px;">
+                <template v-if="!canSavePolicy">
+                  <span v-if="invalidSuffixes.length > 0">存在非法后缀：{{ invalidSuffixes.join(', ') }}（仅允许小写字母和数字，不含点）</span>
+                  <span v-else>请至少配置一个允许的后缀</span>
+                </template>
+                <template v-else>
+                  已配置 {{ uploadPolicy.allowedSuffixes.length }} 个后缀
+                </template>
+              </div>
             </el-form-item>
             
             <el-form-item label="会话超时">
@@ -331,6 +341,7 @@ export default {
       memoryUsage: "256MB / 1024MB"
     })
     const uploadPolicy = ref({ allowAll: true, allowedSuffixes: [] })
+    const invalidSuffixes = ref([])
     
     const recycleStats = ref({
       totalItems: 0,
@@ -642,11 +653,49 @@ export default {
       const commons = ['jpg','jpeg','png','gif','webp','pdf','doc','docx','xls','xlsx','ppt','pptx','txt','zip','rar','7z','mp4','mp3']
       uploadPolicy.value.allowedSuffixes = normalizeSuffixes([...(uploadPolicy.value.allowedSuffixes||[]), ...commons])
     }
+    const clearSuffixes = () => {
+      uploadPolicy.value.allowedSuffixes = []
+      invalidSuffixes.value = []
+    }
+    const onSuffixesChange = (vals) => {
+      const normalized = normalizeSuffixes(vals)
+      const bad = []
+      for (const s of vals || []) {
+        const v = String(s || '').trim().toLowerCase().replace(/^\./, '')
+        if (!v || !/^[a-z0-9]+$/.test(v)) bad.push(s)
+      }
+      uploadPolicy.value.allowedSuffixes = normalized
+      invalidSuffixes.value = bad
+      if (bad.length > 0) {
+        ElMessage.warning('已自动忽略非法后缀（仅允许小写字母和数字，不含点）')
+      }
+    }
+    const canSavePolicy = computed(() => {
+      if (uploadPolicy.value.allowAll) return true
+      return (uploadPolicy.value.allowedSuffixes && uploadPolicy.value.allowedSuffixes.length > 0) && (invalidSuffixes.value.length === 0)
+    })
+    const onAllowAllChange = async (val) => {
+      if (val) {
+        // 开启 allowAll 直接保存
+        try { await saveUploadPolicy(); } catch {}
+        return
+      }
+      // 关闭 allowAll 时，如为空则提示先配置
+      if (!uploadPolicy.value.allowedSuffixes || uploadPolicy.value.allowedSuffixes.length === 0) {
+        ElMessage.info('已关闭“不限制上传类型”。请先添加允许的后缀再保存。')
+      } else {
+        try { await saveUploadPolicy(); } catch {}
+      }
+    }
     const saveUploadPolicy = async () => {
       try {
         const payload = {
           allowAll: !!uploadPolicy.value.allowAll,
           allowedSuffixes: normalizeSuffixes(uploadPolicy.value.allowedSuffixes)
+        }
+        if (!payload.allowAll && (!payload.allowedSuffixes || payload.allowedSuffixes.length === 0)) {
+          ElMessage.error('请至少配置一个允许的后缀，或开启“不限制上传类型”')
+          return
         }
         await updateUploadPolicy(payload)
         ElMessage.success('上传策略已更新')
@@ -677,7 +726,7 @@ export default {
         if (cfg.retentionDays) systemConfig.value.retentionDays = cfg.retentionDays
         const pol = await getUploadPolicy()
         uploadPolicy.value.allowAll = !!pol.allowAll
-        uploadPolicy.value.allowedSuffixes = Array.isArray(pol.allowedSuffixes) ? pol.allowedSuffixes : []
+        uploadPolicy.value.allowedSuffixes = Array.isArray(pol.allowedSuffixes) ? normalizeSuffixes(pol.allowedSuffixes) : []
       } catch (e) {}
       nextTick(() => { loadRecycleBinData() })
     })
@@ -697,6 +746,10 @@ export default {
       systemConfig,
       systemInfo,
       uploadPolicy,
+      invalidSuffixes,
+      canSavePolicy,
+      onAllowAllChange,
+      onSuffixesChange,
       recycleStats,
       formatFileSize,
       formatStorage,
