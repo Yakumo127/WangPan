@@ -401,12 +401,36 @@ const uploadInChunksWithRetryAndResume = async (elFile, progressIndex, fileHash,
   for (let w = 0; w < pc; w++) workers.push(worker())
   await Promise.all(workers)
 
-  // 全部分片完成，调用合并
-  await mergeChunks({ fileHash, filename: raw.name, totalChunks, folderId: uploadForm.folderId || null })
-  uploadProgress.value[progressIndex].status = 'success'
-  uploadProgress.value[progressIndex].percent = 100
-  // 清理断点续传记录
-  try { localStorage.removeItem(resumeKey) } catch {}
+  // 上传完成后再次向服务端核对缺失分片
+  try {
+    const status = await getChunkStatus(fileHash, totalChunks)
+    const missing = Array.isArray(status?.missing) ? status.missing : []
+    if (missing.length > 0) {
+      ElMessage.warning(`检测到 ${missing.length} 个分片未上传，正在补传...`)
+      // 依次补传缺失分片，可复用重试逻辑
+      for (const n of missing) {
+        await uploadOne(n)
+      }
+    }
+  } catch (e) {
+    // 忽略状态检查失败，不阻断后续合并（合并内部也会校验）
+  }
+
+  // 合并前友好提示
+  ElMessage.info('分片已上传完成，开始服务端合并...')
+  try {
+    await mergeChunks({ fileHash, filename: raw.name, totalChunks, folderId: uploadForm.folderId || null })
+    uploadProgress.value[progressIndex].status = 'success'
+    uploadProgress.value[progressIndex].percent = 100
+    // 清理断点续传记录
+    try { localStorage.removeItem(resumeKey) } catch {}
+  } catch (e) {
+    // 合并失败引导：显示简要原因与操作建议
+    uploadProgress.value[progressIndex].status = 'exception'
+    const msg = (e && e.message) ? e.message : '合并失败'
+    ElMessage.error(`${msg}。建议稍后重试，已上传分片将在72小时内保留用于断点续传。`)
+    throw e
+  }
 }
 
 // 下载文件
