@@ -199,6 +199,25 @@ public class FileService {
         }
     }
 
+    // 分片：列出已存在的分片编号（用于断点续传）
+    public java.util.List<Integer> listUploadedChunks(Long userId, String fileHash) throws IOException {
+        if (userId == null || fileHash == null || fileHash.isBlank()) return java.util.List.of();
+        Path dir = Paths.get(storagePath, "chunks", "user_" + userId, fileHash);
+        if (!Files.exists(dir) || !Files.isDirectory(dir)) return java.util.List.of();
+        java.util.List<Integer> list = new java.util.ArrayList<>();
+        try (java.util.stream.Stream<Path> stream = Files.list(dir)) {
+            stream.forEach(p -> {
+                String name = p.getFileName().toString();
+                if (name.startsWith("chunk_") && name.endsWith(".part")) {
+                    String numStr = name.substring(6, name.length() - 5);
+                    try { list.add(Integer.parseInt(numStr)); } catch (NumberFormatException ignore) {}
+                }
+            });
+        }
+        list.sort(java.util.Comparator.naturalOrder());
+        return list;
+    }
+
     // 分片：合并分片为最终文件并入库
     public File mergeChunks(Long userId,
                             String fileHash,

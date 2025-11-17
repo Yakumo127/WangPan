@@ -135,7 +135,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, Refresh, Search, Document, Download, Delete, Edit } from '@element-plus/icons-vue'
-import { getFileList, uploadFile, downloadFile as downloadFileApi, deleteFile as deleteFileApi, searchFiles as searchFilesApi, renameFile as renameFileApi, checkFileExists, uploadChunk as uploadChunkApi, mergeChunks } from '@/api/file'
+import { getFileList, uploadFile, downloadFile as downloadFileApi, deleteFile as deleteFileApi, searchFiles as searchFilesApi, renameFile as renameFileApi, checkFileExists, uploadChunk as uploadChunkApi, mergeChunks, getChunkStatus } from '@/api/file'
 import { getFolderList } from '@/api/folder'
 
 const loading = ref(false)
@@ -334,6 +334,15 @@ const uploadInChunksWithRetryAndResume = async (elFile, progressIndex, fileHash,
   } catch {}
 
   const doneSet = new Set(resume.done || [])
+  // 从服务端获取已收分片，优先使用服务端记录增强跨端断点能力
+  try {
+    const status = await getChunkStatus(fileHash)
+    if (status && Array.isArray(status.uploaded)) {
+      status.uploaded.forEach(n => doneSet.add(n))
+    }
+  } catch (e) {
+    // 取不到服务端状态时，继续使用本地记录
+  }
   let completed = doneSet.size
 
   const tasks = []

@@ -58,6 +58,16 @@ export function mergeChunks(payload) {
   })
 }
 
+// 获取已上传分片编号列表（用于断点续传）
+export function getChunkStatus(fileHash) {
+  return request({
+    url: "/files/chunk/status",
+    method: "get",
+    params: { fileHash },
+    timeout: 30000
+  })
+}
+
 export function downloadFile(id) {
   return request({
     url: `/files/download/${id}`,

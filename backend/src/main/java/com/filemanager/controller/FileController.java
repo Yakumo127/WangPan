@@ -141,6 +141,20 @@ public class FileController {
         }
     }
 
+    // 分片状态：查询已上传的分片编号（断点续传）
+    @GetMapping("/chunk/status")
+    public ResponseEntity<Map<String, Object>> chunkStatus(@RequestParam("fileHash") String fileHash) {
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            String username = auth.getName();
+            Long userId = userService.getUserIdByUsername(username);
+            java.util.List<Integer> uploaded = fileService.listUploadedChunks(userId, fileHash);
+            return ResponseEntity.ok(Map.of("uploaded", uploaded));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
     // 管理员：分页获取全量文件（支持关键字和状态筛选）
     @GetMapping("/admin/list")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
