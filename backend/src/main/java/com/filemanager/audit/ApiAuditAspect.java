@@ -41,17 +41,11 @@ public class ApiAuditAspect {
         } catch (Exception ignore) {}
     }
 
-    // 控制器异常兜底：记录失败请求，避免遗漏
+    // 控制器异常兜底：记录失败请求（匿名也记系统级失败），避免遗漏
     @AfterThrowing(pointcut = "within(com.filemanager.controller..*)", throwing = "ex")
     public void onControllerException(JoinPoint jp, Throwable ex) {
         try {
-            // 仅在已认证用户下记录，以满足 user_id 非空约束
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-            if (auth == null || auth.getName() == null || "anonymousUser".equalsIgnoreCase(auth.getName())) {
-                return;
-            }
-            Long userId = userRepository.findByUsername(auth.getName()).map(u -> u.getId()).orElse(null);
-            if (userId == null) return;
             HttpServletRequest req = requestInfoProvider.getCurrentRequest();
             if (req == null) return;
             String method = req.getMethod();
@@ -60,7 +54,17 @@ public class ApiAuditAspect {
             String desc = "API调用失败：" + path;
             Long start = (Long) req.getAttribute(ATTR_START);
             long cost = start == null ? 0L : (System.currentTimeMillis() - start);
-            try { auditLogService.logFailure(userId, action, "API", null, path, desc, ex.getMessage(), cost); } catch (Exception ignore) {}
+            boolean isAnonymous = (auth == null || auth.getName() == null || "anonymousUser".equalsIgnoreCase(auth.getName()));
+            if (isAnonymous) {
+                try { auditLogService.logSystemFailure(action, "API", null, path, desc, ex.getMessage(), cost); } catch (Exception ignore) {}
+            } else {
+                Long userId = userRepository.findByUsername(auth.getName()).map(u -> u.getId()).orElse(null);
+                if (userId != null) {
+                    try { auditLogService.logFailure(userId, action, "API", null, path, desc, ex.getMessage(), cost); } catch (Exception ignore) {}
+                } else {
+                    try { auditLogService.logSystemFailure(action, "API", null, path, desc, ex.getMessage(), cost); } catch (Exception ignore) {}
+                }
+            }
         } catch (Exception ignore) {
         }
     }
@@ -76,6 +80,9 @@ public class ApiAuditAspect {
             HttpServletRequest req = requestInfoProvider.getCurrentRequest();
             if (req == null) return;
             if (successOnlyGet && !"GET".equalsIgnoreCase(req.getMethod())) return;
+            // 避免下载 GET 的提前成功记录（下载有专门的成功/失败打点，并且流可能在返回后失败）
+            String p0 = req.getRequestURI();
+            if (p0 != null && p0.contains("/download")) return;
             Long userId = userRepository.findByUsername(auth.getName()).map(u -> u.getId()).orElse(null);
             if (userId == null) return;
             String method = req.getMethod();

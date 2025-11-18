@@ -40,6 +40,13 @@ public class SystemSettingService {
                 .orElse(def);
     }
 
+    @com.filemanager.audit.AuditedOperation(
+            actionType = com.filemanager.entity.UserLog.ACTION_UPDATE_SETTING,
+            resourceType = com.filemanager.entity.UserLog.RESOURCE_SYSTEM,
+            userId = "#updatedBy?.id",
+            resourceName = "#key",
+            description = "'setBoolean=' + #value"
+    )
     public void setBoolean(String key, boolean value, com.filemanager.entity.User updatedBy) {
         SystemConfig cfg = systemConfigRepository.findByConfigKey(key).orElseGet(SystemConfig::new);
         cfg.setConfigKey(key);
@@ -52,6 +59,13 @@ public class SystemSettingService {
         systemConfigRepository.save(cfg);
     }
 
+    @com.filemanager.audit.AuditedOperation(
+            actionType = com.filemanager.entity.UserLog.ACTION_UPDATE_SETTING_RETENTION,
+            resourceType = com.filemanager.entity.UserLog.RESOURCE_SYSTEM,
+            userId = "#updatedBy?.id",
+            resourceName = "#key",
+            description = "#description + ': ' + #value"
+    )
     public void setInt(String key, int value, String description, com.filemanager.entity.User updatedBy) {
         SystemConfig cfg = systemConfigRepository.findByConfigKey(key).orElseGet(SystemConfig::new);
         cfg.setConfigKey(key);
@@ -70,6 +84,13 @@ public class SystemSettingService {
                 .orElse(def);
     }
 
+    @com.filemanager.audit.AuditedOperation(
+            actionType = com.filemanager.entity.UserLog.ACTION_UPDATE_SETTING,
+            resourceType = com.filemanager.entity.UserLog.RESOURCE_SYSTEM,
+            userId = "#updatedBy?.id",
+            resourceName = "#key",
+            description = "#description + ': ' + #value"
+    )
     public void setString(String key, String value, String description, com.filemanager.entity.User updatedBy) {
         SystemConfig cfg = systemConfigRepository.findByConfigKey(key).orElseGet(SystemConfig::new);
         cfg.setConfigKey(key);
@@ -102,10 +123,24 @@ public class SystemSettingService {
         return list;
     }
 
+    @com.filemanager.audit.AuditedOperation(
+            actionType = com.filemanager.entity.UserLog.ACTION_UPDATE_SETTING_UPLOAD_POLICY,
+            resourceType = com.filemanager.entity.UserLog.RESOURCE_SYSTEM,
+            userId = "#updatedBy?.id",
+            resourceName = "T(com.filemanager.service.SystemSettingService).KEY_UPLOAD_ALLOW_ALL",
+            description = "'allowAll=' + #allowAll"
+    )
     public void setUploadAllowAll(boolean allowAll, com.filemanager.entity.User updatedBy) {
         setBoolean(KEY_UPLOAD_ALLOW_ALL, allowAll, updatedBy);
     }
 
+    @com.filemanager.audit.AuditedOperation(
+            actionType = com.filemanager.entity.UserLog.ACTION_UPDATE_SETTING_UPLOAD_POLICY,
+            resourceType = com.filemanager.entity.UserLog.RESOURCE_SYSTEM,
+            userId = "#updatedBy?.id",
+            resourceName = "T(com.filemanager.service.SystemSettingService).KEY_UPLOAD_ALLOWED_SUFFIXES",
+            description = "'suffixes=' + (#suffixes == null ? '' : #suffixes.toString())"
+    )
     public void setAllowedSuffixes(java.util.List<String> suffixes, com.filemanager.entity.User updatedBy) {
         String joined = (suffixes == null || suffixes.isEmpty()) ? "" : String.join(",",
                 suffixes.stream().map(s -> {

@@ -67,6 +67,12 @@ public class File {
     private Integer downloadCount = 0;
     
     private String description;
+
+    // 当前激活版本（版本记录表：file_versions）
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "active_version_id")
+    @JsonIgnore
+    private FileVersion activeVersion;
     
     // 用户侧：是否对文件所有者隐藏（用户在回收站“彻底删除/清空”后置为true，仅管理员可见）
     @Column(name = "owner_hidden")
@@ -141,4 +147,6 @@ public class File {
     public void setAdminDeleteReason(String adminDeleteReason) { this.adminDeleteReason = adminDeleteReason; }
     public Boolean getQuotaReleased() { return quotaReleased; }
     public void setQuotaReleased(Boolean quotaReleased) { this.quotaReleased = quotaReleased; }
+    public FileVersion getActiveVersion() { return activeVersion; }
+    public void setActiveVersion(FileVersion activeVersion) { this.activeVersion = activeVersion; }
 }

@@ -92,5 +92,5 @@ audit:
   purge:
     cron: "0 0 3 * * ?"
   success-fallback:
-    enabled: false
+    enabled: true
     only-get: true

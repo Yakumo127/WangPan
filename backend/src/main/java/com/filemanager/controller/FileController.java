@@ -49,28 +49,225 @@ public class FileController {
     private final SystemSettingService systemSettingService;
     private final AuditLogService auditLogService;
     private final com.filemanager.metrics.DownloadMetrics downloadMetrics;
+    private final com.filemanager.repository.FileVersionRepository fileVersionRepository;
+    private final com.filemanager.repository.BlobRepository blobRepository;
+    private final com.filemanager.repository.FileRepository fileRepository;
+    private final com.filemanager.repository.UserRepository userRepository;
+    private final com.filemanager.service.BlobService blobService;
     
     @PostMapping("/upload")
     public ResponseEntity<Map<String, Object>> uploadFile(
             @RequestParam("file") MultipartFile file,
-            @RequestParam(value = "folderId", required = false) Long folderId) {
+            @RequestParam(value = "folderId", required = false) Long folderId,
+            @RequestParam(value = "parentId", required = false) Long parentId) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String username = auth.getName();
+        Long userId = userService.getUserIdByUsername(username);
+
+        long start = System.currentTimeMillis();
+        try {
+            File uploadedFile = fileService.uploadFile(file, userId, folderId, parentId);
+            return ResponseEntity.ok(Map.of(
+                    "message", "文件上传成功",
+                    "fileId", uploadedFile.getId(),
+                    "filename", uploadedFile.getOriginalFilename(),
+                    "size", uploadedFile.getSize(),
+                    "uploadTime", uploadedFile.getCreateTime()
+            ));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        } catch (IOException e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("message", "文件存储异常"));
+        }
+    }
+
+    // 版本列表
+    @GetMapping("/{fileId}/versions")
+    public ResponseEntity<?> listVersions(@PathVariable Long fileId) {
         try {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             String username = auth.getName();
             Long userId = userService.getUserIdByUsername(username);
-            
-            File uploadedFile = fileService.uploadFile(file, userId, folderId);
-            
-            return ResponseEntity.ok(Map.of(
-                "message", "文件上传成功",
-                "fileId", uploadedFile.getId(),
-                "filename", uploadedFile.getOriginalFilename(),
-                "size", uploadedFile.getSize(),
-                "uploadTime", uploadedFile.getCreateTime()
-            ));
+            // 简化：复用服务与仓库，直接查询
+            // 基础权限：确保该文件属于当前用户
+            File f = fileService.getFile(fileId, userId);
+            java.util.List<com.filemanager.entity.FileVersion> list = fileVersionRepository.findByFile_IdOrderByVersionNoAsc(fileId);
+            java.util.List<com.filemanager.dto.FileVersionDTO> dto = new java.util.ArrayList<>();
+            for (com.filemanager.entity.FileVersion v : list) {
+                com.filemanager.dto.FileVersionDTO d = new com.filemanager.dto.FileVersionDTO();
+                d.setId(v.getId());
+                d.setVersionNo(v.getVersionNo());
+                d.setBlobHash(v.getBlobHash());
+                d.setSize(v.getSize());
+                d.setContentType(v.getContentType());
+                d.setComment(v.getComment());
+                d.setCreatedBy(v.getCreatedBy());
+                d.setCreateTime(v.getCreateTime());
+                dto.add(d);
+            }
+            return ResponseEntity.ok(dto);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }
+    }
+
+    // 创建新版本（上传文件）
+    @PostMapping("/{fileId}/versions/upload")
+    public ResponseEntity<?> createVersionByUpload(@PathVariable Long fileId,
+                                                   @RequestParam("file") MultipartFile file) {
+        long start = System.currentTimeMillis();
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String username = auth.getName();
+        Long userId = userService.getUserIdByUsername(username);
+        try {
+            File updated = fileService.uploadFile(file, userId, null, fileId);
+            return ResponseEntity.ok(Map.of(
+                    "message", "已创建新版本",
+                    "fileId", updated.getId(),
+                    "activeVersion", updated.getActiveVersion() != null ? updated.getActiveVersion().getVersionNo() : null,
+                    "size", updated.getSize()
+            ));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        } catch (IOException e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("message", "文件存储异常"));
+        }
+    }
+
+    // 创建新版本（复用已存在 Blob）
+    @PostMapping("/{fileId}/versions/from-blob")
+    public ResponseEntity<?> createVersionFromBlob(@PathVariable Long fileId,
+                                                   @RequestBody Map<String, Object> body) {
+        long start = System.currentTimeMillis();
+        String fileHash = body.get("fileHash") == null ? null : body.get("fileHash").toString();
+        String filename = body.get("filename") == null ? null : body.get("filename").toString();
+        if (fileHash == null || fileHash.isBlank()) throw new IllegalArgumentException("缺少 fileHash");
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String username = auth.getName();
+        Long userId = userService.getUserIdByUsername(username);
+        File owned = fileService.getFile(fileId, userId); // 校验归属
+        var opt = fileService.findBlobByHash(fileHash);
+        if (opt.isEmpty()) throw new com.filemanager.exception.NotFoundException("Blob 不存在");
+        var blob = opt.get();
+        File updated = fileService.createOrUpdateFromBlob(userId, owned.getFolder() != null ? owned.getFolder().getId() : null, owned.getId(), blob, filename != null ? filename : owned.getOriginalFilename(), "from blob");
+        return ResponseEntity.ok(Map.of(
+                "message", "已创建新版本",
+                "fileId", updated.getId(),
+                "activeVersion", updated.getActiveVersion() != null ? updated.getActiveVersion().getVersionNo() : null,
+                "size", updated.getSize()
+        ));
+    }
+
+    // 回档到指定版本：创建一个新的版本指向历史 Blob，并切换激活版本
+    @com.filemanager.audit.AuditedOperation(
+            actionType = com.filemanager.entity.UserLog.ACTION_FILE_REVERT,
+            resourceType = com.filemanager.entity.UserLog.RESOURCE_FILE,
+            userId = "@auditSpel.currentUserId()",
+            resourceId = "#fileId",
+            description = "'回档至版本 #' + (#body != null ? #body['versionNo'] : null)"
+    )
+    @PostMapping("/{fileId}/revert")
+    public ResponseEntity<?> revert(@PathVariable Long fileId, @RequestBody Map<String, Object> body) {
+        long start = System.currentTimeMillis();
+        try {
+            Integer versionNo = body == null ? null : (body.get("versionNo") == null ? null : Integer.parseInt(body.get("versionNo").toString()));
+            if (versionNo == null || versionNo < 1) return ResponseEntity.badRequest().body(Map.of("message", "缺少或非法的 versionNo"));
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            String username = auth.getName();
+            Long userId = userService.getUserIdByUsername(username);
+
+            // 基础安全：先取文件，确保归属
+            File f = fileService.getFile(fileId, userId);
+            java.util.Optional<com.filemanager.entity.FileVersion> target = fileVersionRepository.findByFileIdAndVersionNo(fileId, versionNo);
+            if (target.isEmpty()) return ResponseEntity.badRequest().body(Map.of("message", "版本不存在"));
+
+            com.filemanager.entity.FileVersion t = target.get();
+            // 配额差值（仅计当前版本）：以当前激活版本（取最后一个版本）为基准
+            java.util.Optional<com.filemanager.entity.FileVersion> last = fileVersionRepository.findFirstByFile_IdOrderByVersionNoDesc(fileId);
+            long currentSize = last.map(com.filemanager.entity.FileVersion::getSize).orElse(0L);
+            try {
+                fileService.adjustQuotaForNewVersion(userId, currentSize, t.getSize() == null ? 0L : t.getSize());
+            } catch (RuntimeException ex) {
+                return ResponseEntity.status(400).body(Map.of("message", ex.getMessage()));
+            }
+            // 追加一个新版本指向同一 Blob
+            int nextNo = last.map(com.filemanager.entity.FileVersion::getVersionNo).orElse(0) + 1;
+            com.filemanager.entity.FileVersion v = new com.filemanager.entity.FileVersion();
+            v.setFile(f);
+            v.setVersionNo(nextNo);
+            v.setBlobHash(t.getBlobHash());
+            v.setSize(t.getSize());
+            v.setContentType(t.getContentType());
+            v.setComment("revert from #" + versionNo);
+            v.setCreatedBy(userId);
+            v.setCreateTime(java.time.LocalDateTime.now());
+            v = fileVersionRepository.save(v);
+
+            // 切换激活版本，并更新文件的路径/哈希为 Blob 值，便于兼容现有下载逻辑
+            com.filemanager.entity.Blob b = blobRepository.findById(v.getBlobHash()).orElse(null);
+            if (b == null) return ResponseEntity.internalServerError().body(Map.of("message", "Blob 缺失"));
+
+            f.setActiveVersion(v);
+            f.setFileHash(b.getHash());
+            f.setFilePath(b.getPath());
+            f.setContentType(v.getContentType());
+            f.setSize(v.getSize());
+            f.setUpdateTime(java.time.LocalDateTime.now());
+            // 简化：不调整配额差值，后续根据口径再行完善
+            fileRepository.save(f);
+            return ResponseEntity.ok(Map.of("message", "已回档", "activeVersion", v.getVersionNo()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    // 跨用户：根据文件哈希检查 Blob 是否已存在（全局秒传）
+    @PostMapping("/exists-global")
+    public ResponseEntity<Map<String, Object>> checkFileExistsGlobal(@RequestBody Map<String, String> body) {
+        String fileHash = body == null ? null : body.get("fileHash");
+        if (fileHash == null || fileHash.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "缺少 fileHash 参数"));
+        }
+        var opt = fileService.findBlobByHash(fileHash);
+        if (opt.isPresent()) {
+            var b = opt.get();
+            return ResponseEntity.ok(Map.of(
+                    "exists", true,
+                    "size", b.getSize(),
+                    "contentType", b.getContentType()
+            ));
+        }
+        return ResponseEntity.ok(Map.of("exists", false));
+    }
+
+    // 秒传创建：基于已有 Blob 快速创建文件或新版本
+    @PostMapping("/quick-create")
+    public ResponseEntity<?> quickCreate(@RequestBody Map<String, Object> body) {
+        String fileHash = body.get("fileHash") == null ? null : body.get("fileHash").toString();
+        String filename = body.get("filename") == null ? null : body.get("filename").toString();
+        Long folderId = body.get("folderId") instanceof Number ? ((Number) body.get("folderId")).longValue() : null;
+        Long parentId = body.get("parentId") instanceof Number ? ((Number) body.get("parentId")).longValue() : null;
+        if (fileHash == null || fileHash.isBlank() || filename == null || filename.isBlank()) {
+            throw new IllegalArgumentException("缺少 fileHash 或 filename");
+        }
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String username = auth.getName();
+        Long userId = userService.getUserIdByUsername(username);
+
+        var opt = fileService.findBlobByHash(fileHash);
+        if (opt.isEmpty()) throw new com.filemanager.exception.NotFoundException("Blob 不存在，无法秒传");
+        var blob = opt.get();
+
+        // 通过服务层创建（新文件或新版本）
+        File saved = fileService.createOrUpdateFromBlob(userId, folderId, parentId, blob, filename, "quick create");
+        return ResponseEntity.ok(Map.of(
+                "message", parentId == null ? "已创建文件" : "已创建新版本",
+                "fileId", saved.getId(),
+                "filename", saved.getOriginalFilename(),
+                "size", saved.getSize()
+        ));
     }
 
     // 秒传：根据文件哈希检查是否已存在
@@ -96,6 +293,65 @@ public class FileController {
         return ResponseEntity.ok(Map.of("exists", false));
     }
 
+    // 直达：按版本号下载
+    @GetMapping("/download/{fileId}/version/{versionNo}")
+    public ResponseEntity<StreamingResponseBody> downloadVersion(@PathVariable Long fileId,
+                                             @PathVariable Integer versionNo,
+                                             jakarta.servlet.http.HttpServletRequest request) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String username = auth.getName();
+        Long userId = userService.getUserIdByUsername(username);
+        File file = fileService.getFileForDownload(fileId, userId);
+        var optV = fileVersionRepository.findByFileIdAndVersionNo(fileId, versionNo);
+        if (optV.isEmpty()) throw new com.filemanager.exception.NotFoundException("版本不存在");
+        var v = optV.get();
+        var b = blobRepository.findById(v.getBlobHash()).orElse(null);
+        if (b == null) throw new com.filemanager.exception.NotFoundException("Blob 不存在");
+        com.filemanager.entity.File f2 = new com.filemanager.entity.File();
+        f2.setId(file.getId());
+        f2.setOriginalFilename(file.getOriginalFilename());
+        f2.setContentType(v.getContentType());
+        f2.setFileHash(b.getHash());
+        f2.setFilePath(b.getPath());
+        f2.setSize(v.getSize());
+        java.nio.file.Path p = java.nio.file.Path.of(b.getPath());
+        if (!java.nio.file.Files.exists(p) || !java.nio.file.Files.isReadable(p)) {
+            throw new com.filemanager.exception.NotFoundException("文件不存在");
+        }
+        return buildDownloadResponse(request, f2, p);
+    }
+
+    @com.filemanager.audit.AuditedOperation(
+            actionType = com.filemanager.entity.UserLog.ACTION_DOWNLOAD_PROBE,
+            resourceType = com.filemanager.entity.UserLog.RESOURCE_FILE,
+            userId = "@auditSpel.currentUserId()",
+            resourceId = "#fileId",
+            description = "'下载探测: 版本 #' + #versionNo"
+    )
+    @RequestMapping(value = "/download/{fileId}/version/{versionNo}", method = RequestMethod.HEAD)
+    public ResponseEntity<?> headDownloadVersion(@PathVariable Long fileId,
+                                                 @PathVariable Integer versionNo,
+                                                 jakarta.servlet.http.HttpServletRequest request) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String username = auth.getName();
+        Long userId = userService.getUserIdByUsername(username);
+        File file = fileService.getFileForDownload(fileId, userId);
+        var optV = fileVersionRepository.findByFileIdAndVersionNo(fileId, versionNo);
+        if (optV.isEmpty()) throw new com.filemanager.exception.NotFoundException("版本不存在");
+        var v = optV.get();
+        var b = blobRepository.findById(v.getBlobHash()).orElse(null);
+        if (b == null) throw new com.filemanager.exception.NotFoundException("Blob 不存在");
+        com.filemanager.entity.File f2 = new com.filemanager.entity.File();
+        f2.setId(file.getId());
+        f2.setOriginalFilename(file.getOriginalFilename());
+        f2.setContentType(v.getContentType());
+        f2.setFileHash(b.getHash());
+        f2.setFilePath(b.getPath());
+        f2.setSize(v.getSize());
+        java.nio.file.Path p = java.nio.file.Path.of(b.getPath());
+        return buildHeadResponseConditional(request, f2, p);
+    }
+
     // 分片上传：接收单个分片
     @PostMapping("/chunk")
     public ResponseEntity<Map<String, Object>> uploadChunk(
@@ -104,51 +360,61 @@ public class FileController {
             @RequestParam("chunkNumber") Integer chunkNumber,
             @RequestParam("totalChunks") Integer totalChunks
     ) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String username = auth.getName();
+        Long userId = userService.getUserIdByUsername(username);
+        long start = System.currentTimeMillis();
         try {
-            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-            String username = auth.getName();
-            Long userId = userService.getUserIdByUsername(username);
             fileService.saveChunk(chunk, userId, fileHash, chunkNumber, totalChunks);
             return ResponseEntity.ok(Map.of("message", "分片上传成功"));
-        } catch (Exception e) {
+        } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        } catch (IOException e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("message", "分片写入失败"));
         }
     }
 
     // 分片合并：将已上传分片合并为最终文件
     @PostMapping("/merge")
     public ResponseEntity<Map<String, Object>> mergeChunks(@RequestBody Map<String, Object> body) {
-        try {
             String fileHash = body.get("fileHash") == null ? null : body.get("fileHash").toString();
             String filename = body.get("filename") == null ? null : body.get("filename").toString();
             Integer totalChunks = body.get("totalChunks") instanceof Number ? ((Number) body.get("totalChunks")).intValue() : null;
             Long folderId = body.get("folderId") instanceof Number ? ((Number) body.get("folderId")).longValue() : null;
+            Long parentId = body.get("parentId") instanceof Number ? ((Number) body.get("parentId")).longValue() : null;
 
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             String username = auth.getName();
             Long userId = userService.getUserIdByUsername(username);
 
-            File saved = fileService.mergeChunks(userId, fileHash, filename, totalChunks, folderId);
-            return ResponseEntity.ok(Map.of(
-                    "message", "文件合并成功",
-                    "fileId", saved.getId(),
-                    "filename", saved.getOriginalFilename(),
-                    "size", saved.getSize(),
-                    "uploadTime", saved.getCreateTime()
-            ));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
-        }
+            long start = System.currentTimeMillis();
+            try {
+                File saved = fileService.mergeChunks(userId, fileHash, filename, totalChunks, folderId, parentId);
+                return ResponseEntity.ok(Map.of(
+                        "message", "文件合并成功",
+                        "fileId", saved.getId(),
+                        "filename", saved.getOriginalFilename(),
+                        "size", saved.getSize(),
+                        "uploadTime", saved.getCreateTime()
+                ));
+            } catch (IllegalArgumentException e) {
+                return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+            } catch (IOException e) {
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body(Map.of("message", "分片合并失败"));
+            }
     }
 
     // 分片状态：查询已上传的分片编号（断点续传）
     @GetMapping("/chunk/status")
     public ResponseEntity<Map<String, Object>> chunkStatus(@RequestParam("fileHash") String fileHash,
                                                            @RequestParam(value = "totalChunks", required = false) Integer totalChunks) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String username = auth.getName();
+        Long userId = userService.getUserIdByUsername(username);
+        long start = System.currentTimeMillis();
         try {
-            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-            String username = auth.getName();
-            Long userId = userService.getUserIdByUsername(username);
             java.util.List<Integer> uploaded = fileService.listUploadedChunks(userId, fileHash);
             java.util.Map<String, Object> resp = new java.util.HashMap<>();
             resp.put("uploaded", uploaded);
@@ -160,8 +426,9 @@ public class FileController {
                 resp.put("totalChunks", totalChunks);
             }
             return ResponseEntity.ok(resp);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        } catch (IOException e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("message", "查询分片状态失败"));
         }
     }
 
@@ -221,7 +488,7 @@ public class FileController {
     // 管理员：下载任意文件（忽略归属）
     @GetMapping("/admin/download/{fileId}")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
-    public ResponseEntity<?> adminDownload(@PathVariable Long fileId, javax.servlet.http.HttpServletRequest request) {
+    public ResponseEntity<StreamingResponseBody> adminDownload(@PathVariable Long fileId, jakarta.servlet.http.HttpServletRequest request) {
         long start = System.currentTimeMillis();
         com.filemanager.entity.File file = fileService.getFileByIdForAdmin(fileId);
         Path filePath = Path.of(file.getFilePath());
@@ -229,25 +496,6 @@ public class FileController {
             throw new com.filemanager.exception.NotFoundException("文件不存在");
         }
 
-        // 记录审计日志（管理员下载）
-        try {
-            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-            String adminUsername = auth != null ? auth.getName() : null;
-            if (adminUsername != null) {
-                Long adminId = userService.getUserIdByUsername(adminUsername);
-                auditLogService.logSuccess(
-                        adminId,
-                        com.filemanager.entity.UserLog.ACTION_DOWNLOAD,
-                        com.filemanager.entity.UserLog.RESOURCE_FILE,
-                        file.getId(),
-                        file.getOriginalFilename(),
-                        "管理员下载文件：" + file.getOriginalFilename(),
-                        System.currentTimeMillis() - start
-                );
-            }
-        } catch (Exception ignore) {}
-
-        try { fileService.incrementDownloadCount(file.getId()); } catch (Exception ignore) {}
         return buildDownloadResponse(request, file, filePath);
     }
     
@@ -267,43 +515,98 @@ public class FileController {
     }
     
     @GetMapping("/download/{fileId}")
-    public ResponseEntity<?> downloadFile(@PathVariable Long fileId, javax.servlet.http.HttpServletRequest request) {
+    public ResponseEntity<StreamingResponseBody> downloadFile(@PathVariable Long fileId,
+                                          @RequestParam(value = "version", required = false) Integer version,
+                                          jakarta.servlet.http.HttpServletRequest request) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         String username = auth.getName();
         Long userId = userService.getUserIdByUsername(username);
 
         // 严格判断 403/404
         File file = fileService.getFileForDownload(fileId, userId);
+        File fileMeta = file;
         Path filePath = Path.of(file.getFilePath());
+        if (version != null && version >= 1) {
+            var optV = fileVersionRepository.findByFileIdAndVersionNo(fileId, version);
+            if (optV.isPresent()) {
+                var v = optV.get();
+                var b = blobRepository.findById(v.getBlobHash()).orElse(null);
+                if (b != null) {
+                    com.filemanager.entity.File f2 = new com.filemanager.entity.File();
+                    f2.setId(file.getId());
+                    f2.setOriginalFilename(file.getOriginalFilename());
+                    f2.setContentType(v.getContentType());
+                    f2.setFileHash(b.getHash());
+                    f2.setFilePath(b.getPath());
+                    f2.setSize(v.getSize());
+                    fileMeta = f2;
+                    filePath = Path.of(b.getPath());
+                }
+            }
+        }
         if (!java.nio.file.Files.exists(filePath) || !java.nio.file.Files.isReadable(filePath)) {
             throw new com.filemanager.exception.NotFoundException("文件不存在");
         }
-        try { fileService.incrementDownloadCount(file.getId()); } catch (Exception ignore) {}
-        return buildDownloadResponse(request, file, filePath);
+        return buildDownloadResponse(request, fileMeta, filePath);
     }
 
     // HEAD: 用户下载
+    @com.filemanager.audit.AuditedOperation(
+            actionType = com.filemanager.entity.UserLog.ACTION_DOWNLOAD_PROBE,
+            resourceType = com.filemanager.entity.UserLog.RESOURCE_FILE,
+            userId = "@auditSpel.currentUserId()",
+            resourceId = "#fileId",
+            description = "'下载探测' + (#version != null ? ' 版本 #' + #version : '')"
+    )
     @RequestMapping(value = "/download/{fileId}", method = RequestMethod.HEAD)
-    public ResponseEntity<?> headDownload(@PathVariable Long fileId, javax.servlet.http.HttpServletRequest request) {
+    public ResponseEntity<?> headDownload(@PathVariable Long fileId,
+                                          @RequestParam(value = "version", required = false) Integer version,
+                                          jakarta.servlet.http.HttpServletRequest request) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         String username = auth.getName();
         Long userId = userService.getUserIdByUsername(username);
         File file = fileService.getFileForDownload(fileId, userId);
+        File fileMeta = file;
         Path filePath = Path.of(file.getFilePath());
-        return buildHeadResponseConditional(request, file, filePath);
+        if (version != null && version >= 1) {
+            var optV = fileVersionRepository.findByFileIdAndVersionNo(fileId, version);
+            if (optV.isPresent()) {
+                var v = optV.get();
+                var b = blobRepository.findById(v.getBlobHash()).orElse(null);
+                if (b != null) {
+                    com.filemanager.entity.File f2 = new com.filemanager.entity.File();
+                    f2.setId(file.getId());
+                    f2.setOriginalFilename(file.getOriginalFilename());
+                    f2.setContentType(v.getContentType());
+                    f2.setFileHash(b.getHash());
+                    f2.setFilePath(b.getPath());
+                    f2.setSize(v.getSize());
+                    fileMeta = f2;
+                    filePath = Path.of(b.getPath());
+                }
+            }
+        }
+        return buildHeadResponseConditional(request, fileMeta, filePath);
     }
 
     // HEAD: 管理员下载
+    @com.filemanager.audit.AuditedOperation(
+            actionType = com.filemanager.entity.UserLog.ACTION_DOWNLOAD_PROBE,
+            resourceType = com.filemanager.entity.UserLog.RESOURCE_FILE,
+            userId = "@auditSpel.currentUserId()",
+            resourceId = "#fileId",
+            description = "'管理员下载探测'"
+    )
     @RequestMapping(value = "/admin/download/{fileId}", method = RequestMethod.HEAD)
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
-    public ResponseEntity<?> headAdminDownload(@PathVariable Long fileId, javax.servlet.http.HttpServletRequest request) {
+    public ResponseEntity<?> headAdminDownload(@PathVariable Long fileId, jakarta.servlet.http.HttpServletRequest request) {
         com.filemanager.entity.File file = fileService.getFileByIdForAdmin(fileId);
         Path filePath = Path.of(file.getFilePath());
         return buildHeadResponseConditional(request, file, filePath);
     }
 
     // 构建下载响应：统一设置 Content-Type/Disposition/Length 及安全相关响应头
-    private ResponseEntity<?> buildDownloadResponse(javax.servlet.http.HttpServletRequest request,
+    private ResponseEntity<StreamingResponseBody> buildDownloadResponse(jakarta.servlet.http.HttpServletRequest request,
                                                     File file,
                                                     Path filePath) {
         try {
@@ -311,17 +614,49 @@ public class FileController {
             Path root = java.nio.file.Paths.get(fileService.getStorageRoot()).toAbsolutePath().normalize();
             Path normalized = filePath.toAbsolutePath().normalize();
             if (!normalized.startsWith(root)) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+                throw new com.filemanager.exception.ForbiddenException("非法的文件路径");
             }
-            long total = java.nio.file.Files.size(filePath);
+            // 更新 Blob 最近访问时间（若匹配）
+            try {
+                if (file.getFileHash() != null && !file.getFileHash().isBlank()) {
+                    blobRepository.findById(file.getFileHash()).ifPresent(b -> {
+                        b.setLastAccessAt(java.time.LocalDateTime.now());
+                        try { blobRepository.save(b); } catch (Exception ignore) {}
+                    });
+                }
+            } catch (Exception ignore) {}
+            long total;
+            try {
+                total = java.nio.file.Files.size(filePath);
+            } catch (java.nio.file.NoSuchFileException nsf) {
+                throw new com.filemanager.exception.NotFoundException("文件不存在");
+            } catch (java.nio.file.AccessDeniedException ade) {
+                throw new com.filemanager.exception.ForbiddenException("无权读取文件");
+            } catch (java.io.IOException ioe) {
+                throw new RuntimeException("读取文件失败", ioe);
+            }
             // 计数：请求总数
             downloadMetrics.incRequest();
-            String contentType = (file.getContentType() == null || file.getContentType().isBlank())
-                    ? java.nio.file.Files.probeContentType(filePath)
-                    : file.getContentType();
+            String contentType;
+            try {
+                contentType = (file.getContentType() == null || file.getContentType().isBlank())
+                        ? java.nio.file.Files.probeContentType(filePath)
+                        : file.getContentType();
+            } catch (Exception ignore) {
+                contentType = file.getContentType();
+            }
             if (contentType == null || contentType.isBlank()) contentType = "application/octet-stream";
 
-            long lastModified = java.nio.file.Files.getLastModifiedTime(filePath).toMillis();
+            long lastModified;
+            try {
+                lastModified = java.nio.file.Files.getLastModifiedTime(filePath).toMillis();
+            } catch (java.nio.file.NoSuchFileException nsf) {
+                throw new com.filemanager.exception.NotFoundException("文件不存在");
+            } catch (java.nio.file.AccessDeniedException ade) {
+                throw new com.filemanager.exception.ForbiddenException("无权读取文件");
+            } catch (java.io.IOException ioe) {
+                throw new RuntimeException("读取文件失败", ioe);
+            }
             String asciiName = sanitizeAsciiFilename(file.getOriginalFilename());
             String encoded = org.springframework.web.util.UriUtils.encode(asciiName, java.nio.charset.StandardCharsets.UTF_8);
             String disposition = String.format("attachment; filename=\"%s\"; filename*=UTF-8''%s", asciiName, encoded);
@@ -380,7 +715,10 @@ public class FileController {
                             long rangeLen = end - start + 1;
                             final long copyStart = start;
                             final long copyLen = rangeLen;
+                            final String contentTypeFinal = contentType;
                             StreamingResponseBody body = outputStream -> {
+                                long started = System.currentTimeMillis();
+                                boolean ok = false;
                                 try (FileChannel fc = FileChannel.open(filePath, StandardOpenOption.READ);
                                      WritableByteChannel out = Channels.newChannel(outputStream)) {
                                     long pos = copyStart;
@@ -390,6 +728,33 @@ public class FileController {
                                         if (transferred <= 0) break;
                                         pos += transferred;
                                         remaining -= transferred;
+                                    }
+                                    ok = true;
+                                } catch (Exception ex) {
+                                    try {
+                                        Long uid = null;
+                                        try { var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication(); if (auth != null) uid = userService.getUserIdByUsername(auth.getName()); } catch (Exception ignore) {}
+                                        auditLogService.logFailure(uid,
+                                                com.filemanager.entity.UserLog.ACTION_DOWNLOAD,
+                                                com.filemanager.entity.UserLog.RESOURCE_FILE,
+                                                file.getId(), file.getOriginalFilename(),
+                                                "分段下载流传输失败",
+                                                ex.getMessage(), System.currentTimeMillis() - started);
+                                    } catch (Exception ignore) {}
+                                    if (downloadMetrics != null) downloadMetrics.incError();
+                                    throw ex;
+                                } finally {
+                                    if (ok) {
+                                        try {
+                                            Long uid = null;
+                                            try { var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication(); if (auth != null) uid = userService.getUserIdByUsername(auth.getName()); } catch (Exception ignore) {}
+                                            auditLogService.logSuccess(uid,
+                                                    com.filemanager.entity.UserLog.ACTION_DOWNLOAD,
+                                                    com.filemanager.entity.UserLog.RESOURCE_FILE,
+                                                    file.getId(), file.getOriginalFilename(),
+                                                    "分段下载成功",
+                                                    System.currentTimeMillis() - started);
+                                        } catch (Exception ignore) {}
                                     }
                                 }
                             };
@@ -417,7 +782,10 @@ public class FileController {
                             }
                             downloadMetrics.incPartial(bytesSum);
                             final String boundary = "MULTIPART_BYTERANGES_" + java.util.UUID.randomUUID();
+                            final String contentTypeFinal = contentType;
                             StreamingResponseBody body = outputStream -> {
+                                long started = System.currentTimeMillis();
+                                boolean ok = false;
                                 try (FileChannel fc = FileChannel.open(filePath, StandardOpenOption.READ)) {
                                     java.nio.charset.Charset ascii = java.nio.charset.StandardCharsets.US_ASCII;
                                     for (org.springframework.http.HttpRange r : ranges) {
@@ -425,7 +793,7 @@ public class FileController {
                                         long end = r.getRangeEnd(total);
                                         if (start >= total || end >= total || start > end) continue; // 跳过非法片段
                                         String partHeader = "--" + boundary + "\r\n"
-                                                + "Content-Type: " + contentType + "\r\n"
+                                                + "Content-Type: " + contentTypeFinal + "\r\n"
                                                 + String.format("Content-Range: bytes %d-%d/%d\r\n\r\n", start, end, total);
                                         outputStream.write(partHeader.getBytes(ascii));
                                         long pos = start;
@@ -441,6 +809,33 @@ public class FileController {
                                     }
                                     String endBoundary = "--" + boundary + "--\r\n";
                                     outputStream.write(endBoundary.getBytes(ascii));
+                                    ok = true;
+                                } catch (Exception ex) {
+                                    try {
+                                        Long uid = null;
+                                        try { var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication(); if (auth != null) uid = userService.getUserIdByUsername(auth.getName()); } catch (Exception ignore) {}
+                                        auditLogService.logFailure(uid,
+                                                com.filemanager.entity.UserLog.ACTION_DOWNLOAD,
+                                                com.filemanager.entity.UserLog.RESOURCE_FILE,
+                                                file.getId(), file.getOriginalFilename(),
+                                                "多段下载流传输失败",
+                                                ex.getMessage(), System.currentTimeMillis() - started);
+                                    } catch (Exception ignore) {}
+                                    if (downloadMetrics != null) downloadMetrics.incError();
+                                    throw ex;
+                                } finally {
+                                    if (ok) {
+                                        try {
+                                            Long uid = null;
+                                            try { var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication(); if (auth != null) uid = userService.getUserIdByUsername(auth.getName()); } catch (Exception ignore) {}
+                                            auditLogService.logSuccess(uid,
+                                                    com.filemanager.entity.UserLog.ACTION_DOWNLOAD,
+                                                    com.filemanager.entity.UserLog.RESOURCE_FILE,
+                                                    file.getId(), file.getOriginalFilename(),
+                                                    "多段下载成功",
+                                                    System.currentTimeMillis() - started);
+                                        } catch (Exception ignore) {}
+                                    }
                                 }
                             };
                             MediaType mt = MediaType.parseMediaType("multipart/byteranges; boundary=" + boundary);
@@ -461,6 +856,8 @@ public class FileController {
 
             // 全量下载
             StreamingResponseBody body = outputStream -> {
+                long started = System.currentTimeMillis();
+                boolean ok = false;
                 try (FileChannel fc = FileChannel.open(filePath, StandardOpenOption.READ);
                      WritableByteChannel out = Channels.newChannel(outputStream)) {
                     long pos = 0L;
@@ -470,6 +867,33 @@ public class FileController {
                         if (transferred <= 0) break;
                         pos += transferred;
                         remaining -= transferred;
+                    }
+                    ok = true;
+                } catch (Exception ex) {
+                    try {
+                        Long uid = null;
+                        try { var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication(); if (auth != null) uid = userService.getUserIdByUsername(auth.getName()); } catch (Exception ignore) {}
+                        auditLogService.logFailure(uid,
+                                com.filemanager.entity.UserLog.ACTION_DOWNLOAD,
+                                com.filemanager.entity.UserLog.RESOURCE_FILE,
+                                file.getId(), file.getOriginalFilename(),
+                                "全量下载流传输失败",
+                                ex.getMessage(), System.currentTimeMillis() - started);
+                    } catch (Exception ignore) {}
+                    if (downloadMetrics != null) downloadMetrics.incError();
+                    throw ex;
+                } finally {
+                    if (ok) {
+                        try {
+                            Long uid = null;
+                            try { var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication(); if (auth != null) uid = userService.getUserIdByUsername(auth.getName()); } catch (Exception ignore) {}
+                            auditLogService.logSuccess(uid,
+                                    com.filemanager.entity.UserLog.ACTION_DOWNLOAD,
+                                    com.filemanager.entity.UserLog.RESOURCE_FILE,
+                                    file.getId(), file.getOriginalFilename(),
+                                    "全量下载成功",
+                                    System.currentTimeMillis() - started);
+                        } catch (Exception ignore) {}
                     }
                 }
             };
@@ -487,24 +911,44 @@ public class FileController {
                     .contentLength(total)
                     .body(body);
         } catch (Exception e) {
-            return ResponseEntity.internalServerError().build();
+            throw new RuntimeException("下载失败", e);
         }
     }
 
-    private ResponseEntity<?> buildHeadResponseConditional(javax.servlet.http.HttpServletRequest request, File file, Path filePath) {
+    private ResponseEntity<?> buildHeadResponseConditional(jakarta.servlet.http.HttpServletRequest request, File file, Path filePath) {
         try {
             // 路径安全校验
             Path root = java.nio.file.Paths.get(fileService.getStorageRoot()).toAbsolutePath().normalize();
             Path normalized = filePath.toAbsolutePath().normalize();
             if (!normalized.startsWith(root)) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+                throw new com.filemanager.exception.ForbiddenException("非法的文件路径");
             }
-            long total = java.nio.file.Files.size(filePath);
-            String contentType = (file.getContentType() == null || file.getContentType().isBlank())
-                    ? java.nio.file.Files.probeContentType(filePath)
-                    : file.getContentType();
+            // 更新 Blob 最近访问时间（若匹配）
+            try {
+                if (file.getFileHash() != null && !file.getFileHash().isBlank()) {
+                    blobRepository.findById(file.getFileHash()).ifPresent(b -> {
+                        b.setLastAccessAt(java.time.LocalDateTime.now());
+                        try { blobRepository.save(b); } catch (Exception ignore) {}
+                    });
+                }
+            } catch (Exception ignore) {}
+            long total;
+            try { total = java.nio.file.Files.size(filePath); }
+            catch (java.nio.file.NoSuchFileException nsf) { throw new com.filemanager.exception.NotFoundException("文件不存在"); }
+            catch (java.nio.file.AccessDeniedException ade) { throw new com.filemanager.exception.ForbiddenException("无权读取文件"); }
+            catch (java.io.IOException ioe) { throw new RuntimeException("读取文件失败", ioe); }
+            String contentType;
+            try {
+                contentType = (file.getContentType() == null || file.getContentType().isBlank())
+                        ? java.nio.file.Files.probeContentType(filePath)
+                        : file.getContentType();
+            } catch (Exception ignore) { contentType = file.getContentType(); }
             if (contentType == null || contentType.isBlank()) contentType = "application/octet-stream";
-            long lastModified = java.nio.file.Files.getLastModifiedTime(filePath).toMillis();
+            long lastModified;
+            try { lastModified = java.nio.file.Files.getLastModifiedTime(filePath).toMillis(); }
+            catch (java.nio.file.NoSuchFileException nsf) { throw new com.filemanager.exception.NotFoundException("文件不存在"); }
+            catch (java.nio.file.AccessDeniedException ade) { throw new com.filemanager.exception.ForbiddenException("无权读取文件"); }
+            catch (java.io.IOException ioe) { throw new RuntimeException("读取文件失败", ioe); }
             String asciiName = sanitizeAsciiFilename(file.getOriginalFilename());
             String encoded = org.springframework.web.util.UriUtils.encode(asciiName, java.nio.charset.StandardCharsets.UTF_8);
             String disposition = String.format("attachment; filename=\"%s\"; filename*=UTF-8''%s", asciiName, encoded);
@@ -542,7 +986,7 @@ public class FileController {
                     .contentLength(total)
                     .build();
         } catch (Exception e) {
-            return ResponseEntity.internalServerError().build();
+            throw new RuntimeException("下载探测失败", e);
         }
     }
 
@@ -766,13 +1210,6 @@ public class FileController {
         try {
             String reason = body != null ? body.getOrDefault("reason", "管理员删除") : "管理员删除";
             java.time.LocalDateTime execAt = fileService.adminScheduleDeleteFile(fileId, reason);
-            // 审计：管理员排期删除
-            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-            String adminUsername = auth.getName();
-            Long adminId = userService.getUserIdByUsername(adminUsername);
-            try { auditLogService.logSuccess(adminId, com.filemanager.entity.UserLog.ACTION_ADMIN_SCHEDULE_DELETE,
-                    com.filemanager.entity.UserLog.RESOURCE_FILE, fileId, null,
-                    "管理员排期删除：执行时间=" + execAt + ", 理由=" + reason, 0L); } catch (Exception ignore) {}
             return ResponseEntity.ok(Map.of(
                     "message", "已排期删除（进入冷静期）",
                     "executeTime", execAt
@@ -861,6 +1298,31 @@ public class FileController {
 
             int count = fileService.purgeExpiredScheduledDeletions();
             return ResponseEntity.ok(Map.of("message", "已清理到期文件", "count", count));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    // 管理员：手动触发 Blob GC（清理未引用 Blob）
+    @PostMapping("/admin/blob/gc")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    public ResponseEntity<Map<String, Object>> adminBlobGc() {
+        try {
+            int count = blobService.gcUnreferenced();
+            return ResponseEntity.ok(Map.of("message", "已触发 Blob GC", "removed", count));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    // 管理员：手动触发一次迁移批次
+    @PostMapping("/admin/migrate/batch")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    public ResponseEntity<Map<String, Object>> adminMigrateBatch(@RequestParam(value = "size", required = false) Integer size) {
+        try {
+            int n = size == null ? 25 : Math.max(1, size);
+            int processed = fileService.migrateFilesBatch(n);
+            return ResponseEntity.ok(Map.of("message", "已迁移一批", "processed", processed));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }

@@ -115,6 +115,7 @@
         <div v-for="(progress, index) in uploadProgress" :key="index" class="progress-item">
           <div class="progress-info">
             <span class="file-name">{{ progress.name }}</span>
+            <span class="progress-speed" v-if="progress.speed">{{ progress.speed }}</span>
             <span class="progress-percent">{{ progress.percent }}%</span>
           </div>
           <el-progress :percentage="progress.percent" :status="progress.status" />
@@ -161,10 +162,18 @@ const formatFileSize = (bytes) => {
 }
 
 // 格式化日期时间
-const formatDateTime = (datetime) => {
-  if (!datetime) return ''
-  return new Date(datetime).toLocaleString()
-}
+  const formatDateTime = (datetime) => {
+    if (!datetime) return ''
+    return new Date(datetime).toLocaleString()
+  }
+  // 速度格式化（B/s -> 人类可读）
+  const formatSpeed = (bps) => {
+    if (!bps || bps < 1) return '0 KB/s'
+    const kb = bps / 1024
+    const mb = kb / 1024
+    if (mb >= 1) return mb.toFixed(2) + ' MB/s'
+    return kb.toFixed(2) + ' KB/s'
+  }
 
 // 加载文件夹列表
 const loadFolders = async () => {
@@ -243,7 +252,10 @@ const uploadFilesFunc = async () => {
   uploadProgress.value = uploadFiles.value.map(file => ({
     name: file.name,
     percent: 0,
-    status: ''
+    status: '',
+    speed: '0 KB/s',
+    lastTime: Date.now(),
+    lastLoadedBytes: 0
   }))
 
   try {
@@ -294,8 +306,18 @@ const uploadFilesFunc = async () => {
           formData.append('folderId', uploadForm.folderId)
         }
         await uploadFile(formData, (progressEvent) => {
-          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total)
-          uploadProgress.value[i].percent = percent
+          const loaded = progressEvent.loaded || 0
+          const total = progressEvent.total || raw.size || 1
+          const percent = Math.round((loaded * 100) / total)
+          const pr = uploadProgress.value[i]
+          const now = Date.now()
+          const dt = Math.max((now - (pr.lastTime || now)) / 1000, 0.001)
+          const delta = Math.max(loaded - (pr.lastLoadedBytes || 0), 0)
+          const bps = delta / dt
+          pr.speed = formatSpeed(bps)
+          pr.lastTime = now
+          pr.lastLoadedBytes = loaded
+          pr.percent = percent
         })
         uploadProgress.value[i].status = 'success'
         uploadProgress.value[i].percent = 100
@@ -309,7 +331,7 @@ const uploadFilesFunc = async () => {
     uploadForm.folderId = null
     await loadFiles()
   } catch (error) {
-    ElMessage.error('文件上传失败')
+    // 统一由拦截器弹错误提示，这里不重复提示
     uploadProgress.value.forEach(progress => {
       if (progress.status !== 'success') {
         progress.status = 'exception'
@@ -355,6 +377,38 @@ const uploadInChunksWithRetryAndResume = async (elFile, progressIndex, fileHash,
     const percent = Math.round((completed / totalChunks) * 100)
     uploadProgress.value[progressIndex].percent = percent
   }
+  const formatSpeed = (bps) => {
+    if (!bps || bps < 1) return '0 KB/s'
+    const kb = bps / 1024
+    const mb = kb / 1024
+    if (mb >= 1) return mb.toFixed(2) + ' MB/s'
+    return kb.toFixed(2) + ' KB/s'
+  }
+  const getChunkSize = (n) => (n < totalChunks ? CHUNK_SIZE : (raw.size - CHUNK_SIZE * (totalChunks - 1)))
+  const calcLoadedNow = () => {
+    const pr = uploadProgress.value[progressIndex]
+    let doneBytes = 0
+    for (const n of doneSet) {
+      doneBytes += getChunkSize(n)
+    }
+    let partialBytes = 0
+    const map = pr.chunkLoaded || {}
+    for (const k in map) if (Object.prototype.hasOwnProperty.call(map, k)) partialBytes += map[k] || 0
+    const total = Math.min(doneBytes + partialBytes, raw.size)
+    return total
+  }
+  const updateSpeedAgg = () => {
+    const pr = uploadProgress.value[progressIndex]
+    if (!pr.lastTime) { pr.lastTime = Date.now(); pr.lastLoadedBytes = 0; pr.speed = '0 KB/s' }
+    const now = Date.now()
+    const loadedNow = calcLoadedNow()
+    const dt = Math.max((now - pr.lastTime) / 1000, 0.001)
+    const delta = Math.max(loadedNow - (pr.lastLoadedBytes || 0), 0)
+    const bps = delta / dt
+    pr.speed = formatSpeed(bps)
+    pr.lastLoadedBytes = loadedNow
+    pr.lastTime = now
+  }
   updateProgress()
 
   const uploadOne = async (chunkNumber) => {
@@ -370,9 +424,17 @@ const uploadInChunksWithRetryAndResume = async (elFile, progressIndex, fileHash,
     let attempt = 0
     while (attempt < MAX_RETRIES) {
       try {
-        await uploadChunkApi(formData)
+        // 初始化聚合追踪
+        const pr = uploadProgress.value[progressIndex]
+        if (!pr.chunkLoaded) pr.chunkLoaded = {}
+        await uploadChunkApi(formData, (e) => {
+          pr.chunkLoaded[chunkNumber] = e.loaded || 0
+          updateSpeedAgg()
+        })
         // 标记完成并持久化
         doneSet.add(chunkNumber)
+        // 清除该分片的局部计数，避免重复统计
+        if (uploadProgress.value[progressIndex].chunkLoaded) delete uploadProgress.value[progressIndex].chunkLoaded[chunkNumber]
         completed = doneSet.size
         localStorage.setItem(resumeKey, JSON.stringify({ done: Array.from(doneSet), totalChunks }))
         updateProgress()
@@ -627,5 +689,10 @@ onMounted(() => {
 .progress-item .progress-percent {
   font-size: 12px;
   color: #666;
+}
+.progress-item .progress-speed {
+  margin: 0 8px;
+  color: #909399;
+  font-size: 12px;
 }
 </style>

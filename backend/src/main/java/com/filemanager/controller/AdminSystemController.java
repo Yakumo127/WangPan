@@ -48,15 +48,6 @@ public class AdminSystemController {
             int oldDays = systemSettingService.getRetentionDaysOrDefault(15);
             systemSettingService.setInt(SystemSettingService.KEY_RECYCLE_RETENTION_DAYS, retentionDays,
                     "回收站保留期（天）", userService.getUserById(adminId));
-            try {
-                auditLogService.logSuccess(adminId,
-                        com.filemanager.entity.UserLog.ACTION_UPDATE_SETTING,
-                        "SYSTEM",
-                        null,
-                        SystemSettingService.KEY_RECYCLE_RETENTION_DAYS,
-                        "retentionDays: " + oldDays + " -> " + retentionDays,
-                        0L);
-            } catch (Exception ignore) {}
         }
         return Map.of("message", "设置已更新", "manualPurgeEnabled", manualEnabled, "retentionDays", retentionDays);
     }
@@ -89,15 +80,7 @@ public class AdminSystemController {
         systemSettingService.setUploadAllowAll(allowAll, admin);
         if (suffixes != null) systemSettingService.setAllowedSuffixes(suffixes, admin);
 
-        try {
-            auditLogService.logSuccess(adminId,
-                    com.filemanager.entity.UserLog.ACTION_UPDATE_SETTING,
-                    "SYSTEM",
-                    null,
-                    com.filemanager.service.SystemSettingService.KEY_UPLOAD_ALLOWED_SUFFIXES,
-                    (allowAll ? "allowAll=true" : ("allowAll=false; suffixes=" + (suffixes == null ? "" : String.join(",", suffixes)))),
-                    0L);
-        } catch (Exception ignore) {}
+        // 审计由 SystemSettingService 上的 AOP 负责
 
         return Map.of("message", "上传策略已更新", "allowAll", allowAll, "allowedSuffixes", suffixes);
     }

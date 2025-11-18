@@ -87,13 +87,18 @@ public class UserService implements UserDetailsService {
         return userRepository.save(user);
     }
     
+    @com.filemanager.audit.AuditedOperation(
+            actionType = com.filemanager.entity.UserLog.ACTION_LOGIN,
+            resourceType = com.filemanager.entity.UserLog.RESOURCE_USER,
+            userId = "@auditSpel.userIdByUsername(#loginDTO.username)",
+            resourceId = "@auditSpel.userIdByUsername(#loginDTO.username)",
+            resourceName = "#loginDTO.username",
+            description = "'登录'"
+    )
     public String login(UserLoginDTO loginDTO) {
         long start = System.currentTimeMillis();
         java.util.Optional<User> opt = userRepository.findByUsername(loginDTO.getUsername());
         if (opt.isEmpty()) {
-            try { auditLogService.logSystemFailure(com.filemanager.entity.UserLog.ACTION_LOGIN,
-                    com.filemanager.entity.UserLog.RESOURCE_USER, null, loginDTO.getUsername(),
-                    "登录失败：用户不存在", "用户不存在", System.currentTimeMillis() - start); } catch (Exception ignore) {}
             throw new RuntimeException("用户名或密码错误");
         }
         User user = opt.get();
@@ -137,9 +142,6 @@ public class UserService implements UserDetailsService {
             userRepository.save(user);
 
             String token = jwtUtils.generateToken((UserDetails) authentication.getPrincipal());
-            try { auditLogService.logSuccess(user.getId(), com.filemanager.entity.UserLog.ACTION_LOGIN,
-                    com.filemanager.entity.UserLog.RESOURCE_USER, user.getId(), user.getUsername(), "登录成功",
-                    System.currentTimeMillis() - start); } catch (Exception ignore) {}
             return token;
         } catch (Exception e) {
             // 失败：累加尝试次数，5次锁定
@@ -148,16 +150,10 @@ public class UserService implements UserDetailsService {
                 user.setLocked(true);
                 userRepository.save(user);
                 RuntimeException ex = new RuntimeException("账户已被锁定，请联系管理员");
-                try { auditLogService.logFailure(user.getId(), com.filemanager.entity.UserLog.ACTION_LOGIN,
-                        com.filemanager.entity.UserLog.RESOURCE_USER, user.getId(), user.getUsername(), "登录失败",
-                        ex.getMessage(), System.currentTimeMillis() - start); } catch (Exception ignore) {}
                 throw ex;
             }
             userRepository.save(user);
             RuntimeException ex2 = new RuntimeException("用户名或密码错误");
-            try { auditLogService.logFailure(user.getId(), com.filemanager.entity.UserLog.ACTION_LOGIN,
-                    com.filemanager.entity.UserLog.RESOURCE_USER, user.getId(), user.getUsername(), "登录失败",
-                    ex2.getMessage(), System.currentTimeMillis() - start); } catch (Exception ignore) {}
             throw ex2;
         }
     }
@@ -184,36 +180,32 @@ public class UserService implements UserDetailsService {
     }
     
     // 管理员登录方法（与普通登录一致的验证码策略）
+    @com.filemanager.audit.AuditedOperation(
+            actionType = com.filemanager.entity.UserLog.ACTION_ADMIN_LOGIN,
+            resourceType = com.filemanager.entity.UserLog.RESOURCE_USER,
+            userId = "@auditSpel.userIdByUsername(#loginDTO.username)",
+            resourceId = "@auditSpel.userIdByUsername(#loginDTO.username)",
+            resourceName = "#loginDTO.username",
+            description = "'管理员登录'"
+    )
     public String adminLogin(UserLoginDTO loginDTO) {
         long start = System.currentTimeMillis();
         java.util.Optional<User> opt = userRepository.findByUsername(loginDTO.getUsername());
         if (opt.isEmpty()) {
-            try { auditLogService.logSystemFailure(com.filemanager.entity.UserLog.ACTION_LOGIN,
-                    com.filemanager.entity.UserLog.RESOURCE_USER, null, loginDTO.getUsername(),
-                    "管理员登录失败：用户不存在", "用户不存在", System.currentTimeMillis() - start); } catch (Exception ignore) {}
             throw new RuntimeException("用户名或密码错误");
         }
         User user = opt.get();
 
         if (user.getRole() != User.Role.ADMIN) {
             RuntimeException ex = new RuntimeException("权限不足");
-            try { auditLogService.logFailure(user.getId(), com.filemanager.entity.UserLog.ACTION_LOGIN,
-                    com.filemanager.entity.UserLog.RESOURCE_USER, user.getId(), user.getUsername(), "管理员登录失败",
-                    ex.getMessage(), System.currentTimeMillis() - start); } catch (Exception ignore) {}
             throw ex;
         }
         if (!Boolean.TRUE.equals(user.getEnabled())) {
             RuntimeException ex = new RuntimeException("用户已被禁用");
-            try { auditLogService.logFailure(user.getId(), com.filemanager.entity.UserLog.ACTION_LOGIN,
-                    com.filemanager.entity.UserLog.RESOURCE_USER, user.getId(), user.getUsername(), "管理员登录失败",
-                    ex.getMessage(), System.currentTimeMillis() - start); } catch (Exception ignore) {}
             throw ex;
         }
         if (Boolean.TRUE.equals(user.getLocked())) {
             RuntimeException ex = new RuntimeException("用户已被锁定");
-            try { auditLogService.logFailure(user.getId(), com.filemanager.entity.UserLog.ACTION_LOGIN,
-                    com.filemanager.entity.UserLog.RESOURCE_USER, user.getId(), user.getUsername(), "管理员登录失败",
-                    ex.getMessage(), System.currentTimeMillis() - start); } catch (Exception ignore) {}
             throw ex;
         }
 
@@ -223,25 +215,16 @@ public class UserService implements UserDetailsService {
         if (needCaptcha) {
             if (key == null || key.isBlank() || code == null || code.isBlank()) {
                 RuntimeException ex = new RuntimeException("请先输入验证码");
-                try { auditLogService.logFailure(user.getId(), com.filemanager.entity.UserLog.ACTION_LOGIN,
-                        com.filemanager.entity.UserLog.RESOURCE_USER, user.getId(), user.getUsername(), "管理员登录失败",
-                        ex.getMessage(), System.currentTimeMillis() - start); } catch (Exception ignore) {}
                 throw ex;
             }
             if (!captchaService.validateCaptcha(key, code)) {
                 RuntimeException ex = new RuntimeException("验证码错误或已过期");
-                try { auditLogService.logFailure(user.getId(), com.filemanager.entity.UserLog.ACTION_LOGIN,
-                        com.filemanager.entity.UserLog.RESOURCE_USER, user.getId(), user.getUsername(), "管理员登录失败",
-                        ex.getMessage(), System.currentTimeMillis() - start); } catch (Exception ignore) {}
                 throw ex;
             }
         } else {
             if (key != null && !key.isBlank() && code != null && !code.isBlank()) {
                 if (!captchaService.validateCaptcha(key, code)) {
                     RuntimeException ex = new RuntimeException("验证码错误或已过期");
-                    try { auditLogService.logFailure(user.getId(), com.filemanager.entity.UserLog.ACTION_LOGIN,
-                            com.filemanager.entity.UserLog.RESOURCE_USER, user.getId(), user.getUsername(), "管理员登录失败",
-                            ex.getMessage(), System.currentTimeMillis() - start); } catch (Exception ignore) {}
                     throw ex;
                 }
             }
@@ -254,16 +237,10 @@ public class UserService implements UserDetailsService {
                 user.setLocked(true);
                 userRepository.save(user);
                 RuntimeException ex = new RuntimeException("账户已被锁定，请联系管理员");
-                try { auditLogService.logFailure(user.getId(), com.filemanager.entity.UserLog.ACTION_LOGIN,
-                        com.filemanager.entity.UserLog.RESOURCE_USER, user.getId(), user.getUsername(), "管理员登录失败",
-                        ex.getMessage(), System.currentTimeMillis() - start); } catch (Exception ignore) {}
                 throw ex;
             }
             userRepository.save(user);
             RuntimeException ex2 = new RuntimeException("用户名或密码错误");
-            try { auditLogService.logFailure(user.getId(), com.filemanager.entity.UserLog.ACTION_LOGIN,
-                    com.filemanager.entity.UserLog.RESOURCE_USER, user.getId(), user.getUsername(), "管理员登录失败",
-                    ex2.getMessage(), System.currentTimeMillis() - start); } catch (Exception ignore) {}
             throw ex2;
         }
 
@@ -273,9 +250,6 @@ public class UserService implements UserDetailsService {
 
         UserDetails userDetails = loadUserByUsername(user.getUsername());
         String token = jwtUtils.generateToken(userDetails);
-        try { auditLogService.logSuccess(user.getId(), com.filemanager.entity.UserLog.ACTION_LOGIN,
-                com.filemanager.entity.UserLog.RESOURCE_USER, user.getId(), user.getUsername(), "管理员登录成功",
-                System.currentTimeMillis() - start); } catch (Exception ignore) {}
         return token;
     }
     
@@ -293,6 +267,14 @@ public class UserService implements UserDetailsService {
     }
 
     // 管理员操作：校验管理员口令后，修改指定用户的密码
+    @com.filemanager.audit.AuditedOperation(
+            actionType = com.filemanager.entity.UserLog.ACTION_CHANGE_PASSWORD,
+            resourceType = com.filemanager.entity.UserLog.RESOURCE_USER,
+            userId = "@auditSpel.userIdByUsername(#adminUsername)",
+            resourceId = "#targetUserId",
+            resourceName = "#adminUsername",
+            description = "'管理员修改用户密码'"
+    )
     public void changeUserPasswordWithAdminConfirm(Long targetUserId, String newPassword, String adminUsername, String adminPassword) {
         long start = System.currentTimeMillis();
         if (newPassword == null || newPassword.isBlank()) {
@@ -306,15 +288,6 @@ public class UserService implements UserDetailsService {
             throw new RuntimeException("无权限执行该操作");
         }
         if (!passwordEncoder.matches(adminPassword == null ? "" : adminPassword, admin.getPassword())) {
-            try { auditLogService.logFailure(admin.getId(),
-                    com.filemanager.entity.UserLog.ACTION_CHANGE_PASSWORD,
-                    com.filemanager.entity.UserLog.RESOURCE_USER,
-                    targetUserId,
-                    null,
-                    "管理员修改用户密码失败",
-                    "管理员口令错误",
-                    System.currentTimeMillis() - start);
-            } catch (Exception ignore) {}
             throw new RuntimeException("管理员口令错误");
         }
 
@@ -324,14 +297,6 @@ public class UserService implements UserDetailsService {
         target.setPassword(passwordEncoder.encode(newPassword));
         userRepository.save(target);
 
-        try { auditLogService.logSuccess(admin.getId(),
-                com.filemanager.entity.UserLog.ACTION_CHANGE_PASSWORD,
-                com.filemanager.entity.UserLog.RESOURCE_USER,
-                target.getId(),
-                target.getUsername(),
-                "管理员修改用户密码：" + target.getUsername(),
-                System.currentTimeMillis() - start);
-        } catch (Exception ignore) {}
     }
     
     // 管理员方法：获取所有用户

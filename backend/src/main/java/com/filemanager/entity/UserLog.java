@@ -60,28 +60,43 @@ public class UserLog {
     public static final String ACTION_LOGIN = "LOGIN";
     public static final String ACTION_LOGOUT = "LOGOUT";
     public static final String ACTION_UPLOAD = "UPLOAD";
+    public static final String ACTION_UPLOAD_CHUNK = "UPLOAD_CHUNK";
+    public static final String ACTION_UPLOAD_MERGE = "UPLOAD_MERGE";
+    public static final String ACTION_UPLOAD_QUICK = "UPLOAD_QUICK";
+    public static final String ACTION_CHUNK_QUERY = "CHUNK_QUERY";
     public static final String ACTION_DOWNLOAD = "DOWNLOAD";
+    public static final String ACTION_DOWNLOAD_PROBE = "DOWNLOAD_PROBE";
     public static final String ACTION_DELETE = "DELETE";
     public static final String ACTION_MOVE = "MOVE";
     public static final String ACTION_COPY = "COPY";
     public static final String ACTION_RENAME = "RENAME";
     public static final String ACTION_RESTORE = "RESTORE";
+    public static final String ACTION_FILE_REVERT = "FILE_REVERT";
     public static final String ACTION_CREATE_FOLDER = "CREATE_FOLDER";
     public static final String ACTION_DELETE_FOLDER = "DELETE_FOLDER";
     public static final String ACTION_CHANGE_PASSWORD = "CHANGE_PASSWORD";
     public static final String ACTION_UPDATE_PROFILE = "UPDATE_PROFILE";
     public static final String ACTION_UPDATE_SETTING = "UPDATE_SETTING";
+    public static final String ACTION_UPDATE_SETTING_RETENTION = "UPDATE_SETTING_RETENTION";
+    public static final String ACTION_UPDATE_SETTING_UPLOAD_POLICY = "UPDATE_SETTING_UPLOAD_POLICY";
     // 扩展：管理员/回收站场景
     public static final String ACTION_ADMIN_SCHEDULE_DELETE = "ADMIN_SCHEDULE_DELETE";
     public static final String ACTION_ADMIN_RESTORE = "ADMIN_RESTORE";
     public static final String ACTION_ADMIN_PURGE_EXPIRED = "ADMIN_PURGE_EXPIRED";
     public static final String ACTION_RECYCLE_REMOVE = "RECYCLE_REMOVE";
     public static final String ACTION_RECYCLE_EMPTY = "RECYCLE_EMPTY";
+    public static final String ACTION_BLOB_GC = "BLOB_GC";
+    public static final String ACTION_MIGRATION = "MIGRATION";
+    public static final String ACTION_ADMIN_LOGIN = "ADMIN_LOGIN";
     
     // 资源类型常量
     public static final String RESOURCE_FILE = "FILE";
     public static final String RESOURCE_FOLDER = "FOLDER";
     public static final String RESOURCE_USER = "USER";
+    public static final String RESOURCE_FILE_CHUNK = "FILE_CHUNK";
+    public static final String RESOURCE_SYSTEM = "SYSTEM";
+    public static final String RESOURCE_BLOB = "BLOB";
+    public static final String RESOURCE_MIGRATION = "MIGRATION";
     
     // 状态常量
     public static final String STATUS_SUCCESS = "SUCCESS";

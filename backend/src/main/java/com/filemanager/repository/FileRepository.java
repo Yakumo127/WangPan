@@ -79,4 +79,7 @@ public interface FileRepository extends JpaRepository<File, Long> {
     @org.springframework.data.jpa.repository.Modifying
     @Query("update File f set f.downloadCount = COALESCE(f.downloadCount,0) + 1 where f.id = :id")
     int incrementDownloadCount(@Param("id") Long id);
+
+    // 迁移分页：按ID游标推进
+    org.springframework.data.domain.Page<File> findByDeletedFalseAndIdGreaterThanOrderByIdAsc(Long lastId, org.springframework.data.domain.Pageable pageable);
 }

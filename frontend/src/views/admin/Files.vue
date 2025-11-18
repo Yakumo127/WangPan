@@ -184,8 +184,9 @@ export default {
       loadFiles()
     }
     
-    const handleUploadError = () => {
-      ElMessage.error('上传失败')
+    const handleUploadError = (error) => {
+      // 统一由拦截器提示，这里避免重复弹窗
+      console.error('上传失败:', error)
     }
     
     const formatFileSize = (bytes) => {
