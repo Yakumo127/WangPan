@@ -19,6 +19,7 @@ public class AdminSystemController {
     private final SystemSettingService systemSettingService;
     private final UserService userService;
     private final com.filemanager.service.AuditLogService auditLogService;
+    private final SystemSettingService settingService;
 
     // 获取回收站相关设置
     @GetMapping("/recycle")
@@ -29,6 +30,14 @@ public class AdminSystemController {
                 "manualPurgeEnabled", manualEnabled,
                 "retentionDays", retentionDays
         );
+    }
+
+    // 维护/只读模式开关
+    @PostMapping("/maintenance")
+    public Map<String, Object> maintenance(@RequestBody Map<String, Object> body) {
+        boolean enabled = body.get("enabled") != null && Boolean.TRUE.equals(body.get("enabled"));
+        settingService.setMaintenanceEnabled(enabled, null);
+        return Map.of("enabled", settingService.isMaintenanceEnabled());
     }
 
     // 更新回收站相关设置（目前支持：手动清理到期开关）

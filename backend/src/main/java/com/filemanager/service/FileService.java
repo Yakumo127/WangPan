@@ -1171,6 +1171,8 @@ public class FileService {
             description = "'清理到期文件'"
     )
     public int purgeExpiredScheduledDeletions() {
+        // 在线备份窗口内可冻结管理员清理
+        try { if (systemSettingService.getBoolean("backup.admin-purge.freeze", false) || systemSettingService.getAdminPurgeFreezeCount() > 0) return 0; } catch (Exception ignore) {}
         List<File> files = fileRepository.findByAdminDeleteScheduledTrueAndAdminDeleteExecuteTimeBefore(LocalDateTime.now());
         int count = 0;
         for (File file : files) {

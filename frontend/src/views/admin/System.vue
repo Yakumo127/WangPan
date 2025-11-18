@@ -190,6 +190,145 @@
           </el-dialog>
         </el-card>
       </el-tab-pane>
+
+      <!-- 备份与迁移 -->
+      <el-tab-pane label="备份与迁移" name="backup">
+        <el-card class="box-card" style="margin-bottom:16px;">
+          <template #header>
+            <div class="card-header"><span>导出备份</span></div>
+          </template>
+          <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:center;">
+            <el-select v-model="bk.format" placeholder="导出格式" style="width:160px;">
+              <el-option label="SQL（优先）" value="sql" />
+              <el-option label="JSON（回退）" value="json" />
+            </el-select>
+            <el-radio-group v-model="bk.mode">
+              <el-radio label="online">在线（默认）</el-radio>
+              <el-radio label="maintenance">维护/只读</el-radio>
+            </el-radio-group>
+            <el-checkbox v-model="bk.includeThumbnails">包含缩略图</el-checkbox>
+
+            <el-button type="primary" :loading="bk.downloading" @click="onDownloadBackup">
+              下载备份包
+            </el-button>
+          </div>
+
+          <div style="margin-top:12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <el-input v-model="bk.serverPath" placeholder="导出到服务器目录（需在白名单内）" style="width:360px;" />
+            <el-button :loading="bk.exporting" @click="onExportToServer">导出到服务器</el-button>
+            <el-button :loading="bk.exportingJob" @click="onExportJob">异步导出（创建作业）</el-button>
+            <span style="color:#999;">白名单：{{ (backupConfig.whitelist||[]).join(', ') || '未配置' }}</span>
+          </div>
+        </el-card>
+
+        <el-card class="box-card" style="margin-bottom:16px;">
+          <template #header>
+            <div class="card-header"><span>导入备份</span></div>
+          </template>
+          <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+            <input type="file" accept="application/zip,.zip" @change="onBackupFileChange" />
+            <span v-if="bk.fileName" style="color:#666;">已选择：{{ bk.fileName }}</span>
+            <el-checkbox v-model="bk.rebuildThumbnails">导入后重建缩略图</el-checkbox>
+            <el-button type="primary" :disabled="!bk.file" :loading="bk.importing" @click="onPrecheck">预检</el-button>
+            <el-button type="danger" :disabled="!bk.file || !bk.precheckDone" :loading="bk.importing" @click="onImport">执行导入</el-button>
+            <el-button type="warning" :disabled="!bk.file" :loading="bk.importingJob" @click="onImportJob">异步导入（创建作业）</el-button>
+          </div>
+          <div v-if="bk.precheck" style="margin-top:12px;">
+            <el-descriptions title="预检结果" :column="2" border>
+              <el-descriptions-item label="包含 db.sql">{{ bk.precheck.hasDbSql ? '是' : '否' }}</el-descriptions-item>
+              <el-descriptions-item label="包含 db.json">{{ bk.precheck.hasDbJson ? '是' : '否' }}</el-descriptions-item>
+              <el-descriptions-item label="blobs 个数">{{ bk.precheck.blobCountInZip || 0 }}</el-descriptions-item>
+              <el-descriptions-item label="blobs 总字节">{{ formatFileSize(bk.precheck.blobBytesInZip || 0) }}</el-descriptions-item>
+            </el-descriptions>
+          </div>
+        </el-card>
+
+        <el-card class="box-card">
+          <template #header>
+            <div class="card-header"><span>定时备份与白名单</span></div>
+          </template>
+          <el-form label-width="180px" :model="backupConfigForm">
+            <el-form-item label="启用计划任务">
+              <el-switch v-model="backupConfigForm.scheduleEnabled" />
+            </el-form-item>
+            <el-form-item label="CRON 表达式">
+              <el-input v-model="backupConfigForm.cron" placeholder="如：0 30 2 * * ?" style="max-width:260px;" />
+            </el-form-item>
+            <el-form-item label="目标目录（逗号分隔）">
+              <el-input v-model="backupConfigForm.destText" placeholder="/var/backups/efm,/data/backups" />
+            </el-form-item>
+            <el-form-item label="保留天数">
+              <el-input-number v-model="backupConfigForm.retentionDays" :min="1" :max="3650" />
+            </el-form-item>
+            <el-form-item label="服务器导出白名单（逗号分隔）">
+              <el-input v-model="backupConfigForm.whitelistText" placeholder="/var/backups/efm,/data/backups" />
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" :loading="backupConfigSaving" @click="onSaveBackupConfig">保存配置</el-button>
+              <span style="color:#999;margin-left:8px;">当前白名单：{{ (backupConfig.whitelist||[]).join(', ') || '未配置' }}</span>
+            </el-form-item>
+          </el-form>
+        </el-card>
+
+        <el-card class="box-card" style="margin-top:16px;">
+          <template #header><div class="card-header"><span>备份作业与进度</span></div></template>
+          <div style="margin-bottom:8px; display:flex; gap:8px; align-items:center;">
+            <el-button size="small" @click="reloadJobs" :loading="jobsLoading">刷新</el-button>
+            <el-switch v-model="jobsAutoRefresh" active-text="自动刷新" />
+          </div>
+          <el-table :data="jobs" style="width: 100%" v-loading="jobsLoading">
+            <el-table-column prop="id" label="ID" width="80" />
+            <el-table-column prop="jobType" label="类型" width="100" />
+            <el-table-column prop="status" label="状态" width="120" />
+            <el-table-column prop="progress" label="进度" width="140">
+              <template #default="{ row }">
+                <el-progress :text-inside="true" :stroke-width="16" :percentage="row.progress || 0" />
+              </template>
+            </el-table-column>
+            <el-table-column prop="stage" label="阶段" min-width="180" />
+            <el-table-column prop="error" label="错误" min-width="220" show-overflow-tooltip />
+            <el-table-column label="时间" min-width="240">
+              <template #default="{ row }">
+                创建：{{ formatDateTime(row.createdAt) }}<br/>
+                <span v-if="row.startedAt">开始：{{ formatDateTime(row.startedAt) }}</span>
+                <span v-if="row.endedAt">；结束：{{ formatDateTime(row.endedAt) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="160">
+              <template #default="{ row }">
+                <el-button size="small" @click="viewJob(row.id)">详情</el-button>
+                <el-button size="small" type="danger" :disabled="!(row.status==='RUNNING' || row.status==='PENDING')" @click="cancelJob(row.id)">取消</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <el-dialog v-model="jobDialogVisible" title="作业详情" width="700px">
+            <div v-if="jobDetail">
+              <el-descriptions :column="2" border>
+                <el-descriptions-item label="ID">{{ jobDetail.id }}</el-descriptions-item>
+                <el-descriptions-item label="类型">{{ jobDetail.jobType }}</el-descriptions-item>
+                <el-descriptions-item label="状态">{{ jobDetail.status }}</el-descriptions-item>
+                <el-descriptions-item label="进度">{{ jobDetail.progress }}%</el-descriptions-item>
+                <el-descriptions-item label="阶段" :span="2">{{ jobDetail.stage }}</el-descriptions-item>
+                <el-descriptions-item label="错误" :span="2">
+                  <code style="white-space:pre-wrap; word-break:break-all;">{{ jobDetail.error || '-' }}</code>
+                </el-descriptions-item>
+                <el-descriptions-item label="创建时间">{{ formatDateTime(jobDetail.createdAt) }}</el-descriptions-item>
+                <el-descriptions-item label="开始/结束">{{ formatDateTime(jobDetail.startedAt) }} / {{ formatDateTime(jobDetail.endedAt) }}</el-descriptions-item>
+              </el-descriptions>
+              <div style="margin-top:12px;">
+                <div style="font-weight:500; margin-bottom:6px;">参数 params</div>
+                <pre style="background:#f7f7f7; padding:8px; border-radius:6px; max-height:300px; overflow:auto;">{{ jobDetail.params }}</pre>
+                <div v-if="jobDetail.stats" style="font-weight:500; margin:10px 0 6px;">统计 stats</div>
+                <pre v-if="jobDetail.stats" style="background:#f7f7f7; padding:8px; border-radius:6px; max-height:300px; overflow:auto;">{{ jobDetail.stats }}</pre>
+              </div>
+            </div>
+            <template #footer>
+              <el-button @click="jobDialogVisible=false">关闭</el-button>
+            </template>
+          </el-dialog>
+        </el-card>
+      </el-tab-pane>
       
       <!-- 回收站管理 -->
       <el-tab-pane label="回收站管理" name="recycle" v-if="false">
@@ -411,6 +550,7 @@ import { ElMessage, ElMessageBox } from "element-plus"
 import { Delete, Refresh, Search, Document, User, Calendar, DataLine, RefreshLeft } from "@element-plus/icons-vue"
 import { getAllRecycleBinFiles, adminRestoreFile, adminScheduleDeleteFile } from "@/api/file"
 import { getRecycleSettings, updateRecycleSettings, getUploadPolicy, updateUploadPolicy } from "@/api/system"
+import { exportDownload as apiExportDownload, exportToServer as apiExportToServer, getBackupConfig as apiGetBackupConfig, updateBackupConfig as apiUpdateBackupConfig, precheck as apiPrecheck, importBackup as apiImportBackup, createExportJob as apiCreateExportJob, createImportJob as apiCreateImportJob, listJobs as apiListJobs, cancelJob as apiCancelJob, getJob as apiGetJob } from "@/api/backup"
 
 export default {
   name: "System",
@@ -460,6 +600,33 @@ export default {
     const showTemplateDialog = ref(false)
     const templatesJson = ref("")
     const savingTemplates = ref(false)
+
+    // 备份与迁移
+    const bk = ref({
+      format: 'json',
+      mode: 'online',
+      includeThumbnails: true,
+      serverPath: '',
+      downloading: false,
+      exporting: false,
+      exportingJob: false,
+      importing: false,
+      importingJob: false,
+      file: null,
+      fileName: '',
+      precheck: null,
+      precheckDone: false,
+      rebuildThumbnails: false
+    })
+    const backupConfig = ref({ whitelist: [], cron: '0 30 2 * * ?', scheduleEnabled: false, dest: [], retentionDays: 14 })
+    const backupConfigForm = ref({ scheduleEnabled: false, cron: '0 30 2 * * ?', destText: '', retentionDays: 14, whitelistText: '' })
+    const backupConfigSaving = ref(false)
+    const jobs = ref([])
+    const jobsLoading = ref(false)
+    const jobsAutoRefresh = ref(true)
+    let jobsTimer = null
+    const jobDialogVisible = ref(false)
+    const jobDetail = ref(null)
     
     const recycleStats = ref({
       totalItems: 0,
@@ -1098,6 +1265,171 @@ export default {
       }
       ElMessage.info("设置已重置")
     }
+
+    // 备份：下载导出
+    const onDownloadBackup = async () => {
+      try {
+        bk.value.downloading = true
+        const resp = await apiExportDownload({ format: bk.value.format, includeThumbnails: bk.value.includeThumbnails, mode: bk.value.mode })
+        const blob = new Blob([resp.data], { type: 'application/zip' })
+        let filename = 'backup.zip'
+        const cd = resp.headers?.['content-disposition'] || resp.headers?.['Content-Disposition']
+        if (cd) {
+          const match = cd.match(/filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/)
+          const name = decodeURIComponent(match?.[1] || match?.[2] || '')
+          if (name) filename = name
+        }
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); window.URL.revokeObjectURL(url)
+        ElMessage.success('备份包已开始下载')
+      } catch (e) {
+        ElMessage.error(e?.message || '下载失败')
+      } finally {
+        bk.value.downloading = false
+      }
+    }
+
+    // 备份：导出到服务器
+    const onExportToServer = async () => {
+      if (!bk.value.serverPath || !bk.value.serverPath.trim()) { ElMessage.warning('请输入服务器目录'); return }
+      try {
+        bk.value.exporting = true
+        const res = await apiExportToServer({ path: bk.value.serverPath.trim(), format: bk.value.format, includeThumbnails: bk.value.includeThumbnails, mode: bk.value.mode })
+        ElMessage.success(`已导出到服务器（${res.bytes || 0} 字节）`)
+      } catch (e) {
+        ElMessage.error(e?.message || '导出失败')
+      } finally {
+        bk.value.exporting = false
+      }
+    }
+
+    // 异步导出：创建作业
+    const onExportJob = async () => {
+      if (!bk.value.serverPath || !bk.value.serverPath.trim()) { ElMessage.warning('请输入服务器目录'); return }
+      try {
+        bk.value.exportingJob = true
+        const res = await apiCreateExportJob({ path: bk.value.serverPath.trim(), format: bk.value.format, includeThumbnails: bk.value.includeThumbnails, mode: bk.value.mode })
+        ElMessage.success(`已创建导出作业 #${res.jobId}`)
+        reloadJobs()
+      } catch (e) {
+        ElMessage.error(e?.message || '创建作业失败')
+      } finally {
+        bk.value.exportingJob = false
+      }
+    }
+
+    // 选择备份包
+    const onBackupFileChange = (e) => {
+      const f = e?.target?.files?.[0]
+      bk.value.file = f || null
+      bk.value.fileName = f?.name || ''
+      if (e?.target) e.target.value = ''
+      bk.value.precheck = null
+      bk.value.precheckDone = false
+    }
+
+    // 预检
+    const onPrecheck = async () => {
+      if (!bk.value.file) { ElMessage.warning('请先选择备份包'); return }
+      try {
+        bk.value.importing = true
+        const res = await apiPrecheck(bk.value.file)
+        bk.value.precheck = res || {}
+        bk.value.precheckDone = true
+        ElMessage.success('预检完成')
+      } catch (e) {
+        ElMessage.error(e?.message || '预检失败')
+      } finally {
+        bk.value.importing = false
+      }
+    }
+
+    // 导入
+    const onImport = async () => {
+      if (!bk.value.file || !bk.value.precheckDone) { ElMessage.warning('请先完成预检'); return }
+      try {
+        await ElMessageBox.confirm('导入将覆盖现有数据，且不可撤销。建议先在“导出”处创建当前系统快照。是否继续？', '确认导入', { type: 'warning', confirmButtonText: '继续', cancelButtonText: '取消' })
+        bk.value.importing = true
+        const res = await apiImportBackup(bk.value.file, { mode: 'full', confirm: true, rebuildThumbnails: !!bk.value.rebuildThumbnails })
+        if (Array.isArray(res['postCheck.missingBlobs']) && res['postCheck.missingBlobs'].length > 0) {
+          ElMessage.warning(`导入完成，但缺失 ${res['postCheck.missingBlobs'].length} 个 Blob。`)
+        } else {
+          ElMessage.success('导入成功')
+        }
+      } catch (e) {
+        if (e !== 'cancel') ElMessage.error(e?.message || '导入失败')
+      } finally {
+        bk.value.importing = false
+      }
+    }
+
+    // 异步导入：创建作业
+    const onImportJob = async () => {
+      if (!bk.value.file) { ElMessage.warning('请先选择备份包'); return }
+      try {
+        await ElMessageBox.confirm('将创建后台导入作业并覆盖现有数据。是否继续？', '确认', { type: 'warning' })
+        bk.value.importingJob = true
+        const res = await apiCreateImportJob(bk.value.file, { rebuildThumbnails: !!bk.value.rebuildThumbnails })
+        ElMessage.success(`已创建导入作业 #${res.jobId}`)
+        reloadJobs()
+      } catch (e) {
+        if (e !== 'cancel') ElMessage.error(e?.message || '创建作业失败')
+      } finally {
+        bk.value.importingJob = false
+      }
+    }
+
+    const reloadJobs = async () => {
+      try {
+        jobsLoading.value = true
+        const res = await apiListJobs({ page: 0, size: 20 })
+        jobs.value = Array.isArray(res.content) ? res.content : []
+      } catch { } finally { jobsLoading.value = false }
+    }
+    const cancelJob = async (id) => {
+      try { await apiCancelJob(id); ElMessage.success('已请求取消'); reloadJobs() } catch (e) { ElMessage.error(e?.message || '取消失败') }
+    }
+    const viewJob = async (id) => {
+      try {
+        const data = await apiGetJob(id)
+        jobDetail.value = data
+        jobDialogVisible.value = true
+      } catch (e) {
+        ElMessage.error(e?.message || '获取作业详情失败')
+      }
+    }
+
+    // 读取与保存备份配置
+    const loadBackupConfig = async () => {
+      try {
+        const cfg = await apiGetBackupConfig()
+        backupConfig.value = cfg || {}
+        backupConfigForm.value.scheduleEnabled = !!cfg.scheduleEnabled
+        backupConfigForm.value.cron = cfg.cron || '0 30 2 * * ?'
+        backupConfigForm.value.destText = Array.isArray(cfg.dest) ? cfg.dest.join(',') : ''
+        backupConfigForm.value.retentionDays = cfg.retentionDays ?? 14
+        backupConfigForm.value.whitelistText = Array.isArray(cfg.whitelist) ? cfg.whitelist.join(',') : ''
+      } catch {}
+    }
+    const onSaveBackupConfig = async () => {
+      try {
+        backupConfigSaving.value = true
+        const body = {
+          scheduleEnabled: !!backupConfigForm.value.scheduleEnabled,
+          cron: backupConfigForm.value.cron,
+          dest: (backupConfigForm.value.destText || '').split(',').map(s => s.trim()).filter(s => !!s),
+          retentionDays: backupConfigForm.value.retentionDays,
+          whitelist: (backupConfigForm.value.whitelistText || '').split(',').map(s => s.trim()).filter(s => !!s)
+        }
+        await apiUpdateBackupConfig(body)
+        ElMessage.success('配置已保存')
+        loadBackupConfig()
+      } catch (e) {
+        ElMessage.error(e?.message || '保存失败')
+      } finally {
+        backupConfigSaving.value = false
+      }
+    }
     
     onMounted(async () => {
       try {
@@ -1116,7 +1448,7 @@ export default {
           }
         } catch {}
       } catch (e) {}
-      nextTick(() => { loadRecycleBinData() })
+      nextTick(() => { loadRecycleBinData(); loadBackupConfig(); reloadJobs(); if (jobsTimer) clearInterval(jobsTimer); jobsTimer = setInterval(() => { if (jobsAutoRefresh.value) reloadJobs() }, 3000) })
     })
     
     return {
@@ -1186,6 +1518,26 @@ export default {
       manualPurgeExpired,
       saveConfig,
       resetConfig
+      ,
+      // 备份
+      bk,
+      backupConfig,
+      backupConfigForm,
+      backupConfigSaving,
+      onDownloadBackup,
+      onExportToServer,
+      onBackupFileChange,
+      onPrecheck,
+      onImport,
+      onExportJob,
+      onImportJob,
+      reloadJobs,
+      cancelJob,
+      jobs,
+      jobsLoading,
+      jobsAutoRefresh,
+      onSaveBackupConfig
+      , jobDialogVisible, jobDetail, viewJob
     }
   }
 }

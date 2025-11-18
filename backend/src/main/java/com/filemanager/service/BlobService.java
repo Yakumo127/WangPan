@@ -18,6 +18,7 @@ import java.time.LocalDateTime;
 public class BlobService {
 
     private final BlobRepository blobRepository;
+    private final SystemSettingService systemSettingService;
 
     @Value("${file.storage.path}")
     private String storagePath;
@@ -99,6 +100,10 @@ public class BlobService {
             description = "'手动 Blob GC'"
     )
     public int gcUnreferenced() {
+        // 在线备份窗口内冻结 GC（对用户无感）
+        try {
+            if (systemSettingService.getBoolean("backup.gc.freeze", false) || systemSettingService.getBackupGcFreezeCount() > 0) { return 0; }
+        } catch (Exception ignore) {}
         int removed = 0;
         java.util.List<Blob> list = blobRepository.findUnreferenced();
         for (Blob b : list) {
