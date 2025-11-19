@@ -22,8 +22,13 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.security.authorization.AuthorizationDecision;
+import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Configuration
 @EnableWebSecurity
@@ -36,6 +41,9 @@ public class SecurityConfig {
     @Autowired
     @Lazy
     private UserDetailsService userDetailsService;
+
+    @Value("${cors.allowed-origins:}")
+    private String corsAllowedOrigins;
     
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -45,7 +53,13 @@ public class SecurityConfig {
             .authorizeHttpRequests(authz -> authz
                 .requestMatchers("/api/auth/**").permitAll()
                 .requestMatchers("/api/files/thumbnail/**").permitAll()
-                .requestMatchers("/actuator/**").permitAll()
+                // Actuator 仅允许本机访问（127.0.0.1 / ::1）
+                .requestMatchers("/actuator/**").access((authentication, context) -> {
+                    jakarta.servlet.http.HttpServletRequest req = context.getRequest();
+                    String ip = req.getRemoteAddr();
+                    boolean local = "127.0.0.1".equals(ip) || "0:0:0:0:0:0:0:1".equals(ip);
+                    return new AuthorizationDecision(local);
+                })
                 .requestMatchers("/api/files/admin/**").hasAuthority("ROLE_ADMIN")
                 .requestMatchers("/api/admin/**").hasAuthority("ROLE_ADMIN")
                 .anyRequest().authenticated()
@@ -62,9 +76,20 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOriginPatterns(Arrays.asList("*"));
+        // 收紧：仅允许白名单来源（默认 localhost:3000/127.0.0.1:3000），可通过 cors.allowed-origins 覆盖
+        List<String> origins = null;
+        if (corsAllowedOrigins != null && !corsAllowedOrigins.trim().isEmpty()) {
+            origins = Arrays.stream(corsAllowedOrigins.split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .collect(Collectors.toList());
+        }
+        if (origins == null || origins.isEmpty()) {
+            origins = Arrays.asList("http://localhost:3000", "http://127.0.0.1:3000");
+        }
+        configuration.setAllowedOriginPatterns(origins);
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(Arrays.asList("*"));
+        configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "Accept", "Origin"));
         configuration.setAllowCredentials(true);
         
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -89,4 +114,7 @@ public class SecurityConfig {
     public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
         return config.getAuthenticationManager();
     }
+
+    // 备用：若未来需要更复杂的本地判断（含代理头等），可改造为独立方法
+    // private boolean isLocal(jakarta.servlet.http.HttpServletRequest req) { ... }
 }

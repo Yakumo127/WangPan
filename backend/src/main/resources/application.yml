@@ -84,6 +84,10 @@ management:
     db:
       enabled: true
 
+# CORS 允许来源（逗号分隔）。默认仅允许本机前端开发端口 3000。
+cors:
+  allowed-origins: "http://localhost:3000,http://127.0.0.1:3000,http://116.198.32.12:3000,http://116.198.32.12:18800"
+
 audit:
   enabled: true
   retention-days: 180
