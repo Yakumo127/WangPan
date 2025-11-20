@@ -596,7 +596,7 @@
 </template>
 
 <script>
-import { ref, onMounted, nextTick, computed } from "vue"
+import { ref, onMounted, nextTick, computed, watch, onBeforeUnmount } from "vue"
 import { ElMessage, ElMessageBox } from "element-plus"
 import { Delete, Refresh, Search, Document, User, Calendar, DataLine, RefreshLeft } from "@element-plus/icons-vue"
 import { getAllRecycleBinFiles, adminRestoreFile, adminScheduleDeleteFile } from "@/api/file"
@@ -678,6 +678,24 @@ export default {
     const jobsLoading = ref(false)
     const jobsAutoRefresh = ref(true)
     let jobsTimer = null
+    const startJobsAutoRefresh = () => {
+      if (jobsTimer) {
+        clearInterval(jobsTimer)
+        jobsTimer = null
+      }
+      if (activeTab.value !== 'backup' || !jobsAutoRefresh.value) {
+        return
+      }
+      jobsTimer = setInterval(() => {
+        reloadJobs()
+      }, 3000)
+    }
+    const stopJobsAutoRefresh = () => {
+      if (jobsTimer) {
+        clearInterval(jobsTimer)
+        jobsTimer = null
+      }
+    }
     const jobDialogVisible = ref(false)
     const jobDetail = ref(null)
     
@@ -1452,6 +1470,17 @@ export default {
       }
     }
 
+    watch(jobsAutoRefresh, () => {
+      startJobsAutoRefresh()
+    })
+
+    watch(activeTab, (tab) => {
+      if (tab === 'backup') {
+        reloadJobs()
+      }
+      startJobsAutoRefresh()
+    })
+
     // 读取与保存备份配置
     const loadBackupConfig = async () => {
       try {
@@ -1539,7 +1568,18 @@ export default {
           }
         } catch {}
       } catch (e) {}
-      nextTick(() => { loadRecycleBinData(); loadBackupConfig(); reloadJobs(); if (jobsTimer) clearInterval(jobsTimer); jobsTimer = setInterval(() => { if (jobsAutoRefresh.value) reloadJobs() }, 3000) })
+      nextTick(() => {
+        loadRecycleBinData()
+        loadBackupConfig()
+        if (activeTab.value === 'backup') {
+          reloadJobs()
+        }
+        startJobsAutoRefresh()
+      })
+    })
+
+    onBeforeUnmount(() => {
+      stopJobsAutoRefresh()
     })
     
     return {
