@@ -8,27 +8,45 @@
       <span class="preview-title">{{ filename }}</span>
     </div>
 
-    <div class="preview-body">
-      <template v-if="viewerType === 'video'">
-        <video v-if="previewUrl" class="preview-video" controls :src="previewUrl"></video>
+    <div class="preview-body" v-loading="loading">
+      <template v-if="error">
+        <div class="preview-error">
+          <el-icon><WarningFilled /></el-icon>
+          <p>{{ error }}</p>
+        </div>
       </template>
       <template v-else>
-        <iframe v-if="previewUrl" :src="previewUrl" class="preview-iframe" />
+        <template v-if="viewerType === 'video'">
+          <video v-if="blobUrl" class="preview-video" controls :src="blobUrl"></video>
+        </template>
+        <template v-else-if="viewerType === 'text'">
+          <pre class="preview-text">{{ textContent }}</pre>
+        </template>
+        <template v-else>
+          <iframe v-if="blobUrl" :src="blobUrl" class="preview-iframe" />
+        </template>
       </template>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { ArrowLeft, WarningFilled } from '@element-plus/icons-vue'
+import { previewFile as previewFileApi } from '@/api/file'
 
 const route = useRoute()
 const router = useRouter()
 
 const fileId = computed(() => route.params.id)
 const filename = computed(() => (route.query.name || '').toString())
+
+const loading = ref(false)
+const error = ref('')
+const blobUrl = ref('')
+const textContent = ref('')
 
 const getExt = () => {
   const name = filename.value || ''
@@ -45,14 +63,48 @@ const viewerType = computed(() => {
   if (['doc', 'docx', 'ppt', 'pptx'].includes(ext)) return 'office'
   return 'unknown'
 })
-const previewUrl = computed(() => {
-  if (!fileId.value) return ''
-  return `/api/files/${fileId.value}/preview`
-})
+
+const loadPreview = async () => {
+  if (!fileId.value) {
+    error.value = '缺少文件ID'
+    return
+  }
+  loading.value = true
+  error.value = ''
+  try {
+    const res = await previewFileApi(fileId.value)
+    const blob = res?.data
+    if (!(blob instanceof Blob)) {
+      throw new Error('预览数据无效')
+    }
+    if (viewerType.value === 'text') {
+      textContent.value = await blob.text()
+    } else {
+      const url = window.URL.createObjectURL(blob)
+      blobUrl.value = url
+    }
+  } catch (e) {
+    console.error('加载预览失败:', e)
+    error.value = e?.message || '加载预览失败'
+    ElMessage.error(error.value)
+  } finally {
+    loading.value = false
+  }
+}
 
 const goBack = () => {
   router.push({ name: 'Files' })
 }
+
+onMounted(() => {
+  loadPreview()
+})
+
+onBeforeUnmount(() => {
+  if (blobUrl.value) {
+    try { window.URL.revokeObjectURL(blobUrl.value) } catch (e) {}
+  }
+})
 </script>
 
 <style scoped>

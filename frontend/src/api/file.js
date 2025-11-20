@@ -216,7 +216,7 @@ export function previewFile(id) {
     url: `/files/${id}/preview`,
     method: "get",
     responseType: "blob",
-    timeout: 300000
+    timeout: 0
   })
 }
 
