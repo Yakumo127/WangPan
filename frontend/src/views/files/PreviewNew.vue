@@ -7,20 +7,22 @@
         <span class="file-name">{{ filename }}</span>
       </div>
       <div class="header-actions">
-        <el-button size="small" @click="goBack">
-          <el-icon><ArrowLeft /></el-icon>
-          返回文件列表
-        </el-button>
-        <el-button size="small" @click="toggleDetails">
-          详情
-        </el-button>
-        <el-button size="small" @click="handleHistory">
-          历史
-        </el-button>
-        <el-button size="small" @click="handleDownload">
-          <el-icon><Download /></el-icon>
-          下载
-        </el-button>
+        <el-button-group>
+          <el-button size="small" @click="goBack">
+            <el-icon><ArrowLeft /></el-icon>
+            返回文件列表
+          </el-button>
+          <el-button size="small" @click="toggleDetails">
+            详情
+          </el-button>
+          <el-button size="small" @click="handleHistory">
+            历史
+          </el-button>
+          <el-button size="small" @click="handleDownload">
+            <el-icon><Download /></el-icon>
+            下载
+          </el-button>
+        </el-button-group>
       </div>
     </div>
 
@@ -34,6 +36,26 @@
       </template>
       <template v-else>
         <div class="file-preview-layout">
+          <main class="file-preview-content">
+            <template v-if="viewerType === 'video'">
+              <video
+                v-if="blobUrl"
+                class="preview-video"
+                controls
+                :src="blobUrl"
+              ></video>
+            </template>
+            <template v-else-if="viewerType === 'text'">
+              <pre class="preview-text">{{ textContent }}</pre>
+            </template>
+            <template v-else>
+              <iframe
+                v-if="blobUrl"
+                :src="blobUrl"
+                class="preview-iframe"
+              />
+            </template>
+          </main>
           <aside v-if="showSidebar" class="file-preview-sidebar">
             <h3 class="sidebar-title">文件信息</h3>
             <div class="sidebar-section">
@@ -61,26 +83,6 @@
               <div class="sidebar-value">{{ locationLabel }}</div>
             </div>
           </aside>
-          <main class="file-preview-content">
-            <template v-if="viewerType === 'video'">
-              <video
-                v-if="blobUrl"
-                class="preview-video"
-                controls
-                :src="blobUrl"
-              ></video>
-            </template>
-            <template v-else-if="viewerType === 'text'">
-              <pre class="preview-text">{{ textContent }}</pre>
-            </template>
-            <template v-else>
-              <iframe
-                v-if="blobUrl"
-                :src="blobUrl"
-                class="preview-iframe"
-              />
-            </template>
-          </main>
         </div>
       </template>
     </div>
@@ -297,7 +299,7 @@ onBeforeUnmount(() => {
 
 .header-actions {
   display: flex;
-  gap: 8px;
+  align-items: center;
 }
 
 .file-preview-body {
@@ -317,7 +319,7 @@ onBeforeUnmount(() => {
 
 .file-preview-sidebar {
   width: 260px;
-  border-right: 1px solid #ebeef5;
+  border-left: 1px solid #ebeef5;
   padding: 16px;
   box-sizing: border-box;
   background: #fafafa;
