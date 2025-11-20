@@ -45,6 +45,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(authz -> authz
                 .requestMatchers("/api/auth/**").permitAll()
                 .requestMatchers("/api/files/thumbnail/**").permitAll()
+                .requestMatchers("/api/files/direct-download").permitAll()
                 .requestMatchers("/actuator/**").permitAll()
                 .requestMatchers("/api/files/admin/**").hasAuthority("ROLE_ADMIN")
                 .requestMatchers("/api/admin/**").hasAuthority("ROLE_ADMIN")

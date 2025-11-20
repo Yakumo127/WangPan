@@ -68,6 +68,14 @@ export function getChunkStatus(fileHash, totalChunks) {
   })
 }
 
+// 获取普通用户文件下载直链
+export function getDownloadUrl(id) {
+  return request({
+    url: `/files/${id}/download-url`,
+    method: "get"
+  })
+}
+
 export function downloadFile(id) {
   return request({
     url: `/files/download/${id}`,
@@ -82,6 +90,14 @@ export function adminDownloadFile(id) {
     url: `/files/admin/download/${id}`,
     method: "get",
     responseType: "blob"
+  })
+}
+
+// 获取管理员文件下载直链
+export function getAdminDownloadUrl(id) {
+  return request({
+    url: `/files/admin/${id}/download-url`,
+    method: "get"
   })
 }
 

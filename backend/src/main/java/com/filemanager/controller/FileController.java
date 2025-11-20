@@ -54,6 +54,7 @@ public class FileController {
     private final com.filemanager.repository.FileRepository fileRepository;
     private final com.filemanager.repository.UserRepository userRepository;
     private final com.filemanager.service.BlobService blobService;
+    private final com.filemanager.service.DownloadTokenService downloadTokenService;
     
     @PostMapping("/upload")
     public ResponseEntity<Map<String, Object>> uploadFile(
@@ -550,6 +551,29 @@ public class FileController {
         return buildDownloadResponse(request, fileMeta, filePath);
     }
 
+    /**
+     * 普通用户：获取指定文件的一次性下载链接。
+     * 该链接包含短期有效的签名 token，实际下载走 /api/files/direct-download。
+     */
+    @GetMapping("/{fileId}/download-url")
+    public ResponseEntity<Map<String, Object>> getDownloadUrl(@PathVariable Long fileId) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || auth.getName() == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "未登录"));
+        }
+        String username = auth.getName();
+        Long userId = userService.getUserIdByUsername(username);
+        // 再次校验权限与存在性
+        File file = fileService.getFileForDownload(fileId, userId);
+        String token = downloadTokenService.generateUserToken(file.getId(), userId);
+        long expiresAt = System.currentTimeMillis() + downloadTokenService.getTtlSeconds() * 1000L;
+        String url = "/api/files/direct-download?token=" + token;
+        return ResponseEntity.ok(Map.of(
+                "url", url,
+                "expiresAt", expiresAt
+        ));
+    }
+
     // HEAD: 用户下载
     @com.filemanager.audit.AuditedOperation(
             actionType = com.filemanager.entity.UserLog.ACTION_DOWNLOAD_PROBE,
@@ -587,6 +611,109 @@ public class FileController {
             }
         }
         return buildHeadResponseConditional(request, fileMeta, filePath);
+    }
+
+    /**
+     * 直链下载入口：通过一次性 token 实现浏览器原生下载，并强制时间与次数限制。
+     * 不依赖 JWT Header，而是完全基于 token 校验。
+     */
+    @GetMapping("/direct-download")
+    public ResponseEntity<StreamingResponseBody> directDownload(@RequestParam("token") String token,
+                                                                jakarta.servlet.http.HttpServletRequest request) {
+        if (token == null || token.isBlank()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(null);
+        }
+        com.filemanager.service.DownloadTokenService.DecodedToken decoded;
+        try {
+            decoded = downloadTokenService.parseAndValidate(token);
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(null);
+        }
+
+        // 用户状态与权限校验
+        com.filemanager.entity.User user;
+        try {
+            user = userService.getUserById(decoded.userId);
+        } catch (RuntimeException ex) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(null);
+        }
+        if (!Boolean.TRUE.equals(user.getEnabled()) || Boolean.TRUE.equals(user.getLocked())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(null);
+        }
+
+        File fileMeta;
+        Path filePath;
+        try {
+            if (decoded.admin) {
+                // 管理员下载：允许跨用户
+                if (user.getRole() != com.filemanager.entity.User.Role.ADMIN) {
+                    return ResponseEntity.status(HttpStatus.FORBIDDEN).body(null);
+                }
+                File f = fileService.getFileByIdForAdmin(decoded.fileId);
+                fileMeta = f;
+                filePath = Path.of(f.getFilePath());
+            } else {
+                // 普通用户下载：仅允许下载本人文件
+                File f = fileService.getFileForDownload(decoded.fileId, decoded.userId);
+                fileMeta = f;
+                filePath = Path.of(f.getFilePath());
+            }
+            if (!java.nio.file.Files.exists(filePath) || !java.nio.file.Files.isReadable(filePath)) {
+                throw new com.filemanager.exception.NotFoundException("文件不存在");
+            }
+        } catch (com.filemanager.exception.NotFoundException nf) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
+        } catch (com.filemanager.exception.ForbiddenException fe) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(null);
+        } catch (Exception ex) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
+        }
+
+        // 单次使用限制：标记 token 已使用，若重复使用则失败
+        try {
+            downloadTokenService.assertNotUsedAndMarkUsed(token);
+        } catch (IllegalStateException ex) {
+            return ResponseEntity.status(HttpStatus.GONE).body(null);
+        }
+
+        // 将用户放入 SecurityContext，便于复用现有审计逻辑
+        try {
+            org.springframework.security.core.userdetails.UserDetails userDetails =
+                    userService.loadUserByUsername(user.getUsername());
+            org.springframework.security.authentication.UsernamePasswordAuthenticationToken authenticationToken =
+                    new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                            userDetails, null, userDetails.getAuthorities());
+            authenticationToken.setDetails(new org.springframework.security.web.authentication.WebAuthenticationDetailsSource().buildDetails(request));
+            org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(authenticationToken);
+        } catch (Exception ignore) {
+        }
+
+        return buildDownloadResponse(request, fileMeta, filePath);
+    }
+
+    /**
+     * 管理员：获取任意文件的一次性下载链接。
+     */
+    @GetMapping("/admin/{fileId}/download-url")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    public ResponseEntity<Map<String, Object>> getAdminDownloadUrl(@PathVariable Long fileId) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || auth.getName() == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "未登录"));
+        }
+        String username = auth.getName();
+        Long userId = userService.getUserIdByUsername(username);
+        // 管理员权限与文件存在性校验
+        com.filemanager.entity.File file = fileService.getFileByIdForAdmin(fileId);
+        String token = downloadTokenService.generateAdminToken(file.getId(), userId);
+        long expiresAt = System.currentTimeMillis() + downloadTokenService.getTtlSeconds() * 1000L;
+        String url = "/api/files/direct-download?token=" + token;
+        return ResponseEntity.ok(Map.of(
+                "url", url,
+                "expiresAt", expiresAt
+        ));
     }
 
     // HEAD: 管理员下载

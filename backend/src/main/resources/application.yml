@@ -59,6 +59,13 @@ jwt:
   secret: enterpriseFileManagerSecretKey2024
   expiration: 86400000    # 24小时
 
+download:
+  token:
+    # 下载一次性 Token 签名密钥（仅用于下载直链，与登录 JWT 分离）
+    secret: enterpriseFileManagerDownloadSecretKey2024
+    # Token 有效期（秒），当前按需求设置为 10 秒
+    ttl-seconds: 10
+
 recycle:
   admin:
     retention-days: 15

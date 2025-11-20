@@ -136,9 +136,8 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, Refresh, Search, Document, Download, Delete, Edit } from '@element-plus/icons-vue'
-import { getFileList, uploadFile, deleteFile as deleteFileApi, searchFiles as searchFilesApi, renameFile as renameFileApi, checkFileExists, uploadChunk as uploadChunkApi, mergeChunks, getChunkStatus } from '@/api/file'
+import { getFileList, uploadFile, deleteFile as deleteFileApi, searchFiles as searchFilesApi, renameFile as renameFileApi, checkFileExists, uploadChunk as uploadChunkApi, mergeChunks, getChunkStatus, getDownloadUrl } from '@/api/file'
 import { getFolderList } from '@/api/folder'
-import { getToken } from '@/utils/auth'
 
 const loading = ref(false)
 const uploading = ref(false)
@@ -496,29 +495,19 @@ const uploadInChunksWithRetryAndResume = async (elFile, progressIndex, fileHash,
   }
 }
 
-// 下载文件（使用 fetch + a 链接，避免 Axios 超时限制）
+// 下载文件（通过后端生成一次性直链，交给浏览器原生下载）
 const downloadFile = async (file) => {
   try {
-    const token = getToken()
-    const headers = {}
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`
+    const res = await getDownloadUrl(file.id)
+    const url = res && res.url
+    if (!url) {
+      throw new Error('下载链接为空')
     }
-    const res = await fetch(`/api/files/download/${file.id}`, {
-      method: 'GET',
-      headers
-    })
-    if (!res.ok) {
-      throw new Error(`下载失败，状态码：${res.status}`)
-    }
-    const blob = await res.blob()
-    const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
     a.download = file.originalFilename || file.name || 'download'
     document.body.appendChild(a)
     a.click()
-    window.URL.revokeObjectURL(url)
     document.body.removeChild(a)
   } catch (error) {
     console.error('文件下载失败:', error)
