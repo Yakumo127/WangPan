@@ -323,7 +323,13 @@ const openNewPreview = (file) => {
   router.push({
     name: 'FilePreviewNew',
     params: { id: file.id },
-    query: { name: file.originalFilename || file.name || '' }
+    query: {
+      name: file.originalFilename || file.name || '',
+      size: file.size || '',
+      createTime: file.createTime || '',
+      updateTime: file.updateTime || '',
+      location: file.folderPath || ''
+    }
   })
 }
 

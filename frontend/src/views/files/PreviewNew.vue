@@ -3,14 +3,19 @@
     <!-- 内部顶部栏：系统名称 + 文件名 + 操作按钮 -->
     <div class="file-preview-header">
       <div class="header-left">
-        <span class="system-name">企业文件管理系统</span>
-        <span class="separator">-</span>
+        <span class="file-name-label">文件名：</span>
         <span class="file-name">{{ filename }}</span>
       </div>
       <div class="header-actions">
         <el-button size="small" @click="goBack">
           <el-icon><ArrowLeft /></el-icon>
           返回文件列表
+        </el-button>
+        <el-button size="small" @click="toggleDetails">
+          详情
+        </el-button>
+        <el-button size="small" @click="handleHistory">
+          历史
         </el-button>
         <el-button size="small" @click="handleDownload">
           <el-icon><Download /></el-icon>
@@ -29,7 +34,7 @@
       </template>
       <template v-else>
         <div class="file-preview-layout">
-          <aside class="file-preview-sidebar">
+          <aside v-if="showSidebar" class="file-preview-sidebar">
             <h3 class="sidebar-title">文件信息</h3>
             <div class="sidebar-section">
               <div class="sidebar-label">名称</div>
@@ -39,7 +44,22 @@
               <div class="sidebar-label">类型</div>
               <div class="sidebar-value">{{ viewerTypeLabel }}</div>
             </div>
-            <!-- 可在后续扩展大小、时间等信息 -->
+            <div class="sidebar-section">
+              <div class="sidebar-label">大小</div>
+              <div class="sidebar-value">{{ sizeLabel }}</div>
+            </div>
+            <div class="sidebar-section">
+              <div class="sidebar-label">上传时间</div>
+              <div class="sidebar-value">{{ createTimeLabel }}</div>
+            </div>
+            <div class="sidebar-section">
+              <div class="sidebar-label">修改时间</div>
+              <div class="sidebar-value">{{ updateTimeLabel }}</div>
+            </div>
+            <div class="sidebar-section">
+              <div class="sidebar-label">位置</div>
+              <div class="sidebar-value">{{ locationLabel }}</div>
+            </div>
           </aside>
           <main class="file-preview-content">
             <template v-if="viewerType === 'video'">
@@ -79,12 +99,17 @@ const router = useRouter()
 
 const fileId = computed(() => route.params.id)
 const filename = computed(() => (route.query.name || '').toString())
+const rawSize = computed(() => route.query.size)
+const rawCreateTime = computed(() => route.query.createTime)
+const rawUpdateTime = computed(() => route.query.updateTime)
+const rawLocation = computed(() => route.query.location)
 
 const loading = ref(false)
 const error = ref('')
 const blobUrl = ref('')
 const textContent = ref('')
 const viewerType = ref('unknown')
+const showSidebar = ref(false)
 
 const viewerTypeLabel = computed(() => {
   switch (viewerType.value) {
@@ -99,6 +124,31 @@ const viewerTypeLabel = computed(() => {
     default:
       return '其他类型'
   }
+})
+
+const formatFileSize = (bytes) => {
+  const n = Number(bytes)
+  if (!n || n <= 0) return ''
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(n) / Math.log(k))
+  return `${parseFloat((n / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`
+}
+
+const formatDateTime = (val) => {
+  if (!val) return ''
+  const d = new Date(val)
+  if (isNaN(d.getTime())) return ''
+  return d.toLocaleString()
+}
+
+const sizeLabel = computed(() => formatFileSize(rawSize.value))
+const createTimeLabel = computed(() => formatDateTime(rawCreateTime.value))
+const updateTimeLabel = computed(() => formatDateTime(rawUpdateTime.value))
+const locationLabel = computed(() => {
+  const loc = (rawLocation.value || '').toString()
+  if (!loc) return '根目录'
+  return loc
 })
 
 const getExt = () => {
@@ -188,6 +238,14 @@ const handleDownload = async () => {
   }
 }
 
+const toggleDetails = () => {
+  showSidebar.value = !showSidebar.value
+}
+
+const handleHistory = () => {
+  ElMessage.info('历史功能暂未实现')
+}
+
 onMounted(() => {
   loadPreview()
 })
@@ -227,18 +285,14 @@ onBeforeUnmount(() => {
   gap: 6px;
 }
 
-.system-name {
-  font-weight: 600;
-  color: #333;
-}
-
-.separator {
-  color: #999;
+.file-name-label {
+  font-weight: 500;
+  color: #666;
 }
 
 .file-name {
-  font-weight: 500;
-  color: #555;
+  font-weight: 600;
+  color: #333;
 }
 
 .header-actions {
@@ -331,4 +385,3 @@ onBeforeUnmount(() => {
   color: #f56c6c;
 }
 </style>
-
