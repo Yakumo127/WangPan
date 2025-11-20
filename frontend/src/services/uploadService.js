@@ -3,14 +3,33 @@
 
 import request from '@/utils/request'
 
-// 秒传检查
-export function checkFastUpload(payload) {
-  // payload: { hash, size, folderId }
-  return request({
-    url: '/files/fast-upload/check',
+// 秒传检查 + 快速创建文件（基于已有 Blob）
+// 返回结构约定：{ exists: boolean, fileId?: number }
+export async function checkFastUpload({ hash, filename, folderId, parentId }) {
+  // 1. 先检查 Blob 是否存在（全局）
+  const existsResp = await request({
+    url: '/files/exists-global',
     method: 'post',
-    data: payload
+    data: { fileHash: hash }
   })
+  if (!existsResp || !existsResp.exists) {
+    return { exists: false }
+  }
+  // 2. Blob 已存在，调用 quick-create 在当前目录创建文件或新版本
+  const qcResp = await request({
+    url: '/files/quick-create',
+    method: 'post',
+    data: {
+      fileHash: hash,
+      filename,
+      folderId: folderId ?? null,
+      parentId: parentId ?? null
+    }
+  })
+  return {
+    exists: true,
+    fileId: qcResp && qcResp.fileId
+  }
 }
 
 // 直传小文件
@@ -30,13 +49,12 @@ export function directUpload({ file, folderId, filename, onUploadProgress, cance
 }
 
 // 分片上传单个分片
-export function uploadChunk({ hash, index, total, chunk, folderId, onUploadProgress, cancelToken }) {
+export function uploadChunk({ hash, index, total, chunk, onUploadProgress, cancelToken }) {
   const formData = new FormData()
-  formData.append('chunk', chunk)
-  formData.append('hash', hash)
-  formData.append('index', String(index))
-  formData.append('total', String(total))
-  if (folderId != null) formData.append('folderId', folderId)
+  formData.append('file', chunk)
+  formData.append('fileHash', hash)
+  formData.append('chunkNumber', String(index))
+  formData.append('totalChunks', String(total))
   return request({
     url: '/files/chunk',
     method: 'post',
@@ -52,16 +70,24 @@ export function getChunkStatus({ hash, total }) {
   return request({
     url: '/files/chunk/status',
     method: 'get',
-    params: { hash, total }
+    params: {
+      fileHash: hash,
+      totalChunks: total
+    }
   })
 }
 
 // 合并分片
-export function mergeChunks({ hash, total, filename, folderId }) {
+export function mergeChunks({ hash, total, filename, folderId, parentId }) {
   return request({
-    url: '/files/chunk/merge',
+    url: '/files/merge',
     method: 'post',
-    data: { hash, total, filename, folderId }
+    data: {
+      fileHash: hash,
+      totalChunks: total,
+      filename,
+      folderId: folderId ?? null,
+      parentId: parentId ?? null
+    }
   })
 }
-

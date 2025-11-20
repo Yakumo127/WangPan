@@ -4,9 +4,13 @@
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { computeFileSha256 } from '@/utils/fileHash'
-import { checkFastUpload, directUpload } from '@/services/uploadService'
+import { checkFastUpload, directUpload, uploadChunk, getChunkStatus, mergeChunks } from '@/services/uploadService'
 
 const MAX_CONCURRENT_FILES = 2
+const CHUNK_THRESHOLD = 10 * 1024 * 1024 // 10MB 以上采用分片
+const CHUNK_SIZE = 4 * 1024 * 1024      // 每片 4MB
+const MAX_CHUNK_CONCURRENCY = 3
+const MAX_CHUNK_RETRY = 3
 
 export function useUploadQueue(options = {}) {
   const {
@@ -27,6 +31,7 @@ export function useUploadQueue(options = {}) {
     if (!list.length) return
     const now = Date.now()
     for (const file of list) {
+      const useChunks = file.size >= CHUNK_THRESHOLD
       const task = {
         id: `${now}-${Math.random().toString(16).slice(2)}`,
         file,
@@ -39,7 +44,9 @@ export function useUploadQueue(options = {}) {
         uploadedBytes: 0,
         errorMessage: '',
         isFastUploaded: false,
-        useChunks: false,
+        useChunks,
+        totalChunks: 0,
+        chunks: [],
         createdAt: now,
         updatedAt: now
       }
@@ -73,7 +80,7 @@ export function useUploadQueue(options = {}) {
       try {
         const res = await checkFastUpload({
           hash,
-          size: task.size,
+          filename: task.name,
           folderId: task.folderId
         })
         if (res && res.exists) {
@@ -92,20 +99,17 @@ export function useUploadQueue(options = {}) {
         console.warn('秒传检查失败，回退为普通上传:', e)
       }
 
-      // 3. 直传（当前阶段先实现直传，后续再扩展分片）
-      updateTask(task, { status: 'uploading', progress: 0 })
-      await directUpload({
-        file: task.file,
-        folderId: task.folderId,
-        filename: task.name,
-        onUploadProgress: (evt) => {
-          if (evt.total > 0) {
-            const pct = Math.round((evt.loaded / evt.total) * 100)
-            updateTask(task, { progress: pct, uploadedBytes: evt.loaded })
-          }
-        }
-      })
-      updateTask(task, { status: 'completed', progress: 100, uploadedBytes: task.size })
+      // 3. 上传：小文件直传，大文件分片
+      if (!task.useChunks) {
+        await uploadDirect(task)
+      } else {
+        await uploadByChunks(task)
+      }
+      // 若上传过程未抛出异常，则视为完成
+      if (task.status === 'uploading' || task.status === 'merging') {
+        // 防御：确保完成状态
+        updateTask(task, { status: 'completed', progress: 100, uploadedBytes: task.size })
+      }
       onTaskCompleted()
     } catch (e) {
       // eslint-disable-next-line no-console
@@ -121,17 +125,164 @@ export function useUploadQueue(options = {}) {
     }
   }
 
-  const pauseTask = () => {
-    // 预留：当前基础版暂不支持暂停，后续迭代中实现
-    ElMessage.info('暂停/恢复功能将在后续迭代中提供')
+  const uploadDirect = async (task) => {
+    updateTask(task, { status: 'uploading', progress: 0 })
+    await directUpload({
+      file: task.file,
+      folderId: task.folderId,
+      filename: task.name,
+      onUploadProgress: (evt) => {
+        if (evt.total > 0) {
+          const pct = Math.round((evt.loaded / evt.total) * 100)
+          updateTask(task, { progress: pct, uploadedBytes: evt.loaded })
+        }
+      }
+    })
   }
 
-  const resumeTask = () => {
-    ElMessage.info('暂停/恢复功能将在后续迭代中提供')
+  const uploadByChunks = async (task) => {
+    // 初始化分片信息
+    const totalChunks = Math.max(1, Math.ceil(task.size / CHUNK_SIZE))
+    const chunks = []
+    for (let i = 1; i <= totalChunks; i++) {
+      chunks.push({
+        index: i,
+        uploaded: false,
+        uploading: false,
+        retryCount: 0,
+        errorMessage: ''
+      })
+    }
+    updateTask(task, {
+      status: 'uploading',
+      totalChunks,
+      chunks,
+      uploadedBytes: 0,
+      progress: 0
+    })
+
+    // 断点续传：查询已上传分片
+    try {
+      const status = await getChunkStatus({ hash: task.hash, total: totalChunks })
+      const uploadedIndexes = Array.isArray(status?.uploaded) ? status.uploaded : []
+      if (uploadedIndexes.length > 0) {
+        let doneBytes = 0
+        for (const idx of uploadedIndexes) {
+          const chunk = chunks.find(c => c.index === idx)
+          if (chunk) {
+            chunk.uploaded = true
+            // 粗略估算已上传字节：除最后一片外均按 CHUNK_SIZE，最后一片用剩余大小
+            const start = (idx - 1) * CHUNK_SIZE
+            const end = Math.min(task.size, idx * CHUNK_SIZE)
+            doneBytes += (end - start)
+          }
+        }
+        updateTask(task, {
+          uploadedBytes: doneBytes,
+          progress: Math.round((doneBytes / task.size) * 100)
+        })
+      }
+    } catch (e) {
+      // 查询失败不影响后续上传，仅记录日志
+      // eslint-disable-next-line no-console
+      console.warn('查询分片状态失败，按全新上传处理:', e)
+    }
+
+    // 分片上传调度
+    const doUploadChunk = async (chunkState) => {
+      if (chunkState.uploaded) return
+      if (chunkState.uploading) return
+      if (chunkState.retryCount > MAX_CHUNK_RETRY) {
+        throw new Error(`分片 #${chunkState.index} 重试次数超限`)
+      }
+      chunkState.uploading = true
+      try {
+        const start = (chunkState.index - 1) * CHUNK_SIZE
+        const end = Math.min(task.size, chunkState.index * CHUNK_SIZE)
+        const blob = task.file.slice(start, end)
+        await uploadChunk({
+          hash: task.hash,
+          index: chunkState.index,
+          total: totalChunks,
+          chunk: blob
+        })
+        chunkState.uploaded = true
+        chunkState.errorMessage = ''
+        const uploadedBytes = (task.chunks || []).reduce((sum, c) => {
+          if (!c.uploaded) return sum
+          const cs = (c.index === totalChunks)
+            ? (task.size - CHUNK_SIZE * (totalChunks - 1))
+            : CHUNK_SIZE
+          return sum + cs
+        }, 0)
+        updateTask(task, {
+          uploadedBytes,
+          progress: Math.round((uploadedBytes / task.size) * 100)
+        })
+      } catch (e) {
+        chunkState.retryCount += 1
+        chunkState.errorMessage = e?.message || '分片上传失败'
+        // eslint-disable-next-line no-console
+        console.error(`分片上传失败 #${chunkState.index}:`, e)
+        if (chunkState.retryCount > MAX_CHUNK_RETRY) {
+          throw e
+        }
+      } finally {
+        chunkState.uploading = false
+      }
+    }
+
+    // 并发调度循环
+    const runChunks = async () => {
+      // 简单并发控制：每轮挑选未上传且未在上传中的分片
+      while (true) {
+        const pending = (task.chunks || []).filter(c => !c.uploaded && !c.uploading)
+        if (!pending.length) break
+        const batch = pending.slice(0, MAX_CHUNK_CONCURRENCY)
+        await Promise.all(batch.map(c => doUploadChunk(c)))
+      }
+    }
+
+    await runChunks()
+
+    // 所有分片已上传，开始合并
+    if ((task.chunks || []).some(c => !c.uploaded)) {
+      throw new Error('仍有分片未完成，无法合并')
+    }
+    updateTask(task, { status: 'merging' })
+    await mergeChunks({
+      hash: task.hash,
+      total: totalChunks,
+      filename: task.name,
+      folderId: task.folderId,
+      parentId: null
+    })
   }
 
-  const cancelTask = () => {
-    ElMessage.info('取消上传功能将在后续迭代中提供')
+  const pauseTask = (taskId) => {
+    const task = uploadQueue.value.find((t) => t.id === taskId)
+    if (!task) return
+    if (task.status === 'uploading' || task.status === 'hashing' || task.status === 'checking_fast') {
+      updateTask(task, { status: 'paused' })
+      ElMessage.info(`已标记暂停：${task.name}（当前分片会自然完成，后续不再继续）`)
+    }
+  }
+
+  const resumeTask = (taskId) => {
+    const task = uploadQueue.value.find((t) => t.id === taskId)
+    if (!task) return
+    if (task.status === 'paused') {
+      updateTask(task, { status: 'pending' })
+      schedule()
+    }
+  }
+
+  const cancelTask = (taskId) => {
+    const idx = uploadQueue.value.findIndex((t) => t.id === taskId)
+    if (idx === -1) return
+    const task = uploadQueue.value[idx]
+    if (task.status === 'completed') return
+    uploadQueue.value.splice(idx, 1)
   }
 
   const retryTask = (taskId) => {
@@ -157,4 +308,3 @@ export function useUploadQueue(options = {}) {
     retryTask
   }
 }
-

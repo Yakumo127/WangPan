@@ -201,7 +201,7 @@
             />
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="150">
+        <el-table-column label="操作" width="220">
           <template #default="{ row }">
             <el-button
               v-if="row.status === 'failed'"
@@ -211,6 +211,33 @@
               @click="retryTask(row.id)"
             >
               重试
+            </el-button>
+            <el-button
+              v-if="row.status === 'uploading'"
+              type="primary"
+              link
+              size="small"
+              @click="pauseTask(row.id)"
+            >
+              暂停
+            </el-button>
+            <el-button
+              v-if="row.status === 'paused'"
+              type="primary"
+              link
+              size="small"
+              @click="resumeTask(row.id)"
+            >
+              继续
+            </el-button>
+            <el-button
+              v-if="row.status !== 'completed'"
+              type="danger"
+              link
+              size="small"
+              @click="cancelTask(row.id)"
+            >
+              取消
             </el-button>
           </template>
         </el-table-column>
