@@ -65,6 +65,7 @@
         v-loading="loading"
         :fit="false"
         height="100%"
+        border
         @selection-change="onSelectionChange"
         @header-dragend="onHeaderDragEnd"
       >
@@ -77,7 +78,7 @@
             />
           </template>
         </el-table-column>
-        <el-table-column label="名称" :min-width="columnWidths.name" column-key="col-name">
+        <el-table-column label="名称" :width="columnWidths.name" column-key="col-name">
           <template #default="{ row }">
             <div class="entry-info" @dblclick="onEntryDblClick(row)">
               <div class="entry-thumb">
