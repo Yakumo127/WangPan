@@ -555,8 +555,8 @@ public class FileController {
      * 预览文件：根据配置与权限在浏览器中内联展示内容（不触发下载），并记录预览审计日志。
      */
     @GetMapping("/{fileId}/preview")
-    public ResponseEntity<StreamingResponseBody> previewFile(@PathVariable Long fileId,
-                                                             jakarta.servlet.http.HttpServletRequest request) {
+    public ResponseEntity<org.springframework.core.io.Resource> previewFile(@PathVariable Long fileId,
+                                                                           jakarta.servlet.http.HttpServletRequest request) {
         long start = System.currentTimeMillis();
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || auth.getName() == null) {
@@ -622,36 +622,61 @@ public class FileController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
         }
 
+        // 路径安全校验：必须位于受控存储根目录下
+        try {
+            java.nio.file.Path root = java.nio.file.Paths.get(fileService.getStorageRoot()).toAbsolutePath().normalize();
+            java.nio.file.Path normalized = filePath.toAbsolutePath().normalize();
+            if (!normalized.startsWith(root)) {
+                auditLogService.logFailure(currentUserId, com.filemanager.entity.UserLog.ACTION_PREVIEW,
+                        com.filemanager.entity.UserLog.RESOURCE_FILE, file.getId(), name,
+                        "预览失败：非法的文件路径", "normalized=" + normalized, System.currentTimeMillis() - start);
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
+        } catch (Exception ex) {
+            auditLogService.logFailure(currentUserId, com.filemanager.entity.UserLog.ACTION_PREVIEW,
+                    com.filemanager.entity.UserLog.RESOURCE_FILE, file.getId(), name,
+                    "预览失败：路径安全校验异常", ex.getMessage(), System.currentTimeMillis() - start);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+        }
+
+        long totalSize;
+        try {
+            totalSize = java.nio.file.Files.size(filePath);
+        } catch (java.nio.file.NoSuchFileException nsf) {
+            auditLogService.logFailure(currentUserId, com.filemanager.entity.UserLog.ACTION_PREVIEW,
+                    com.filemanager.entity.UserLog.RESOURCE_FILE, file.getId(), name,
+                    "预览失败：文件不存在", nsf.getMessage(), System.currentTimeMillis() - start);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        } catch (java.nio.file.AccessDeniedException ade) {
+            auditLogService.logFailure(currentUserId, com.filemanager.entity.UserLog.ACTION_PREVIEW,
+                    com.filemanager.entity.UserLog.RESOURCE_FILE, file.getId(), name,
+                    "预览失败：无权读取文件", ade.getMessage(), System.currentTimeMillis() - start);
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        } catch (java.io.IOException ioe) {
+            auditLogService.logFailure(currentUserId, com.filemanager.entity.UserLog.ACTION_PREVIEW,
+                    com.filemanager.entity.UserLog.RESOURCE_FILE, file.getId(), name,
+                    "预览失败：读取文件失败", ioe.getMessage(), System.currentTimeMillis() - start);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+        }
+
         String contentType = determinePreviewContentType(file, filePath, ext);
         String asciiName = sanitizeAsciiFilename(name);
         String encoded = org.springframework.web.util.UriUtils.encode(asciiName, java.nio.charset.StandardCharsets.UTF_8);
         String disposition = String.format("inline; filename=\"%s\"; filename*=UTF-8''%s", asciiName, encoded);
 
-        StreamingResponseBody body = outputStream -> {
-            long started = System.currentTimeMillis();
-            try (java.io.InputStream in = java.nio.file.Files.newInputStream(filePath)) {
-                byte[] buffer = new byte[8192];
-                int len;
-                while ((len = in.read(buffer)) != -1) {
-                    outputStream.write(buffer, 0, len);
-                }
-                auditLogService.logSuccess(currentUserId, com.filemanager.entity.UserLog.ACTION_PREVIEW,
-                        com.filemanager.entity.UserLog.RESOURCE_FILE, file.getId(), name,
-                        "预览成功", System.currentTimeMillis() - started);
-            } catch (Exception ex) {
-                auditLogService.logFailure(currentUserId, com.filemanager.entity.UserLog.ACTION_PREVIEW,
-                        com.filemanager.entity.UserLog.RESOURCE_FILE, file.getId(), name,
-                        "预览过程中流传输出错", ex.getMessage(), System.currentTimeMillis() - started);
-                throw ex;
-            }
-        };
+        org.springframework.core.io.Resource resource = new org.springframework.core.io.FileSystemResource(filePath.toFile());
+
+        auditLogService.logSuccess(currentUserId, com.filemanager.entity.UserLog.ACTION_PREVIEW,
+                com.filemanager.entity.UserLog.RESOURCE_FILE, file.getId(), name,
+                "预览成功", System.currentTimeMillis() - start);
 
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(contentType))
                 .header(HttpHeaders.CONTENT_DISPOSITION, disposition)
                 .header(HttpHeaders.CACHE_CONTROL, "no-store")
                 .header("X-Content-Type-Options", "nosniff")
-                .body(body);
+                .contentLength(totalSize)
+                .body(resource);
     }
 
     /**
