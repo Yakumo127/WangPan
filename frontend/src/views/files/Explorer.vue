@@ -332,7 +332,7 @@ watch(hasRunningTasks, (val) => {
 })
 
 const hasRestorableTasks = computed(() =>
-  uploadQueue.some(t => !t.file && t.status === 'paused')
+  uploadQueue.value.some(t => !t.file && t.status === 'paused')
 )
 
 const formatFileSize = (bytes) => {
