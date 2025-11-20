@@ -9,6 +9,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 import java.time.LocalDateTime;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 @Entity
 @Table(name = "files")
@@ -149,4 +150,36 @@ public class File {
     public void setQuotaReleased(Boolean quotaReleased) { this.quotaReleased = quotaReleased; }
     public FileVersion getActiveVersion() { return activeVersion; }
     public void setActiveVersion(FileVersion activeVersion) { this.activeVersion = activeVersion; }
+
+    // 逻辑路径：用于前端展示文件所在目录的层级（例如 /部门A/项目X）
+    @Transient
+    @JsonProperty("folderPath")
+    public String getFolderPath() {
+        Folder f = getFolder();
+        if (f == null) {
+            return "/";
+        }
+        java.util.List<String> names = new java.util.ArrayList<>();
+        Folder cur = f;
+        while (cur != null) {
+            // 若目录已被标记删除，则不再继续向上构建路径
+            if (Boolean.TRUE.equals(cur.getDeleted())) {
+                break;
+            }
+            // 根目录不计入名称，但终止向上遍历
+            if (Boolean.TRUE.equals(cur.getIsRoot())) {
+                break;
+            }
+            String n = cur.getName();
+            if (n != null && !n.isBlank()) {
+                names.add(n);
+            }
+            cur = cur.getParent();
+        }
+        java.util.Collections.reverse(names);
+        if (names.isEmpty()) {
+            return "/";
+        }
+        return "/" + String.join("/", names);
+    }
 }
