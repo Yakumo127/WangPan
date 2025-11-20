@@ -63,12 +63,20 @@
             {{ formatDateTime(row.createTime) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="280">
+        <el-table-column label="操作" width="360">
           <template #default="{ row }">
             <el-button-group>
               <el-button size="small" @click="downloadFile(row)">
                 <el-icon><Download /></el-icon>
                 下载
+              </el-button>
+              <el-button
+                v-if="!isImageFile(row)"
+                size="small"
+                @click="openNewPreview(row)"
+              >
+                <el-icon><View /></el-icon>
+                预览
               </el-button>
               <el-button size="small" @click="renameFile(row)">
                 <el-icon><Edit /></el-icon>
@@ -158,7 +166,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Upload, Refresh, Search, Document, Download, Delete, Edit } from '@element-plus/icons-vue'
+import { Upload, Refresh, Search, Document, Download, Delete, Edit, View } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import { getFileList, uploadFile, deleteFile as deleteFileApi, searchFiles as searchFilesApi, renameFile as renameFileApi, checkFileExists, uploadChunk as uploadChunkApi, mergeChunks, getChunkStatus, getDownloadUrl, getPreviewConfigForUser, previewFile as previewFileApi } from '@/api/file'
 import { getFolderList } from '@/api/folder'
@@ -250,6 +258,11 @@ const isPreviewable = (file) => {
   return previewSuffixes.value.includes(ext)
 }
 
+const isImageFile = (file) => {
+  const ext = getFileExt(file)
+  return ['jpg', 'jpeg', 'png'].includes(ext)
+}
+
 const router = useRouter()
 
 const onFileNameClick = (file) => {
@@ -304,6 +317,14 @@ const onImageWheel = (event) => {
 const onImagePreviewClosed = () => {
   imageScale.value = 1
   imagePreviewUrl.value = ''
+}
+
+const openNewPreview = (file) => {
+  router.push({
+    name: 'FilePreviewNew',
+    params: { id: file.id },
+    query: { name: file.originalFilename || file.name || '' }
+  })
 }
 
 // 刷新文件列表

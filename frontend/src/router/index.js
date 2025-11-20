@@ -59,6 +59,12 @@ const routes = [
         meta: { title: '文件夹管理', requiresAuth: true }
       },
       {
+        path: '/file-view/:id',
+        name: 'FilePreviewNew',
+        component: () => import('@/views/files/PreviewNew.vue'),
+        meta: { title: '文件预览（新版）', requiresAuth: true }
+      },
+      {
         path: '/preview/:id',
         name: 'FilePreview',
         component: () => import('@/views/files/Preview.vue'),
