@@ -591,25 +591,6 @@
           </el-descriptions>
         </el-card>
       </el-tab-pane>
-      <!-- 系统信息 -->
-      <el-tab-pane label="系统信息" name="info">
-        <el-card class="box-card">
-          <template #header>
-            <div class="card-header">
-              <span>系统信息</span>
-            </div>
-          </template>
-          
-          <el-descriptions :column="2" border>
-            <el-descriptions-item label="系统版本">{{ systemInfo.version }}</el-descriptions-item>
-            <el-descriptions-item label="构建时间">{{ systemInfo.buildTime }}</el-descriptions-item>
-            <el-descriptions-item label="Java版本">{{ systemInfo.javaVersion }}</el-descriptions-item>
-            <el-descriptions-item label="数据库版本">{{ systemInfo.databaseVersion }}</el-descriptions-item>
-            <el-descriptions-item label="运行时间">{{ systemInfo.uptime }}</el-descriptions-item>
-            <el-descriptions-item label="内存使用">{{ systemInfo.memoryUsage }}</el-descriptions-item>
-          </el-descriptions>
-        </el-card>
-      </el-tab-pane>
 
       <!-- 存储与空间 -->
       <el-tab-pane label="存储与空间" name="storage">
@@ -1762,6 +1743,7 @@ export default {
       selectedItems,
       systemConfig,
       systemInfo,
+      storageSummary,
       uploadPolicy,
       invalidSuffixes,
       canSavePolicy,
@@ -1805,6 +1787,8 @@ export default {
       formatStorage,
       formatDateTime,
       formatRemaining,
+      formatUptime,
+      formatMemoryUsage,
       handleSelectionChange,
       refreshRecycleBin,
       searchRecycleBin,
@@ -1821,6 +1805,9 @@ export default {
       resetPreviewPolicyToDefault,
       savePreviewPolicy
       ,
+      cleaningAllChunks,
+      confirmCleanupAllChunks,
+      confirmCleanupUserChunks,
       // 备份
       bk,
       backupConfig,
