@@ -52,6 +52,7 @@ const error = ref('')
 const blobUrl = ref('')
 const textContent = ref('')
 const pdfData = ref(null)
+const viewerType = ref('unknown')
 
 const getExt = () => {
   const name = filename.value || ''
@@ -59,15 +60,6 @@ const getExt = () => {
   if (idx < 0) return ''
   return name.slice(idx + 1).toLowerCase()
 }
-
-const viewerType = computed(() => {
-  const ext = getExt()
-  if (['pdf'].includes(ext)) return 'pdf'
-  if (['mp4'].includes(ext)) return 'video'
-  if (['txt', 'log', 'md'].includes(ext)) return 'text'
-  if (['doc', 'docx', 'ppt', 'pptx'].includes(ext)) return 'office'
-  return 'unknown'
-})
 
 const loadPreview = async () => {
   if (!fileId.value) {
@@ -82,6 +74,22 @@ const loadPreview = async () => {
     if (!(blob instanceof Blob)) {
       throw new Error('预览数据无效')
     }
+    const ext = getExt()
+    const contentType = (res && res.headers && (res.headers['content-type'] || res.headers['Content-Type'])) || ''
+
+    // 综合响应头与扩展名，动态判定预览类型，避免仅依赖路由上的文件名
+    let type = 'unknown'
+    if (contentType && contentType.includes('application/pdf')) {
+      type = 'pdf'
+    } else if (contentType.startsWith('video/') || ext === 'mp4') {
+      type = 'video'
+    } else if (contentType.startsWith('text/') || ['txt', 'log', 'md'].includes(ext)) {
+      type = 'text'
+    } else if (['doc', 'docx', 'ppt', 'pptx'].includes(ext)) {
+      type = 'office'
+    }
+    viewerType.value = type
+
     if (viewerType.value === 'text') {
       textContent.value = await blob.text()
     } else if (viewerType.value === 'pdf') {
