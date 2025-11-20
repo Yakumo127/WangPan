@@ -93,56 +93,56 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="type" label="类型" width="140">
+        <el-table-column prop="type" label="类型" width="120">
           <template #default="{ row }">
             <span>{{ formatFileType(row) }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column prop="createTime" label="创建时间" width="200">
+        <el-table-column prop="createTime" label="创建时间" width="160">
           <template #default="{ row }">
             {{ formatDateTime(row.createTime) }}
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="220" align="center">
+        <el-table-column label="操作" width="180" align="center">
           <template #default="{ row }">
             <div class="op-group" v-if="row.type === 'folder'">
               <el-tooltip content="打开" placement="top">
-                <el-button size="small" circle @click="enterFolder(row.raw)">
+                <el-button size="small" class="op-btn" @click="enterFolder(row.raw)">
                   <el-icon><Folder /></el-icon>
                 </el-button>
               </el-tooltip>
               <el-tooltip content="重命名" placement="top">
-                <el-button size="small" circle @click="renameFolderEntry(row.raw)">
+                <el-button size="small" class="op-btn" @click="renameFolderEntry(row.raw)">
                   <el-icon><Edit /></el-icon>
                 </el-button>
               </el-tooltip>
               <el-tooltip content="删除" placement="top">
-                <el-button size="small" circle type="danger" @click="deleteFolderEntry(row.raw)">
+                <el-button size="small" class="op-btn" type="danger" @click="deleteFolderEntry(row.raw)">
                   <el-icon><Delete /></el-icon>
                 </el-button>
               </el-tooltip>
             </div>
             <div class="op-group" v-else>
               <el-tooltip content="下载" placement="top">
-                <el-button size="small" circle @click="downloadFileEntry(row.raw)">
+                <el-button size="small" class="op-btn" @click="downloadFileEntry(row.raw)">
                   <el-icon><Download /></el-icon>
                 </el-button>
               </el-tooltip>
               <el-tooltip content="重命名" placement="top">
-                <el-button size="small" circle @click="renameFileEntry(row.raw)">
+                <el-button size="small" class="op-btn" @click="renameFileEntry(row.raw)">
                   <el-icon><Edit /></el-icon>
                 </el-button>
               </el-tooltip>
               <el-tooltip content="删除" placement="top">
-                <el-button size="small" circle type="danger" @click="deleteFileEntry(row.raw)">
+                <el-button size="small" class="op-btn" type="danger" @click="deleteFileEntry(row.raw)">
                   <el-icon><Delete /></el-icon>
                 </el-button>
               </el-tooltip>
               <el-dropdown trigger="click" placement="bottom">
-                <el-button size="small" circle>
-                  <el-icon><ArrowDown /></el-icon>
+                <el-button size="small" class="op-btn op-btn-plain" plain>
+                  <el-icon class="dropdown-icon"><ArrowDown /></el-icon>
                 </el-button>
                 <template #dropdown>
                   <el-dropdown-menu>
@@ -714,17 +714,17 @@ onMounted(() => {
 }
 
 .entries-list :deep(.el-table__row) {
-  height: 56px;
+  height: 50px;
 }
 
 .entry-info {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 14px;
 }
 
 .entry-icon {
-  font-size: 18px;
+  font-size: 20px;
   color: #909399;
 }
 
@@ -732,6 +732,7 @@ onMounted(() => {
   font-weight: 500;
   color: #303133;
   cursor: pointer;
+  padding-left: 2px;
 }
 
 .entry-thumb {
@@ -759,6 +760,23 @@ onMounted(() => {
 .op-group {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+}
+
+.op-btn {
+  padding: 6px 8px;
+}
+
+.op-btn :deep(.el-icon) {
+  font-size: 18px;
+}
+
+.op-btn-plain {
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+
+.op-btn-plain :deep(.el-icon) {
+  font-size: 14px;
 }
 </style>
