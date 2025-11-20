@@ -141,12 +141,16 @@
       title="图片预览"
       width="70%"
       class="image-preview-dialog"
+      @closed="onImagePreviewClosed"
     >
-      <img
-        v-if="imagePreviewUrl"
-        :src="imagePreviewUrl"
-        class="image-preview-img"
-      />
+      <div class="image-preview-wrapper" @wheel.prevent="onImageWheel">
+        <img
+          v-if="imagePreviewUrl"
+          :src="imagePreviewUrl"
+          class="image-preview-img"
+          :style="{ transform: `scale(${imageScale})` }"
+        />
+      </div>
     </el-dialog>
   </div>
 </template>
@@ -170,6 +174,7 @@ const uploadProgress = ref([])
 const previewSuffixes = ref([])
 const imagePreviewVisible = ref(false)
 const imagePreviewUrl = ref('')
+const imageScale = ref(1)
 
 const uploadForm = reactive({
   folderId: null
@@ -261,6 +266,12 @@ const onFileNameClick = (file) => {
   }
 }
 
+const openImagePreview = (url) => {
+  imagePreviewUrl.value = url
+  imageScale.value = 1
+  imagePreviewVisible.value = true
+}
+
 // 图片预览（当前列表页弹出对话框）
 const previewImage = async (file) => {
   try {
@@ -270,12 +281,29 @@ const previewImage = async (file) => {
       throw new Error('预览数据无效')
     }
     const url = window.URL.createObjectURL(blob)
-    imagePreviewUrl.value = url
-    imagePreviewVisible.value = true
+    openImagePreview(url)
   } catch (e) {
     console.error('图片预览失败:', e)
     ElMessage.error('图片预览失败')
   }
+}
+
+const onImageWheel = (event) => {
+  const delta = event.deltaY || 0
+  let next = imageScale.value
+  if (delta > 0) {
+    next -= 0.1
+  } else if (delta < 0) {
+    next += 0.1
+  }
+  if (next < 0.5) next = 0.5
+  if (next > 4) next = 4
+  imageScale.value = next
+}
+
+const onImagePreviewClosed = () => {
+  imageScale.value = 1
+  imagePreviewUrl.value = ''
 }
 
 // 刷新文件列表
@@ -787,6 +815,14 @@ onMounted(() => {
 
 .image-preview-dialog :deep(.el-dialog__body) {
   padding: 0;
+}
+
+.image-preview-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 80vh;
+  overflow: auto;
 }
 
 .image-preview-img {
