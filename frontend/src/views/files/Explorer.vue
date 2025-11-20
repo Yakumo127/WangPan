@@ -62,6 +62,8 @@
         :data="entries"
         style="width: 100%"
         v-loading="loading"
+        :fit="false"
+        style="table-layout: fixed;"
       >
         <el-table-column label="名称" min-width="345">
           <template #default="{ row }">
@@ -710,11 +712,21 @@ onMounted(() => {
   background: #fff;
   border-radius: 8px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-  overflow: hidden;
+  overflow: hidden auto;
 }
 
 .entries-list :deep(.el-table__row) {
   height: 40px;
+}
+
+.entries-list :deep(.el-table__body-wrapper) {
+  overflow-y: auto;
+  max-height: 100%;
+}
+
+.entries-list :deep(.el-table__cell) {
+  padding: 6px 8px;
+  line-height: 20px;
 }
 
 .entry-info {
