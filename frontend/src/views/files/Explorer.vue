@@ -7,7 +7,7 @@
           <el-icon><Folder /></el-icon>
           新建文件夹
         </el-button>
-        <el-button @click="openUploadDialog">
+        <el-button @click="openFilePicker">
           <el-icon><Upload /></el-icon>
           上传文件
         </el-button>
@@ -29,6 +29,15 @@
       </div>
     </div>
 
+    <!-- 隐藏文件选择器 -->
+    <input
+      ref="fileInputRef"
+      type="file"
+      multiple
+      style="display: none;"
+      @change="onFileInputChange"
+    />
+
     <!-- 面包屑 -->
     <div class="breadcrumb">
       <el-breadcrumb separator="/">
@@ -43,8 +52,12 @@
       </el-breadcrumb>
     </div>
 
-    <!-- 列表 -->
-    <div class="entries-list">
+    <!-- 列表 + 拖拽上传区域 -->
+    <div
+      class="entries-list"
+      @dragover.prevent="onDragOver"
+      @drop.prevent="onDropFiles"
+    >
       <el-table
         :data="entries"
         style="width: 100%"
@@ -146,24 +159,74 @@
       </template>
     </el-dialog>
 
-    <!-- 上传沿用现有 Files 页逻辑：此处仅打开原列表上传对话框作为过渡，可后续内聚 -->
-    <el-dialog v-model="uploadDialogVisible" title="上传文件（当前目录）" width="600px">
-      <p>当前目录：{{ currentFolderLabel }}</p>
-      <p>上传逻辑暂复用原“文件管理”页面，后续可将上传逻辑迁移到本页。</p>
-      <template #footer>
-        <el-button @click="uploadDialogVisible = false">关闭</el-button>
-      </template>
-    </el-dialog>
+    <!-- 上传队列面板（底部抽屉） -->
+    <el-drawer
+      v-model="uploadDrawerVisible"
+      title="上传任务"
+      size="30%"
+      direction="btt"
+    >
+      <div v-if="uploadQueue.length === 0" style="color:#999;">暂无上传任务</div>
+      <el-table
+        v-else
+        :data="uploadQueue"
+        style="width:100%;"
+        size="small"
+      >
+        <el-table-column prop="name" label="文件名" min-width="220" />
+        <el-table-column label="大小" width="120">
+          <template #default="{ row }">
+            {{ formatFileSize(row.size) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="140">
+          <template #default="{ row }">
+            <span v-if="row.status === 'pending'">排队中</span>
+            <span v-else-if="row.status === 'hashing'">计算哈希</span>
+            <span v-else-if="row.status === 'checking_fast'">秒传检查</span>
+            <span v-else-if="row.status === 'uploading'">上传中</span>
+            <span v-else-if="row.status === 'completed'">
+              <span v-if="row.isFastUploaded">秒传完成</span>
+              <span v-else>已完成</span>
+            </span>
+            <span v-else-if="row.status === 'failed'">失败</span>
+            <span v-else>{{ row.status }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="进度" width="160">
+          <template #default="{ row }">
+            <el-progress
+              :percentage="row.progress"
+              :status="row.status === 'failed' ? 'exception' : (row.status === 'completed' ? 'success' : undefined)"
+            />
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="150">
+          <template #default="{ row }">
+            <el-button
+              v-if="row.status === 'failed'"
+              type="primary"
+              link
+              size="small"
+              @click="retryTask(row.id)"
+            >
+              重试
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-drawer>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Folder, FolderOpened, Upload, Search, Document, Download, Delete, Edit, View } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import { getFileList, deleteFile as deleteFileApi, renameFile as renameFileApi, getDownloadUrl } from '@/api/file'
 import { getFolderList, createFolder, deleteFolder as deleteFolderApi, renameFolder as renameFolderApi, getFolderPath } from '@/api/folder'
+import { useUploadQueue } from '@/composables/useUploadQueue'
 
 const router = useRouter()
 
@@ -174,7 +237,8 @@ const fileList = ref([])
 const searchKeyword = ref('')
 const newFolderDialogVisible = ref(false)
 const newFolderName = ref('')
-const uploadDialogVisible = ref(false)
+const uploadDrawerVisible = ref(false)
+const fileInputRef = ref(null)
 
 const breadcrumbs = ref([
   { id: null, name: '根目录' }
@@ -204,6 +268,29 @@ const entries = computed(() => {
 const currentFolderLabel = computed(() => {
   const last = breadcrumbs.value[breadcrumbs.value.length - 1]
   return last ? last.name : '根目录'
+})
+
+// 上传队列：使用组合函数接入
+const {
+  uploadQueue,
+  hasRunningTasks,
+  enqueueFiles,
+  pauseTask,
+  resumeTask,
+  cancelTask,
+  retryTask
+} = useUploadQueue({
+  getCurrentFolderId: () => currentFolderId.value,
+  onTaskCompleted: () => {
+    // 单个任务完成后刷新当前目录
+    loadEntries()
+  }
+})
+
+watch(hasRunningTasks, (val) => {
+  if (val) {
+    uploadDrawerVisible.value = true
+  }
 })
 
 const formatFileSize = (bytes) => {
@@ -473,7 +560,30 @@ const searchEntries = async () => {
 }
 
 const openUploadDialog = () => {
-  uploadDialogVisible.value = true
+  uploadDrawerVisible.value = true
+}
+
+const openFilePicker = () => {
+  if (fileInputRef.value) {
+    fileInputRef.value.value = ''
+    fileInputRef.value.click()
+  }
+}
+
+const onFileInputChange = (e) => {
+  const files = e?.target?.files
+  if (!files || !files.length) return
+  enqueueFiles(files, currentFolderId.value || null)
+}
+
+const onDragOver = (e) => {
+  e.dataTransfer.dropEffect = 'copy'
+}
+
+const onDropFiles = (e) => {
+  const files = e?.dataTransfer?.files
+  if (!files || !files.length) return
+  enqueueFiles(files, currentFolderId.value || null)
 }
 
 onMounted(() => {
@@ -553,4 +663,3 @@ onMounted(() => {
   text-decoration: underline;
 }
 </style>
-
