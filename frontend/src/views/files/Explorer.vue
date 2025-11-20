@@ -63,13 +63,16 @@
         style="width: 100%"
         v-loading="loading"
       >
-        <el-table-column label="名称" min-width="320">
+        <el-table-column label="名称" min-width="360">
           <template #default="{ row }">
             <div class="entry-info" @dblclick="onEntryDblClick(row)">
-              <el-icon class="entry-icon">
-                <FolderOpened v-if="row.type === 'folder'" />
-                <Document v-else />
-              </el-icon>
+              <div class="entry-thumb">
+                <img v-if="getThumbnail(row)" :src="getThumbnail(row)" alt="thumb" />
+                <el-icon v-else class="entry-icon">
+                  <FolderOpened v-if="row.type === 'folder'" />
+                  <Document v-else />
+                </el-icon>
+              </div>
               <span
                 class="entry-name"
                 :class="{ clickable: row.type === 'folder' || row.type === 'file' }"
@@ -92,8 +95,7 @@
 
         <el-table-column prop="type" label="类型" width="140">
           <template #default="{ row }">
-            <span v-if="row.type === 'folder'">文件夹</span>
-            <span v-else>{{ formatFileType(row) }}</span>
+            <span>{{ formatFileType(row) }}</span>
           </template>
         </el-table-column>
 
@@ -103,40 +105,52 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="360">
+        <el-table-column label="操作" width="220" align="center">
           <template #default="{ row }">
-            <el-button-group v-if="row.type === 'folder'">
-              <el-button size="small" @click="enterFolder(row.raw)">
-                <el-icon><Folder /></el-icon>
-                打开
-              </el-button>
-              <el-button size="small" @click="renameFolderEntry(row.raw)">
-                <el-icon><Edit /></el-icon>
-                重命名
-              </el-button>
-              <el-button size="small" type="danger" @click="deleteFolderEntry(row.raw)">
-                <el-icon><Delete /></el-icon>
-                删除
-              </el-button>
-            </el-button-group>
-            <el-button-group v-else>
-              <el-button size="small" @click="previewFileEntry(row.raw)">
-                <el-icon><View /></el-icon>
-                预览
-              </el-button>
-              <el-button size="small" @click="downloadFileEntry(row.raw)">
-                <el-icon><Download /></el-icon>
-                下载
-              </el-button>
-              <el-button size="small" @click="renameFileEntry(row.raw)">
-                <el-icon><Edit /></el-icon>
-                重命名
-              </el-button>
-              <el-button size="small" type="danger" @click="deleteFileEntry(row.raw)">
-                <el-icon><Delete /></el-icon>
-                删除
-              </el-button>
-            </el-button-group>
+            <div class="op-group" v-if="row.type === 'folder'">
+              <el-tooltip content="打开" placement="top">
+                <el-button size="small" circle @click="enterFolder(row.raw)">
+                  <el-icon><Folder /></el-icon>
+                </el-button>
+              </el-tooltip>
+              <el-tooltip content="重命名" placement="top">
+                <el-button size="small" circle @click="renameFolderEntry(row.raw)">
+                  <el-icon><Edit /></el-icon>
+                </el-button>
+              </el-tooltip>
+              <el-tooltip content="删除" placement="top">
+                <el-button size="small" circle type="danger" @click="deleteFolderEntry(row.raw)">
+                  <el-icon><Delete /></el-icon>
+                </el-button>
+              </el-tooltip>
+            </div>
+            <div class="op-group" v-else>
+              <el-tooltip content="下载" placement="top">
+                <el-button size="small" circle @click="downloadFileEntry(row.raw)">
+                  <el-icon><Download /></el-icon>
+                </el-button>
+              </el-tooltip>
+              <el-tooltip content="重命名" placement="top">
+                <el-button size="small" circle @click="renameFileEntry(row.raw)">
+                  <el-icon><Edit /></el-icon>
+                </el-button>
+              </el-tooltip>
+              <el-tooltip content="删除" placement="top">
+                <el-button size="small" circle type="danger" @click="deleteFileEntry(row.raw)">
+                  <el-icon><Delete /></el-icon>
+                </el-button>
+              </el-tooltip>
+              <el-dropdown trigger="click" placement="bottom">
+                <el-button size="small" circle>
+                  <el-icon><ArrowDown /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item @click="previewFileEntry(row.raw)">预览</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -258,7 +272,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Folder, FolderOpened, Upload, Search, Document, Download, Delete, Edit, View } from '@element-plus/icons-vue'
+import { Folder, FolderOpened, Upload, Search, Document, Download, Delete, Edit, View, ArrowDown } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import { getFileList, deleteFile as deleteFileApi, renameFile as renameFileApi, getDownloadUrl } from '@/api/file'
 import { getFolderList, createFolder, deleteFolder as deleteFolderApi, renameFolder as renameFolderApi, getFolderPath } from '@/api/folder'
@@ -282,25 +296,27 @@ const breadcrumbs = ref([
 ])
 
 const entries = computed(() => {
-  const folders = (folderList.value || []).map(f => ({
-    id: f.id,
-    name: f.name,
-    type: 'folder',
-    createTime: f.createTime,
-    size: null,
-    raw: f
-  }))
-  const files = (fileList.value || []).map(f => ({
-    id: f.id,
-    name: f.originalFilename || f.name || f.filename,
-    type: 'file',
-    createTime: f.createTime,
-    size: f.size,
-    contentType: f.contentType,
-    raw: f
-  }))
-  return [...folders, ...files]
-})
+    const folders = (folderList.value || []).map(f => ({
+      id: f.id,
+      name: f.name,
+      type: 'folder',
+      createTime: f.createTime,
+      size: null,
+      raw: f,
+      thumbnail: null
+    }))
+    const files = (fileList.value || []).map(f => ({
+      id: f.id,
+      name: f.originalFilename || f.name || f.filename,
+      type: 'file',
+      createTime: f.createTime,
+      size: f.size,
+      contentType: f.contentType,
+      raw: f,
+      thumbnail: f.thumbnailPath || f.thumbnailUrl || null
+    }))
+    return [...folders, ...files]
+  })
 
 const currentFolderLabel = computed(() => {
   const last = breadcrumbs.value[breadcrumbs.value.length - 1]
@@ -351,14 +367,23 @@ const formatDateTime = (datetime) => {
   return d.toLocaleString()
 }
 
+const getExtension = (row) => {
+  const name = (row.name || '').toString()
+  const idx = name.lastIndexOf('.')
+  if (idx < 0) return ''
+  return name.slice(idx + 1).toLowerCase()
+}
+
 const formatFileType = (row) => {
-  const ct = (row.contentType || '').toString()
-  if (!ct) return '文件'
-  if (ct.includes('pdf')) return 'PDF 文件'
-  if (ct.startsWith('image/')) return '图片'
-  if (ct.startsWith('video/')) return '视频'
-  if (ct.startsWith('text/')) return '文本'
-  return ct
+  if (row.type === 'folder') return '文件夹'
+  const ext = getExtension(row)
+  if (!ext) return '文件'
+  return ext.toUpperCase()
+}
+
+const getThumbnail = (row) => {
+  if (row.type === 'folder') return ''
+  return row.thumbnail || ''
 }
 
 const loadEntries = async () => {
@@ -688,6 +713,10 @@ onMounted(() => {
   overflow: hidden;
 }
 
+.entries-list :deep(.el-table__row) {
+  height: 56px;
+}
+
 .entry-info {
   display: flex;
   align-items: center;
@@ -696,16 +725,40 @@ onMounted(() => {
 
 .entry-icon {
   font-size: 18px;
-  color: #409eff;
+  color: #909399;
 }
 
 .entry-name {
   font-weight: 500;
+  color: #303133;
+  cursor: pointer;
 }
 
-.entry-name.clickable {
-  color: #409eff;
-  cursor: pointer;
+.entry-thumb {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #f5f7fa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.entry-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+:deep(.el-table__row:hover) .entry-name {
   text-decoration: underline;
+}
+
+.op-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 </style>
