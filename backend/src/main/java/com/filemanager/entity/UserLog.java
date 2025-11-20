@@ -88,6 +88,7 @@ public class UserLog {
     public static final String ACTION_BLOB_GC = "BLOB_GC";
     public static final String ACTION_MIGRATION = "MIGRATION";
     public static final String ACTION_ADMIN_LOGIN = "ADMIN_LOGIN";
+    public static final String ACTION_PREVIEW = "PREVIEW";
     
     // 资源类型常量
     public static final String RESOURCE_FILE = "FILE";

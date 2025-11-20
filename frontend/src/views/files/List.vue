@@ -42,7 +42,13 @@
               <el-icon class="file-icon">
                 <Document />
               </el-icon>
-              <span class="file-name">{{ row.originalFilename || row.name }}</span>
+              <span
+                class="file-name"
+                :class="{ clickable: isPreviewable(row) }"
+                @click="onFileNameClick(row)"
+              >
+                {{ row.originalFilename || row.name }}
+              </span>
             </div>
           </template>
         </el-table-column>
@@ -136,7 +142,8 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, Refresh, Search, Document, Download, Delete, Edit } from '@element-plus/icons-vue'
-import { getFileList, uploadFile, deleteFile as deleteFileApi, searchFiles as searchFilesApi, renameFile as renameFileApi, checkFileExists, uploadChunk as uploadChunkApi, mergeChunks, getChunkStatus, getDownloadUrl } from '@/api/file'
+import { useRouter } from 'vue-router'
+import { getFileList, uploadFile, deleteFile as deleteFileApi, searchFiles as searchFilesApi, renameFile as renameFileApi, checkFileExists, uploadChunk as uploadChunkApi, mergeChunks, getChunkStatus, getDownloadUrl, getPreviewConfigForUser, previewFile as previewFileApi } from '@/api/file'
 import { getFolderList } from '@/api/folder'
 
 const loading = ref(false)
@@ -147,6 +154,9 @@ const showUploadDialog = ref(false)
 const uploadFiles = ref([])
 const availableFolders = ref([])
 const uploadProgress = ref([])
+const previewSuffixes = ref([])
+const imagePreviewVisible = ref(false)
+const imagePreviewUrl = ref('')
 
 const uploadForm = reactive({
   folderId: null
@@ -195,6 +205,63 @@ const loadFiles = async () => {
     ElMessage.error('加载文件列表失败')
   } finally {
     loading.value = false
+  }
+}
+
+// 加载预览配置
+const loadPreviewConfig = async () => {
+  try {
+    const res = await getPreviewConfigForUser()
+    previewSuffixes.value = Array.isArray(res?.allowedSuffixes) ? res.allowedSuffixes.map(s => String(s).trim().toLowerCase()) : []
+  } catch (e) {
+    // 保持默认空列表，预览按钮不启用
+    previewSuffixes.value = []
+  }
+}
+
+const getFileExt = (file) => {
+  const name = (file?.originalFilename || file?.name || '').toString()
+  const idx = name.lastIndexOf('.')
+  if (idx < 0) return ''
+  return name.slice(idx + 1).toLowerCase()
+}
+
+const isPreviewable = (file) => {
+  const ext = getFileExt(file)
+  if (!ext) return false
+  return previewSuffixes.value.includes(ext)
+}
+
+const router = useRouter()
+
+const onFileNameClick = (file) => {
+  if (!isPreviewable(file)) return
+  const ext = getFileExt(file)
+  if (['jpg', 'jpeg', 'png'].includes(ext)) {
+    previewImage(file)
+  } else {
+    router.push({
+      name: 'FilePreview',
+      params: { id: file.id },
+      query: { name: file.originalFilename || file.name || '' }
+    })
+  }
+}
+
+// 图片预览（当前列表页弹出对话框）
+const previewImage = async (file) => {
+  try {
+    const resp = await previewFileApi(file.id)
+    const blob = resp?.data
+    if (!(blob instanceof Blob)) {
+      throw new Error('预览数据无效')
+    }
+    const url = window.URL.createObjectURL(blob)
+    imagePreviewUrl.value = url
+    imagePreviewVisible.value = true
+  } catch (e) {
+    console.error('图片预览失败:', e)
+    ElMessage.error('图片预览失败')
   }
 }
 
@@ -566,6 +633,7 @@ const deleteFile = async (file) => {
 onMounted(() => {
   loadFiles()
   loadFolders()
+  loadPreviewConfig()
 })
 </script>
 
@@ -628,6 +696,12 @@ onMounted(() => {
 
 .file-name {
   font-weight: 500;
+}
+
+.file-name.clickable {
+  color: #409EFF;
+  cursor: pointer;
+  text-decoration: underline;
 }
 
 .upload-area {

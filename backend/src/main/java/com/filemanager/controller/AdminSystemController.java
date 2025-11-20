@@ -93,4 +93,37 @@ public class AdminSystemController {
 
         return Map.of("message", "上传策略已更新", "allowAll", allowAll, "allowedSuffixes", suffixes);
     }
+
+    // 预览配置：获取允许预览的文件后缀列表
+    @GetMapping("/preview-config")
+    public Map<String, Object> getPreviewConfig() {
+        java.util.List<String> suffixes = systemSettingService.getPreviewAllowedSuffixes();
+        return Map.of("allowedSuffixes", suffixes);
+    }
+
+    // 预览配置：更新允许预览的文件后缀列表
+    @PutMapping("/preview-config")
+    public Map<String, Object> updatePreviewConfig(@RequestBody Map<String, Object> body) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        Long adminId = userService.getUserIdByUsername(auth.getName());
+        com.filemanager.entity.User admin = userService.getUserById(adminId);
+
+        java.util.List<String> suffixes = null;
+        try {
+            Object v = body.get("allowedSuffixes");
+            if (v instanceof java.util.List<?> list) {
+                suffixes = new java.util.ArrayList<>();
+                for (Object o : list) {
+                    if (o != null) suffixes.add(o.toString());
+                }
+            }
+        } catch (Exception ignore) {}
+
+        if (suffixes == null || suffixes.isEmpty()) {
+            throw new IllegalArgumentException("请至少配置一个允许预览的后缀");
+        }
+        systemSettingService.setPreviewAllowedSuffixes(suffixes, admin);
+
+        return Map.of("message", "预览配置已更新", "allowedSuffixes", systemSettingService.getPreviewAllowedSuffixes());
+    }
 }

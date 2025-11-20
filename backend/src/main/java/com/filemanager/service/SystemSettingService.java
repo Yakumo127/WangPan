@@ -34,6 +34,8 @@ public class SystemSettingService {
     public static final String KEY_BACKUP_CONCURRENCY = "backup.concurrency.blobCopy";
     public static final String KEY_BACKUP_IO_THROTTLE_BPS = "backup.io.throttle.bytesPerSec";
     public static final String KEY_BACKUP_ZIP_LEVEL = "backup.zip.level";
+    // 预览相关：允许预览的文件后缀列表
+    public static final String KEY_PREVIEW_ALLOWED_SUFFIXES = "file.preview.allowed.suffixes";
 
     private final SystemConfigRepository systemConfigRepository;
 
@@ -257,6 +259,46 @@ public class SystemSettingService {
             }
         }
         return list;
+    }
+
+    // 预览策略：获取允许预览的文件后缀列表（小写、去空、不含点）
+    public java.util.List<String> getPreviewAllowedSuffixes() {
+        String raw = getString(KEY_PREVIEW_ALLOWED_SUFFIXES, null);
+        if (raw == null || raw.isBlank()) {
+            // 默认允许预览的后缀（小写，不含点），可在系统设置中调整
+            raw = "doc,docx,ppt,pptx,pdf,txt,mp4,jpg,jpeg,png";
+        }
+        String[] parts = raw.split(",");
+        java.util.List<String> list = new java.util.ArrayList<>();
+        for (String p : parts) {
+            if (p == null) continue;
+            String s = p.trim().toLowerCase();
+            if (s.startsWith(".")) s = s.substring(1);
+            if (!s.isEmpty() && s.matches("[a-z0-9]+") && !list.contains(s)) {
+                list.add(s);
+            }
+        }
+        return list;
+    }
+
+    @com.filemanager.audit.AuditedOperation(
+            actionType = com.filemanager.entity.UserLog.ACTION_UPDATE_SETTING,
+            resourceType = com.filemanager.entity.UserLog.RESOURCE_SYSTEM,
+            userId = "#updatedBy?.id",
+            resourceName = "T(com.filemanager.service.SystemSettingService).KEY_PREVIEW_ALLOWED_SUFFIXES",
+            description = "'preview.suffixes=' + (#suffixes == null ? '' : #suffixes.toString())"
+    )
+    public void setPreviewAllowedSuffixes(java.util.List<String> suffixes, com.filemanager.entity.User updatedBy) {
+        String joined = (suffixes == null || suffixes.isEmpty()) ? "" : String.join(",",
+                suffixes.stream().map(s -> {
+                    String v = s == null ? "" : s.trim().toLowerCase();
+                    if (v.startsWith(".")) v = v.substring(1);
+                    return v;
+                })
+                .filter(s -> !s.isEmpty() && s.matches("[a-z0-9]+"))
+                .distinct()
+                .toList());
+        setString(KEY_PREVIEW_ALLOWED_SUFFIXES, joined, "允许预览的文件后缀列表（逗号分隔，小写，不含点）", updatedBy);
     }
 
     @com.filemanager.audit.AuditedOperation(

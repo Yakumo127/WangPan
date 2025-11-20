@@ -153,7 +153,7 @@
               </el-button>
             </div>
             <div v-else class="file-grid">
-              <div v-for="file in recentFiles" :key="file.id" class="file-item" @click="downloadFile(file)">
+              <div v-for="file in recentFiles" :key="file.id" class="file-item" @click="onRecentFileClick(file)">
                 <div class="file-icon">
                   <el-icon>
                     <Document v-if="!file.isDirectory" />
@@ -180,7 +180,7 @@ import {
   Document, FolderOpened, User, DataLine, Upload, Refresh, 
   Download, Delete, Folder, ArrowRight, PieChart
 } from '@element-plus/icons-vue'
-import { getFileList, getDownloadUrl } from '@/api/file'
+import { getFileList, getPreviewConfigForUser } from '@/api/file'
 import { useAuthStore } from '@/store/auth'
 
 const router = useRouter()
@@ -195,6 +195,7 @@ const userStats = ref({
 })
 const recentActivities = ref([])
 const recentFiles = ref([])
+const previewSuffixes = ref([])
 
 const user = computed(() => authStore.user)
 const currentDate = computed(() => new Date().toLocaleDateString('zh-CN', {
@@ -298,28 +299,47 @@ const goToProfile = () => {
   router.push('/profile')
 }
 
-// 下载文件（通过后端生成一次性直链，交给浏览器原生下载）
-const downloadFile = async (file) => {
+const getFileExt = (file) => {
+  const name = (file?.originalFilename || file?.name || '').toString()
+  const idx = name.lastIndexOf('.')
+  if (idx < 0) return ''
+  return name.slice(idx + 1).toLowerCase()
+}
+
+const isPreviewable = (file) => {
+  const ext = getFileExt(file)
+  if (!ext) return false
+  return previewSuffixes.value.includes(ext)
+}
+
+const onRecentFileClick = (file) => {
+  if (!isPreviewable(file)) return
+  const ext = getFileExt(file)
+  if (['jpg', 'jpeg', 'png'].includes(ext)) {
+    router.push({ name: 'Files' })
+  } else {
+    router.push({
+      name: 'FilePreview',
+      params: { id: file.id },
+      query: { name: file.originalFilename || file.name || '' }
+    })
+  }
+}
+
+const loadPreviewConfig = async () => {
   try {
-    const res = await getDownloadUrl(file.id)
-    const url = res && res.url
-    if (!url) {
-      throw new Error('下载链接为空')
-    }
-    const a = document.createElement('a')
-    a.href = url
-    a.download = file.originalFilename || file.name || 'download'
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-  } catch (error) {
-    console.error('文件下载失败:', error)
-    ElMessage.error('文件下载失败')
+    const res = await getPreviewConfigForUser()
+    previewSuffixes.value = Array.isArray(res?.allowedSuffixes)
+      ? res.allowedSuffixes.map(s => String(s).trim().toLowerCase())
+      : []
+  } catch (e) {
+    previewSuffixes.value = []
   }
 }
 
 onMounted(() => {
   loadUserStats()
+  loadPreviewConfig()
 })
 </script>
 

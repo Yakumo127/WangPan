@@ -552,6 +552,109 @@ public class FileController {
     }
 
     /**
+     * 预览文件：根据配置与权限在浏览器中内联展示内容（不触发下载），并记录预览审计日志。
+     */
+    @GetMapping("/{fileId}/preview")
+    public ResponseEntity<StreamingResponseBody> previewFile(@PathVariable Long fileId,
+                                                             jakarta.servlet.http.HttpServletRequest request) {
+        long start = System.currentTimeMillis();
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || auth.getName() == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        String username = auth.getName();
+        Long currentUserId;
+        try {
+            currentUserId = userService.getUserIdByUsername(username);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        boolean isAdmin = auth.getAuthorities() != null &&
+                auth.getAuthorities().stream().anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
+
+        File file;
+        try {
+            if (isAdmin) {
+                file = fileService.getFileByIdForAdmin(fileId);
+            } else {
+                file = fileService.getFileForDownload(fileId, currentUserId);
+            }
+        } catch (com.filemanager.exception.NotFoundException e) {
+            auditLogService.logFailure(currentUserId, com.filemanager.entity.UserLog.ACTION_PREVIEW,
+                    com.filemanager.entity.UserLog.RESOURCE_FILE, fileId, null,
+                    "预览失败：文件不存在", e.getMessage(), System.currentTimeMillis() - start);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        } catch (com.filemanager.exception.ForbiddenException e) {
+            auditLogService.logFailure(currentUserId, com.filemanager.entity.UserLog.ACTION_PREVIEW,
+                    com.filemanager.entity.UserLog.RESOURCE_FILE, fileId, null,
+                    "预览失败：无权限访问该文件", e.getMessage(), System.currentTimeMillis() - start);
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        } catch (Exception e) {
+            auditLogService.logFailure(currentUserId, com.filemanager.entity.UserLog.ACTION_PREVIEW,
+                    com.filemanager.entity.UserLog.RESOURCE_FILE, fileId, null,
+                    "预览失败：获取文件信息异常", e.getMessage(), System.currentTimeMillis() - start);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+        }
+
+        // 校验后缀是否允许预览
+        String name = file.getOriginalFilename() != null ? file.getOriginalFilename() : file.getFilename();
+        String ext = null;
+        if (name != null) {
+            int idx = name.lastIndexOf('.');
+            if (idx >= 0 && idx < name.length() - 1) {
+                ext = name.substring(idx + 1).toLowerCase();
+            }
+        }
+        java.util.List<String> allowed = systemSettingService.getPreviewAllowedSuffixes();
+        if (ext == null || ext.isBlank() || !allowed.contains(ext)) {
+            auditLogService.logFailure(currentUserId, com.filemanager.entity.UserLog.ACTION_PREVIEW,
+                    com.filemanager.entity.UserLog.RESOURCE_FILE, file.getId(), name,
+                    "预览失败：该类型未配置为可预览", "扩展名=" + ext, System.currentTimeMillis() - start);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+        }
+
+        Path filePath = Path.of(file.getFilePath());
+        if (!java.nio.file.Files.exists(filePath) || !java.nio.file.Files.isReadable(filePath)) {
+            auditLogService.logFailure(currentUserId, com.filemanager.entity.UserLog.ACTION_PREVIEW,
+                    com.filemanager.entity.UserLog.RESOURCE_FILE, file.getId(), name,
+                    "预览失败：物理文件不存在或不可读", null, System.currentTimeMillis() - start);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        }
+
+        String contentType = determinePreviewContentType(file, filePath, ext);
+        String asciiName = sanitizeAsciiFilename(name);
+        String encoded = org.springframework.web.util.UriUtils.encode(asciiName, java.nio.charset.StandardCharsets.UTF_8);
+        String disposition = String.format("inline; filename=\"%s\"; filename*=UTF-8''%s", asciiName, encoded);
+
+        StreamingResponseBody body = outputStream -> {
+            long started = System.currentTimeMillis();
+            try (java.io.InputStream in = java.nio.file.Files.newInputStream(filePath)) {
+                byte[] buffer = new byte[8192];
+                int len;
+                while ((len = in.read(buffer)) != -1) {
+                    outputStream.write(buffer, 0, len);
+                }
+                auditLogService.logSuccess(currentUserId, com.filemanager.entity.UserLog.ACTION_PREVIEW,
+                        com.filemanager.entity.UserLog.RESOURCE_FILE, file.getId(), name,
+                        "预览成功", System.currentTimeMillis() - started);
+            } catch (Exception ex) {
+                auditLogService.logFailure(currentUserId, com.filemanager.entity.UserLog.ACTION_PREVIEW,
+                        com.filemanager.entity.UserLog.RESOURCE_FILE, file.getId(), name,
+                        "预览过程中流传输出错", ex.getMessage(), System.currentTimeMillis() - started);
+                throw ex;
+            }
+        };
+
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(contentType))
+                .header(HttpHeaders.CONTENT_DISPOSITION, disposition)
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .header("X-Content-Type-Options", "nosniff")
+                .body(body);
+    }
+
+    /**
      * 普通用户：获取指定文件的一次性下载链接。
      * 该链接包含短期有效的签名 token，实际下载走 /api/files/direct-download。
      */
@@ -691,6 +794,70 @@ public class FileController {
         }
 
         return buildDownloadResponse(request, fileMeta, filePath);
+    }
+
+    /**
+     * 获取预览配置：供普通用户前端判断哪些类型可以预览。
+     */
+    @GetMapping("/preview/config")
+    public ResponseEntity<Map<String, Object>> getPreviewConfigForUser() {
+        java.util.List<String> suffixes = systemSettingService.getPreviewAllowedSuffixes();
+        return ResponseEntity.ok(Map.of("allowedSuffixes", suffixes));
+    }
+
+    private String determinePreviewContentType(File file, Path filePath, String ext) {
+        String contentType = null;
+        if (ext != null) {
+            switch (ext) {
+                case "jpg":
+                case "jpeg":
+                    contentType = "image/jpeg";
+                    break;
+                case "png":
+                    contentType = "image/png";
+                    break;
+                case "gif":
+                    contentType = "image/gif";
+                    break;
+                case "webp":
+                    contentType = "image/webp";
+                    break;
+                case "pdf":
+                    contentType = "application/pdf";
+                    break;
+                case "txt":
+                    contentType = "text/plain; charset=UTF-8";
+                    break;
+                case "mp4":
+                    contentType = "video/mp4";
+                    break;
+                case "doc":
+                    contentType = "application/msword";
+                    break;
+                case "docx":
+                    contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+                    break;
+                case "ppt":
+                    contentType = "application/vnd.ms-powerpoint";
+                    break;
+                case "pptx":
+                    contentType = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+                    break;
+                default:
+                    break;
+            }
+        }
+        if (contentType == null) {
+            try {
+                contentType = (file.getContentType() == null || file.getContentType().isBlank())
+                        ? java.nio.file.Files.probeContentType(filePath)
+                        : file.getContentType();
+            } catch (Exception ignore) {
+                contentType = file.getContentType();
+            }
+        }
+        if (contentType == null || contentType.isBlank()) contentType = "application/octet-stream";
+        return contentType;
     }
 
     /**

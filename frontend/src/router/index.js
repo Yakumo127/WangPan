@@ -59,6 +59,12 @@ const routes = [
         meta: { title: '文件夹管理', requiresAuth: true }
       },
       {
+        path: '/preview/:id',
+        name: 'FilePreview',
+        component: () => import('@/views/files/Preview.vue'),
+        meta: { title: '文件预览', requiresAuth: true }
+      },
+      {
         path: '/share',
         name: 'Share',
         component: () => import('@/views/Share.vue'),

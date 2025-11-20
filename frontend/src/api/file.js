@@ -202,6 +202,24 @@ export function adminScheduleDeleteFile(id, reason) {
   })
 }
 
+// 普通用户获取可预览后缀配置
+export function getPreviewConfigForUser() {
+  return request({
+    url: "/files/preview/config",
+    method: "get"
+  })
+}
+
+// 获取文件预览内容（blob）
+export function previewFile(id) {
+  return request({
+    url: `/files/${id}/preview`,
+    method: "get",
+    responseType: "blob",
+    timeout: 300000
+  })
+}
+
 // 注释：后端未开放该路由，前端暂不提供此API。
 // export function adminEmptyAllRecycleBin() {
 //   return request({

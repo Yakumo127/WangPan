@@ -30,3 +30,19 @@ export function updateUploadPolicy(data) {
     data
   })
 }
+
+// 预览策略
+export function getPreviewConfig() {
+  return request({
+    url: "/admin/settings/preview-config",
+    method: "get"
+  })
+}
+
+export function updatePreviewConfig(data) {
+  return request({
+    url: "/admin/settings/preview-config",
+    method: "put",
+    data
+  })
+}

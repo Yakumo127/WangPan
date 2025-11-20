@@ -191,6 +191,57 @@
         </el-card>
       </el-tab-pane>
 
+      <!-- 预览配置 -->
+      <el-tab-pane label="预览配置" name="preview">
+        <el-card class="box-card">
+          <template #header>
+            <div class="card-header">
+              <span>文件预览配置</span>
+            </div>
+          </template>
+          <el-form label-width="180px">
+            <el-form-item label="允许预览的文件后缀">
+              <el-select
+                v-model="previewPolicy.allowedSuffixes"
+                multiple
+                filterable
+                allow-create
+                default-first-option
+                placeholder="输入后按回车添加，如：pdf、txt、jpg"
+                @change="onPreviewSuffixesChange"
+                style="max-width:420px;"
+              >
+                <el-option
+                  v-for="s in previewPolicy.allowedSuffixes"
+                  :key="s"
+                  :label="s"
+                  :value="s"
+                />
+              </el-select>
+              <el-button style="margin-left:8px;" @click="resetPreviewPolicyToDefault">恢复默认</el-button>
+              <el-button
+                type="primary"
+                style="margin-left:8px;"
+                :disabled="previewPolicy.allowedSuffixes.length === 0 || previewInvalidSuffixes.length > 0"
+                @click="savePreviewPolicy"
+              >
+                保存预览配置
+              </el-button>
+            </el-form-item>
+            <el-form-item v-if="previewInvalidSuffixes.length > 0" label="">
+              <span class="form-hint error">
+                存在非法后缀：{{ previewInvalidSuffixes.join(', ') }}（仅允许小写字母和数字，不含点）
+              </span>
+            </el-form-item>
+            <el-form-item label="">
+              <span class="form-hint">
+                说明：此处仅控制“单击文件名是否触发预览”，不影响上传权限。doc/ppt 预览能力依赖浏览器或后续转换服务。
+              </span>
+            </el-form-item>
+          </el-form>
+        </el-card>
+      </el-tab-pane>
+
       <!-- 备份与迁移 -->
       <el-tab-pane label="备份与迁移" name="backup">
         <el-card class="box-card" style="margin-bottom:16px;">
@@ -549,7 +600,7 @@ import { ref, onMounted, nextTick, computed } from "vue"
 import { ElMessage, ElMessageBox } from "element-plus"
 import { Delete, Refresh, Search, Document, User, Calendar, DataLine, RefreshLeft } from "@element-plus/icons-vue"
 import { getAllRecycleBinFiles, adminRestoreFile, adminScheduleDeleteFile } from "@/api/file"
-import { getRecycleSettings, updateRecycleSettings, getUploadPolicy, updateUploadPolicy } from "@/api/system"
+import { getRecycleSettings, updateRecycleSettings, getUploadPolicy, updateUploadPolicy, getPreviewConfig, updatePreviewConfig } from "@/api/system"
 import { exportDownload as apiExportDownload, exportToServer as apiExportToServer, getBackupConfig as apiGetBackupConfig, updateBackupConfig as apiUpdateBackupConfig, precheck as apiPrecheck, importBackup as apiImportBackup, createExportJob as apiCreateExportJob, createImportJob as apiCreateImportJob, listJobs as apiListJobs, cancelJob as apiCancelJob, getJob as apiGetJob } from "@/api/backup"
 
 export default {
@@ -592,6 +643,8 @@ export default {
     })
     const uploadPolicy = ref({ allowAll: true, allowedSuffixes: [] })
     const invalidSuffixes = ref([])
+    const previewPolicy = ref({ allowedSuffixes: [] })
+    const previewInvalidSuffixes = ref([])
     const showImportDialog = ref(false)
     const importText = ref("")
     const importing = ref(false)
@@ -1431,6 +1484,40 @@ export default {
       }
     }
     
+    const onPreviewSuffixesChange = (vals) => {
+      const normalized = normalizeSuffixes(vals)
+      const bad = []
+      for (const s of vals || []) {
+        const v = String(s || '').trim().toLowerCase().replace(/^\./, '')
+        if (!v || !/^[a-z0-9]+$/.test(v)) bad.push(s)
+      }
+      previewPolicy.value.allowedSuffixes = normalized
+      previewInvalidSuffixes.value = bad
+      if (bad.length > 0) {
+        ElMessage.warning('已自动忽略非法后缀（仅允许小写字母和数字，不含点）')
+      }
+    }
+
+    const resetPreviewPolicyToDefault = () => {
+      const def = ['doc','docx','ppt','pptx','pdf','txt','mp4','jpg','jpeg','png']
+      previewPolicy.value.allowedSuffixes = def
+      previewInvalidSuffixes.value = []
+    }
+
+    const savePreviewPolicy = async () => {
+      try {
+        const suffixes = normalizeSuffixes(previewPolicy.value.allowedSuffixes || [])
+        if (suffixes.length === 0) {
+          ElMessage.error('请至少配置一个允许预览的后缀')
+          return
+        }
+        await updatePreviewConfig({ allowedSuffixes: suffixes })
+        ElMessage.success('预览配置已更新')
+      } catch (e) {
+        ElMessage.error('保存预览配置失败')
+      }
+    }
+
     onMounted(async () => {
       try {
         const cfg = await getRecycleSettings()
@@ -1439,6 +1526,10 @@ export default {
         const pol = await getUploadPolicy()
         uploadPolicy.value.allowAll = !!pol.allowAll
         uploadPolicy.value.allowedSuffixes = Array.isArray(pol.allowedSuffixes) ? normalizeSuffixes(pol.allowedSuffixes) : []
+        try {
+          const pc = await getPreviewConfig()
+          previewPolicy.value.allowedSuffixes = Array.isArray(pc?.allowedSuffixes) ? normalizeSuffixes(pc.allowedSuffixes) : []
+        } catch {}
         // 加载自定义模板
         try {
           const saved = localStorage.getItem(TEMPLATES_KEY)
@@ -1517,7 +1608,12 @@ export default {
       batchDelete,
       manualPurgeExpired,
       saveConfig,
-      resetConfig
+      resetConfig,
+      previewPolicy,
+      previewInvalidSuffixes,
+      onPreviewSuffixesChange,
+      resetPreviewPolicyToDefault,
+      savePreviewPolicy
       ,
       // 备份
       bk,

@@ -22,7 +22,17 @@
       </div>
 
       <el-table :data="files" style="width: 100%">
-        <el-table-column prop="originalFilename" label="文件名" width="240" />
+        <el-table-column prop="originalFilename" label="文件名" width="240">
+          <template #default="scope">
+            <span
+              class="file-name"
+              :class="{ clickable: isPreviewable(scope.row) }"
+              @click="onFileNameClick(scope.row)"
+            >
+              {{ scope.row.originalFilename }}
+            </span>
+          </template>
+        </el-table-column>
         <el-table-column prop="size" label="文件大小" width="140">
           <template #default="scope">
             {{ formatFileSize(scope.row.size) }}
@@ -91,9 +101,10 @@
 
 <script>
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
-import { getAdminFileList as getFiles, deleteFile as deleteFileApi, adminRestoreFile, adminPermanentDeleteFile, getAdminDownloadUrl } from '@/api/file'
+import { getAdminFileList as getFiles, deleteFile as deleteFileApi, adminRestoreFile, adminPermanentDeleteFile, getAdminDownloadUrl, getPreviewConfigForUser } from '@/api/file'
 import { getToken } from '@/utils/auth'
 
 export default {
@@ -102,6 +113,7 @@ export default {
     UploadFilled
   },
   setup() {
+    const router = useRouter()
     const files = ref([])
     const currentPage = ref(1)
     const pageSize = ref(20)
@@ -109,13 +121,14 @@ export default {
     const showUploadDialog = ref(false)
     const keyword = ref('')
     const status = ref('active') // active | deleted | all
+    const previewSuffixes = ref([])
     
     const uploadHeaders = {
       'Authorization': `Bearer ${getToken()}`
     }
     
-	    const loadFiles = async () => {
-	      try {
+    const loadFiles = async () => {
+      try {
         const response = await getFiles({
           page: currentPage.value - 1,
           size: pageSize.value,
@@ -127,6 +140,44 @@ export default {
         total.value = response.totalElements || 0
       } catch (error) {
         ElMessage.error('加载文件列表失败')
+      }
+    }
+
+    const loadPreviewConfig = async () => {
+      try {
+        const res = await getPreviewConfigForUser()
+        previewSuffixes.value = Array.isArray(res?.allowedSuffixes)
+          ? res.allowedSuffixes.map(s => String(s).trim().toLowerCase())
+          : []
+      } catch (e) {
+        previewSuffixes.value = []
+      }
+    }
+
+    const getFileExt = (file) => {
+      const name = (file?.originalFilename || '').toString()
+      const idx = name.lastIndexOf('.')
+      if (idx < 0) return ''
+      return name.slice(idx + 1).toLowerCase()
+    }
+
+    const isPreviewable = (file) => {
+      const ext = getFileExt(file)
+      if (!ext) return false
+      return previewSuffixes.value.includes(ext)
+    }
+
+    const onFileNameClick = (file) => {
+      if (!isPreviewable(file)) return
+      const ext = getFileExt(file)
+      if (['jpg', 'jpeg', 'png'].includes(ext)) {
+        router.push({ name: 'Files' })
+      } else {
+        router.push({
+          name: 'FilePreview',
+          params: { id: file.id },
+          query: { name: file.originalFilename || '' }
+        })
       }
     }
     
@@ -210,6 +261,7 @@ export default {
     
     onMounted(() => {
       loadFiles()
+      loadPreviewConfig()
     })
 
     const onSearch = () => {
@@ -249,7 +301,9 @@ export default {
       status,
       onSearch,
       onStatusChange,
-      onReset
+      onReset,
+      isPreviewable,
+      onFileNameClick
     }
   }
 }
@@ -264,6 +318,12 @@ export default {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.file-name.clickable {
+  color: #409EFF;
+  cursor: pointer;
+  text-decoration: underline;
 }
 
 .pagination {
