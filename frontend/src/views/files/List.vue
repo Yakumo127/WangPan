@@ -136,11 +136,16 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="imagePreviewVisible" title="图片预览" width="60%">
+    <el-dialog
+      v-model="imagePreviewVisible"
+      title="图片预览"
+      width="70%"
+      class="image-preview-dialog"
+    >
       <img
         v-if="imagePreviewUrl"
         :src="imagePreviewUrl"
-        style="max-width:100%;max-height:70vh;display:block;margin:0 auto;"
+        class="image-preview-img"
       />
     </el-dialog>
   </div>
@@ -778,5 +783,17 @@ onMounted(() => {
   margin: 0 8px;
   color: #909399;
   font-size: 12px;
+}
+
+.image-preview-dialog :deep(.el-dialog__body) {
+  padding: 0;
+}
+
+.image-preview-img {
+  max-width: 100%;
+  max-height: 80vh;
+  display: block;
+  margin: 0 auto;
+  object-fit: contain;
 }
 </style>
