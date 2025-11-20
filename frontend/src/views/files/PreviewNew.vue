@@ -48,6 +48,9 @@
             <template v-else-if="viewerType === 'text'">
               <pre class="preview-text">{{ textContent }}</pre>
             </template>
+            <template v-else-if="viewerType === 'image'">
+              <img v-if="blobUrl" :src="blobUrl" class="preview-image" />
+            </template>
             <template v-else>
               <iframe
                 v-if="blobUrl"
@@ -121,6 +124,8 @@ const viewerTypeLabel = computed(() => {
       return '视频文件'
     case 'text':
       return '文本文件'
+    case 'image':
+      return '图片'
     case 'office':
       return 'Office 文档'
     default:
@@ -185,6 +190,8 @@ const loadPreview = async () => {
       type = 'pdf'
     } else if (contentType.startsWith('video/') || ext === 'mp4') {
       type = 'video'
+    } else if (contentType.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
+      type = 'image'
     } else if (
       contentType.startsWith('text/') ||
       ['txt', 'log', 'md'].includes(ext)
@@ -358,6 +365,14 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   border: none;
+}
+
+.preview-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+  margin: 0 auto;
 }
 
 .preview-video {

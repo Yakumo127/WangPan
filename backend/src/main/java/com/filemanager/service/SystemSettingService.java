@@ -36,6 +36,9 @@ public class SystemSettingService {
     public static final String KEY_BACKUP_ZIP_LEVEL = "backup.zip.level";
     // 预览相关：允许预览的文件后缀列表
     public static final String KEY_PREVIEW_ALLOWED_SUFFIXES = "file.preview.allowed.suffixes";
+    // 上传超时策略
+    public static final String KEY_UPLOAD_TIMEOUT_MODE = "upload.timeout.mode"; // auto | manual
+    public static final String KEY_UPLOAD_TIMEOUT_SECONDS = "upload.timeout.seconds"; // 手动模式下的秒数
 
     private final SystemConfigRepository systemConfigRepository;
 
@@ -65,6 +68,12 @@ public class SystemSettingService {
                 .map(cfg -> {
                     try { return Integer.parseInt(cfg.getConfigValue()); } catch (Exception e) { return def; }
                 })
+                .orElse(def);
+    }
+
+    public String getString(String key, String def) {
+        return systemConfigRepository.findByConfigKey(key)
+                .map(SystemConfig::getConfigValue)
                 .orElse(def);
     }
 
@@ -188,12 +197,6 @@ public class SystemSettingService {
         cfg.setIsActive(true);
         cfg.setUpdatedBy(updatedBy);
         systemConfigRepository.save(cfg);
-    }
-
-    public String getString(String key, String def) {
-        return systemConfigRepository.findByConfigKey(key)
-                .map(SystemConfig::getConfigValue)
-                .orElse(def);
     }
 
     public boolean isMaintenanceEnabled() { return getBoolean(KEY_SYSTEM_MAINTENANCE_ENABLED, false); }
@@ -336,5 +339,49 @@ public class SystemSettingService {
     private static boolean toBoolean(SystemConfig cfg) {
         if (cfg == null || cfg.getConfigValue() == null) return false;
         return Boolean.parseBoolean(cfg.getConfigValue());
+    }
+
+    // 上传超时：获取模式（auto | manual），默认 auto
+    public String getUploadTimeoutModeOrDefault(String def) {
+        String v = getString(KEY_UPLOAD_TIMEOUT_MODE, def);
+        if (v == null || v.isBlank()) return def;
+        String lower = v.trim().toLowerCase();
+        if ("auto".equals(lower) || "manual".equals(lower)) {
+            return lower;
+        }
+        return def;
+    }
+
+    // 上传超时：手动模式下的秒数（默认 150 秒）
+    public int getUploadTimeoutSecondsOrDefault(int def) {
+        return getIntOrDefault(KEY_UPLOAD_TIMEOUT_SECONDS, def);
+    }
+
+    @com.filemanager.audit.AuditedOperation(
+            actionType = com.filemanager.entity.UserLog.ACTION_UPDATE_SETTING,
+            resourceType = com.filemanager.entity.UserLog.RESOURCE_SYSTEM,
+            userId = "#updatedBy?.id",
+            resourceName = "#key",
+            description = "#description + ': ' + #value"
+    )
+    public void setUploadTimeoutMode(String mode, com.filemanager.entity.User updatedBy) {
+        String m = (mode == null ? "" : mode.trim().toLowerCase());
+        if (!"auto".equals(m) && !"manual".equals(m)) {
+            m = "auto";
+        }
+        setString(KEY_UPLOAD_TIMEOUT_MODE, m, "上传超时策略（auto|manual）", updatedBy);
+    }
+
+    @com.filemanager.audit.AuditedOperation(
+            actionType = com.filemanager.entity.UserLog.ACTION_UPDATE_SETTING,
+            resourceType = com.filemanager.entity.UserLog.RESOURCE_SYSTEM,
+            userId = "#updatedBy?.id",
+            resourceName = "#key",
+            description = "#description + ': ' + #value"
+    )
+    public void setUploadTimeoutSeconds(int seconds, com.filemanager.entity.User updatedBy) {
+        int val = seconds;
+        if (val < 1) val = 1;
+        setInt(KEY_UPLOAD_TIMEOUT_SECONDS, val, "上传接口超时时间（秒，手动模式）", updatedBy);
     }
 }

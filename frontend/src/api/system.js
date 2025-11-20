@@ -31,6 +31,22 @@ export function updateUploadPolicy(data) {
   })
 }
 
+// 上传超时策略
+export function getUploadTimeoutSetting() {
+  return request({
+    url: "/admin/settings/upload-timeout",
+    method: "get"
+  })
+}
+
+export function updateUploadTimeoutSetting(data) {
+  return request({
+    url: "/admin/settings/upload-timeout",
+    method: "put",
+    data
+  })
+}
+
 // 预览策略
 export function getPreviewConfig() {
   return request({

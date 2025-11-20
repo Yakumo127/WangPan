@@ -417,6 +417,8 @@ const enterFolder = (folder) => {
 const onEntryClick = (row) => {
   if (row.type === 'folder') {
     enterFolder(row.raw)
+  } else if (row.type === 'file') {
+    previewFileEntry(row.raw)
   }
 }
 
@@ -563,33 +565,17 @@ const downloadFileEntry = async (file) => {
 }
 
 const previewFileEntry = (file) => {
-  const ext = (() => {
-    const name = (file.originalFilename || file.name || '').toString()
-    const idx = name.lastIndexOf('.')
-    if (idx < 0) return ''
-    return name.slice(idx + 1).toLowerCase()
-  })()
-
-  // 图片仍使用图片对话框预览逻辑（复用已有行为）
-  if (['jpg', 'jpeg', 'png'].includes(ext)) {
-    router.push({
-      name: 'Files',
-      query: { previewImageId: file.id }
-    })
-  } else {
-    // 非图片：跳转到新版预览页（试验用）
-    router.push({
-      name: 'FilePreviewNew',
-      params: { id: file.id },
-      query: {
-        name: file.originalFilename || file.name || '',
-        size: file.size || '',
-        createTime: file.createTime || '',
-        updateTime: file.updateTime || '',
-        location: file.folderPath || ''
-      }
-    })
-  }
+  router.push({
+    name: 'FilePreviewNew',
+    params: { id: file.id },
+    query: {
+      name: file.originalFilename || file.name || '',
+      size: file.size || '',
+      createTime: file.createTime || '',
+      updateTime: file.updateTime || '',
+      location: file.folderPath || ''
+    }
+  })
 }
 
 const searchEntries = async () => {

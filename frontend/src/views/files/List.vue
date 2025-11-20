@@ -134,7 +134,7 @@
           </div>
           <el-progress
             :percentage="progress.percent"
-            :status="progress.status === 'exception' ? 'exception' : (progress.status === 'success' ? 'success' : '')"
+            :status="progress.status === 'exception' ? 'exception' : (progress.status === 'success' ? 'success' : undefined)"
           />
         </div>
       </div>
@@ -171,7 +171,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, Refresh, Search, Document, Download, Delete, Edit, View } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
-import { getFileList, uploadFile, deleteFile as deleteFileApi, searchFiles as searchFilesApi, renameFile as renameFileApi, checkFileExists, uploadChunk as uploadChunkApi, mergeChunks, getChunkStatus, getDownloadUrl, getPreviewConfigForUser, previewFile as previewFileApi } from '@/api/file'
+import { getFileList, uploadFile, deleteFile as deleteFileApi, searchFiles as searchFilesApi, renameFile as renameFileApi, checkFileExists, uploadChunk as uploadChunkApi, mergeChunks, getChunkStatus, getDownloadUrl, getPreviewConfigForUser, previewFile as previewFileApi, getUploadTimeoutConfig } from '@/api/file'
 import { getFolderList } from '@/api/folder'
 
 const loading = ref(false)
@@ -186,10 +186,16 @@ const previewSuffixes = ref([])
 const imagePreviewVisible = ref(false)
 const imagePreviewUrl = ref('')
 const imageScale = ref(1)
+const uploadTimeoutConfig = ref({ mode: 'auto', timeoutSeconds: 150 })
 
 const uploadForm = reactive({
   folderId: null
 })
+
+const SMALL_SIZE = 30 * 1024 * 1024
+const MID_SIZE = 300 * 1024 * 1024
+const SPEED_BYTES_PER_SEC = 2 * 1024 * 1024
+const BUFFER_SECONDS = 180
 
 // 格式化文件大小
 const formatFileSize = (bytes) => {
@@ -246,6 +252,31 @@ const loadPreviewConfig = async () => {
     // 保持默认空列表，预览按钮不启用
     previewSuffixes.value = []
   }
+}
+
+// 加载上传超时配置
+const loadUploadTimeoutConfig = async () => {
+  try {
+    const res = await getUploadTimeoutConfig()
+    uploadTimeoutConfig.value = {
+      mode: (res?.mode || 'auto').toString().trim().toLowerCase() === 'manual' ? 'manual' : 'auto',
+      timeoutSeconds: Number(res?.timeoutSeconds) > 0 ? Number(res.timeoutSeconds) : 150
+    }
+  } catch (e) {
+    uploadTimeoutConfig.value = { mode: 'auto', timeoutSeconds: 150 }
+  }
+}
+
+const computeUploadTimeoutMs = (size) => {
+  const cfg = uploadTimeoutConfig.value || { mode: 'auto', timeoutSeconds: 150 }
+  const bytes = Number(size) || 0
+  if (cfg.mode === 'manual' && cfg.timeoutSeconds > 0) {
+    return Math.max(1, Math.ceil(cfg.timeoutSeconds)) * 1000
+  }
+  if (bytes <= SMALL_SIZE) return 150 * 1000
+  if (bytes <= MID_SIZE) return 700 * 1000
+  const seconds = bytes / SPEED_BYTES_PER_SEC + BUFFER_SECONDS
+  return Math.max(1, Math.ceil(seconds)) * 1000
 }
 
 const getFileExt = (file) => {
@@ -402,6 +433,7 @@ const uploadFilesFunc = async () => {
     for (let i = 0; i < uploadFiles.value.length; i++) {
       const elFile = uploadFiles.value[i]
       const raw = elFile.raw
+      const uploadTimeout = computeUploadTimeoutMs(raw.size)
       // 前置大小校验，避免后端 413
       if (raw.size > MAX_BYTES) {
         uploadProgress.value[i].status = 'exception'
@@ -436,7 +468,7 @@ const uploadFilesFunc = async () => {
       // 2) 大小阈值：>10MB 走分片上传，否则直传
       const CHUNK_SIZE = 10 * 1024 * 1024
       if (raw.size > CHUNK_SIZE && fileHash) {
-        await uploadInChunksWithRetryAndResume(elFile, i, fileHash, CHUNK_SIZE)
+        await uploadInChunksWithRetryAndResume(elFile, i, fileHash, CHUNK_SIZE, uploadTimeout)
       } else {
         const formData = new FormData()
         formData.append('file', raw)
@@ -456,7 +488,7 @@ const uploadFilesFunc = async () => {
           pr.lastTime = now
           pr.lastLoadedBytes = loaded
           pr.percent = percent
-        })
+        }, { timeout: uploadTimeout })
         uploadProgress.value[i].status = 'success'
         uploadProgress.value[i].percent = 100
       }
@@ -481,7 +513,7 @@ const uploadFilesFunc = async () => {
 }
 
 // 分片上传（含并发、重试、断点续传-基于本地存储，跨会话可恢复，但服务器端不校验已有分片列表）
-const uploadInChunksWithRetryAndResume = async (elFile, progressIndex, fileHash, CHUNK_SIZE) => {
+const uploadInChunksWithRetryAndResume = async (elFile, progressIndex, fileHash, CHUNK_SIZE, uploadTimeout) => {
   const raw = elFile.raw
   const totalChunks = Math.ceil(raw.size / CHUNK_SIZE)
   const CONCURRENCY = 3
@@ -568,7 +600,7 @@ const uploadInChunksWithRetryAndResume = async (elFile, progressIndex, fileHash,
         await uploadChunkApi(formData, (e) => {
           pr.chunkLoaded[chunkNumber] = e.loaded || 0
           updateSpeedAgg()
-        })
+        }, { timeout: uploadTimeout })
         // 标记完成并持久化
         doneSet.add(chunkNumber)
         // 清除该分片的局部计数，避免重复统计
@@ -619,7 +651,7 @@ const uploadInChunksWithRetryAndResume = async (elFile, progressIndex, fileHash,
   // 合并前友好提示
   ElMessage.info('分片已上传完成，开始服务端合并...')
   try {
-    await mergeChunks({ fileHash, filename: raw.name, totalChunks, folderId: uploadForm.folderId || null })
+    await mergeChunks({ fileHash, filename: raw.name, totalChunks, folderId: uploadForm.folderId || null }, { timeout: uploadTimeout })
     uploadProgress.value[progressIndex].status = 'success'
     uploadProgress.value[progressIndex].percent = 100
     // 清理断点续传记录
@@ -705,6 +737,7 @@ onMounted(() => {
   loadFiles()
   loadFolders()
   loadPreviewConfig()
+  loadUploadTimeoutConfig()
 })
 </script>
 

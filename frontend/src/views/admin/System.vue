@@ -189,6 +189,37 @@
             </template>
           </el-dialog>
         </el-card>
+
+        <el-card class="box-card" style="margin-top:16px;">
+          <template #header>
+            <div class="card-header">
+              <span>上传接口超时设置</span>
+            </div>
+          </template>
+          <el-form label-width="180px">
+            <el-form-item label="策略">
+              <el-radio-group v-model="uploadTimeoutSetting.mode">
+                <el-radio label="auto">自动（按文件大小估算）</el-radio>
+                <el-radio label="manual">手动指定</el-radio>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item label="手动超时时间（秒）">
+              <el-input-number
+                v-model="uploadTimeoutSetting.timeoutSeconds"
+                :min="1"
+                :max="7200"
+                :disabled="uploadTimeoutSetting.mode !== 'manual'"
+              />
+              <span class="tip" style="margin-left:8px;">
+                自动模式：0-30MB 用 150 秒，30-300MB 用 700 秒，大于 300MB 按文件大小/2MB/s + 180 秒缓冲。
+              </span>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" :loading="savingUploadTimeout" @click="saveUploadTimeoutSetting">保存上传超时策略</el-button>
+              <el-button @click="loadUploadTimeoutSetting">重置</el-button>
+            </el-form-item>
+          </el-form>
+        </el-card>
       </el-tab-pane>
 
       <!-- 预览配置 -->
@@ -673,7 +704,7 @@ import { ref, onMounted, nextTick, computed, watch, onBeforeUnmount } from "vue"
 import { ElMessage, ElMessageBox } from "element-plus"
 import { Delete, Refresh, Search, Document, User, Calendar, DataLine, RefreshLeft } from "@element-plus/icons-vue"
 import { getAllRecycleBinFiles, adminRestoreFile, adminScheduleDeleteFile } from "@/api/file"
-import { getRecycleSettings, updateRecycleSettings, getUploadPolicy, updateUploadPolicy, getPreviewConfig, updatePreviewConfig, getSystemInfo } from "@/api/system"
+import { getRecycleSettings, updateRecycleSettings, getUploadPolicy, updateUploadPolicy, getPreviewConfig, updatePreviewConfig, getSystemInfo, getUploadTimeoutSetting, updateUploadTimeoutSetting } from "@/api/system"
 import { exportDownload as apiExportDownload, exportToServer as apiExportToServer, getBackupConfig as apiGetBackupConfig, updateBackupConfig as apiUpdateBackupConfig, precheck as apiPrecheck, importBackup as apiImportBackup, createExportJob as apiCreateExportJob, createImportJob as apiCreateImportJob, listJobs as apiListJobs, cancelJob as apiCancelJob, getJob as apiGetJob } from "@/api/backup"
 import { getStorageSummary, cleanupGarbageChunks, cleanupGarbageChunksByUser } from "@/api/storage"
 
@@ -722,6 +753,8 @@ export default {
     const invalidSuffixes = ref([])
     const previewPolicy = ref({ allowedSuffixes: [] })
     const previewInvalidSuffixes = ref([])
+    const uploadTimeoutSetting = ref({ mode: 'auto', timeoutSeconds: 150 })
+    const savingUploadTimeout = ref(false)
     const showImportDialog = ref(false)
     const importText = ref("")
     const importing = ref(false)
@@ -1683,6 +1716,38 @@ export default {
       }
     }
 
+    // 上传超时策略
+    const loadUploadTimeoutSetting = async () => {
+      try {
+        const res = await getUploadTimeoutSetting()
+        uploadTimeoutSetting.value.mode = (res?.mode || 'auto').toString().trim().toLowerCase() === 'manual' ? 'manual' : 'auto'
+        uploadTimeoutSetting.value.timeoutSeconds = Number(res?.timeoutSeconds) > 0 ? Number(res.timeoutSeconds) : 150
+      } catch (e) {
+        uploadTimeoutSetting.value = { mode: 'auto', timeoutSeconds: 150 }
+      }
+    }
+
+    const saveUploadTimeoutSetting = async () => {
+      try {
+        savingUploadTimeout.value = true
+        const mode = uploadTimeoutSetting.value.mode === 'manual' ? 'manual' : 'auto'
+        const seconds = Number(uploadTimeoutSetting.value.timeoutSeconds) || 0
+        if (mode === 'manual') {
+          if (seconds < 1 || seconds > 7200) {
+            ElMessage.error('手动超时时间需介于 1~7200 秒')
+            return
+          }
+        }
+        await updateUploadTimeoutSetting({ mode, timeoutSeconds: seconds })
+        ElMessage.success('上传超时策略已更新')
+        await loadUploadTimeoutSetting()
+      } catch (e) {
+        ElMessage.error(e?.message || '保存失败')
+      } finally {
+        savingUploadTimeout.value = false
+      }
+    }
+
     onMounted(async () => {
       try {
         const cfg = await getRecycleSettings()
@@ -1694,6 +1759,9 @@ export default {
         try {
           const pc = await getPreviewConfig()
           previewPolicy.value.allowedSuffixes = Array.isArray(pc?.allowedSuffixes) ? normalizeSuffixes(pc.allowedSuffixes) : []
+        } catch {}
+        try {
+          await loadUploadTimeoutSetting()
         } catch {}
         try {
           const info = await getSystemInfo()
@@ -1806,6 +1874,10 @@ export default {
       resetPreviewPolicyToDefault,
       savePreviewPolicy
       ,
+      uploadTimeoutSetting,
+      savingUploadTimeout,
+      saveUploadTimeoutSetting,
+      loadUploadTimeoutSetting,
       cleaningAllChunks,
       confirmCleanupAllChunks,
       confirmCleanupUserChunks,

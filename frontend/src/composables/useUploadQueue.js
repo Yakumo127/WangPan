@@ -4,6 +4,7 @@
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { computeFileSha256 } from '@/utils/fileHash'
+import { getUploadTimeoutConfig } from '@/api/file'
 import { checkFastUpload, directUpload, uploadChunk, getChunkStatus, mergeChunks } from '@/services/uploadService'
 
 const MAX_CONCURRENT_FILES = 2
@@ -12,6 +13,11 @@ const CHUNK_SIZE = 4 * 1024 * 1024      // 每片 4MB
 const MAX_CHUNK_CONCURRENCY = 3
 const MAX_CHUNK_RETRY = 3
 const STORAGE_KEY = 'efm_upload_queue_v1'
+const DEFAULT_TIMEOUT_CONFIG = { mode: 'auto', timeoutSeconds: 150 }
+const SMALL_SIZE = 30 * 1024 * 1024
+const MID_SIZE = 300 * 1024 * 1024
+const SPEED_BYTES_PER_SEC = 2 * 1024 * 1024 // 2 MB/s
+const BUFFER_SECONDS = 180
 
 export function useUploadQueue(options = {}) {
   const {
@@ -21,10 +27,41 @@ export function useUploadQueue(options = {}) {
 
   const uploadQueue = ref([])
   const activeUploadsCount = ref(0)
+  const uploadTimeoutConfig = ref({ ...DEFAULT_TIMEOUT_CONFIG })
 
   const hasRunningTasks = computed(() =>
     uploadQueue.value.some((t) => t.status === 'hashing' || t.status === 'checking_fast' || t.status === 'uploading')
   )
+
+  const fetchUploadTimeoutConfig = async () => {
+    try {
+      const res = await getUploadTimeoutConfig()
+      if (res && res.mode) {
+        uploadTimeoutConfig.value = {
+          mode: (res.mode || 'auto').toString().trim().toLowerCase() === 'manual' ? 'manual' : 'auto',
+          timeoutSeconds: Number(res.timeoutSeconds) > 0 ? Number(res.timeoutSeconds) : DEFAULT_TIMEOUT_CONFIG.timeoutSeconds
+        }
+      }
+    } catch (e) {
+      // 保持默认配置
+      uploadTimeoutConfig.value = { ...DEFAULT_TIMEOUT_CONFIG }
+    }
+  }
+
+  // 初始化时拉取一次配置（失败则使用默认）
+  fetchUploadTimeoutConfig()
+
+  const computeUploadTimeoutMs = (fileSize) => {
+    const cfg = uploadTimeoutConfig.value || DEFAULT_TIMEOUT_CONFIG
+    const size = Number(fileSize) || 0
+    if (cfg.mode === 'manual' && cfg.timeoutSeconds > 0) {
+      return Math.max(1, Math.ceil(cfg.timeoutSeconds)) * 1000
+    }
+    if (size <= SMALL_SIZE) return 150 * 1000
+    if (size <= MID_SIZE) return 700 * 1000
+    const seconds = size / SPEED_BYTES_PER_SEC + BUFFER_SECONDS
+    return Math.max(1, Math.ceil(seconds)) * 1000
+  }
 
   const persistState = () => {
     try {
@@ -237,7 +274,8 @@ export function useUploadQueue(options = {}) {
           updateTask(task, { progress: pct, uploadedBytes: evt.loaded })
         }
       },
-      signal: controller.signal
+      signal: controller.signal,
+      timeout: computeUploadTimeoutMs(task.size)
     }).finally(() => {
       task.controllers?.requestControllers.delete(controller)
     })
@@ -311,7 +349,8 @@ export function useUploadQueue(options = {}) {
           index: chunkState.index,
           total: totalChunks,
           chunk: blob,
-          signal: controller.signal
+          signal: controller.signal,
+          timeout: computeUploadTimeoutMs(task.size)
         })
         chunkState.uploaded = true
         chunkState.errorMessage = ''
@@ -327,6 +366,11 @@ export function useUploadQueue(options = {}) {
           progress: Math.round((uploadedBytes / task.size) * 100)
         })
       } catch (e) {
+        const aborted = task.status === 'paused' || task.status === 'canceled' || controller.signal?.aborted || e?.code === 'ERR_CANCELED'
+        if (aborted) {
+          // 用户主动暂停/取消，不计入失败重试
+          return
+        }
         chunkState.retryCount += 1
         chunkState.errorMessage = e?.message || '分片上传失败'
         // eslint-disable-next-line no-console
@@ -364,7 +408,8 @@ export function useUploadQueue(options = {}) {
       total: totalChunks,
       filename: task.name,
       folderId: task.folderId,
-      parentId: null
+      parentId: null,
+      timeout: computeUploadTimeoutMs(task.size)
     })
   }
 

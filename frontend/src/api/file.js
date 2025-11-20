@@ -17,13 +17,14 @@ export function getAdminFileList(params) {
   })
 }
 
-export function uploadFile(data, onUploadProgress) {
+export function uploadFile(data, onUploadProgress, options = {}) {
+  const { timeout } = options
   return request({
     url: "/files/upload",
     method: "post",
     data,
     onUploadProgress,
-    timeout: 300000
+    timeout: timeout ?? 300000
   })
 }
 
@@ -38,23 +39,25 @@ export function checkFileExists(fileHash) {
 }
 
 // 分片上传：上传单个分片
-export function uploadChunk(data, onUploadProgress) {
+export function uploadChunk(data, onUploadProgress, options = {}) {
+  const { timeout } = options
   return request({
     url: "/files/chunk",
     method: "post",
     data,
     onUploadProgress,
-    timeout: 300000
+    timeout: timeout ?? 300000
   })
 }
 
 // 分片合并：在服务端合并所有分片
-export function mergeChunks(payload) {
+export function mergeChunks(payload, options = {}) {
+  const { timeout } = options
   return request({
     url: "/files/merge",
     method: "post",
     data: payload,
-    timeout: 300000
+    timeout: timeout ?? 300000
   })
 }
 
@@ -206,6 +209,14 @@ export function adminScheduleDeleteFile(id, reason) {
 export function getPreviewConfigForUser() {
   return request({
     url: "/files/preview/config",
+    method: "get"
+  })
+}
+
+// 上传超时策略（普通用户读取）
+export function getUploadTimeoutConfig() {
+  return request({
+    url: "/files/upload-timeout-config",
     method: "get"
   })
 }

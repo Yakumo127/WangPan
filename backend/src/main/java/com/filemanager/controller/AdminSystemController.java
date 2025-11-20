@@ -95,6 +95,51 @@ public class AdminSystemController {
         return Map.of("message", "上传策略已更新", "allowAll", allowAll, "allowedSuffixes", suffixes);
     }
 
+    // 上传超时策略：获取
+    @GetMapping("/upload-timeout")
+    public Map<String, Object> getUploadTimeoutSetting() {
+        String mode = systemSettingService.getUploadTimeoutModeOrDefault("auto");
+        int seconds = systemSettingService.getUploadTimeoutSecondsOrDefault(150);
+        return Map.of("mode", mode, "timeoutSeconds", seconds);
+    }
+
+    // 上传超时策略：更新（mode: auto | manual）
+    @PutMapping("/upload-timeout")
+    public Map<String, Object> updateUploadTimeoutSetting(@RequestBody Map<String, Object> body) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        Long adminId = userService.getUserIdByUsername(auth.getName());
+        com.filemanager.entity.User admin = userService.getUserById(adminId);
+
+        String mode = body.get("mode") == null ? "auto" : body.get("mode").toString().trim().toLowerCase();
+        if (!"auto".equals(mode) && !"manual".equals(mode)) {
+            throw new IllegalArgumentException("mode 仅支持 auto 或 manual");
+        }
+        Integer seconds = null;
+        try {
+            Object v = body.get("timeoutSeconds");
+            if (v != null) seconds = Integer.parseInt(v.toString());
+        } catch (Exception ignore) {}
+        if ("manual".equals(mode)) {
+            if (seconds == null) {
+                throw new IllegalArgumentException("手动模式需要提供超时时间（秒）");
+            }
+            if (seconds < 1 || seconds > 7200) {
+                throw new IllegalArgumentException("超时时间需介于 1~7200 秒");
+            }
+        }
+
+        systemSettingService.setUploadTimeoutMode(mode, admin);
+        if ("manual".equals(mode)) {
+            systemSettingService.setUploadTimeoutSeconds(seconds, admin);
+        }
+
+        return Map.of(
+                "message", "上传超时策略已更新",
+                "mode", mode,
+                "timeoutSeconds", systemSettingService.getUploadTimeoutSecondsOrDefault(150)
+        );
+    }
+
     // 预览配置：获取允许预览的文件后缀列表
     @GetMapping("/preview-config")
     public Map<String, Object> getPreviewConfig() {

@@ -33,7 +33,7 @@ export async function checkFastUpload({ hash, filename, folderId, parentId }) {
 }
 
 // 直传小文件
-export function directUpload({ file, folderId, filename, onUploadProgress, signal }) {
+export function directUpload({ file, folderId, filename, onUploadProgress, signal, timeout }) {
   const formData = new FormData()
   formData.append('file', file)
   if (folderId != null) formData.append('folderId', folderId)
@@ -44,12 +44,13 @@ export function directUpload({ file, folderId, filename, onUploadProgress, signa
     data: formData,
     headers: { 'Content-Type': 'multipart/form-data' },
     onUploadProgress,
-    signal
+    signal,
+    timeout
   })
 }
 
 // 分片上传单个分片
-export function uploadChunk({ hash, index, total, chunk, onUploadProgress, signal }) {
+export function uploadChunk({ hash, index, total, chunk, onUploadProgress, signal, timeout }) {
   const formData = new FormData()
   formData.append('file', chunk)
   formData.append('fileHash', hash)
@@ -61,7 +62,8 @@ export function uploadChunk({ hash, index, total, chunk, onUploadProgress, signa
     data: formData,
     headers: { 'Content-Type': 'multipart/form-data' },
     onUploadProgress,
-    signal
+    signal,
+    timeout
   })
 }
 
@@ -78,7 +80,7 @@ export function getChunkStatus({ hash, total }) {
 }
 
 // 合并分片
-export function mergeChunks({ hash, total, filename, folderId, parentId }) {
+export function mergeChunks({ hash, total, filename, folderId, parentId, timeout }) {
   return request({
     url: '/files/merge',
     method: 'post',
@@ -88,6 +90,7 @@ export function mergeChunks({ hash, total, filename, folderId, parentId }) {
       filename,
       folderId: folderId ?? null,
       parentId: parentId ?? null
-    }
+    },
+    timeout
   })
 }

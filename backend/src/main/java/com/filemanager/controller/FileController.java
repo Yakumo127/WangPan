@@ -830,6 +830,16 @@ public class FileController {
         return ResponseEntity.ok(Map.of("allowedSuffixes", suffixes));
     }
 
+    /**
+     * 获取上传超时策略：供前端根据文件大小计算 axios 超时时间。
+     */
+    @GetMapping("/upload-timeout-config")
+    public ResponseEntity<Map<String, Object>> getUploadTimeoutConfig() {
+        String mode = systemSettingService.getUploadTimeoutModeOrDefault("auto");
+        int seconds = systemSettingService.getUploadTimeoutSecondsOrDefault(150);
+        return ResponseEntity.ok(Map.of("mode", mode, "timeoutSeconds", seconds));
+    }
+
     private String determinePreviewContentType(File file, Path filePath, String ext) {
         String contentType = null;
         if (ext != null) {
