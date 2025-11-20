@@ -586,8 +586,8 @@
             <el-descriptions-item label="构建时间">{{ systemInfo.buildTime }}</el-descriptions-item>
             <el-descriptions-item label="Java版本">{{ systemInfo.javaVersion }}</el-descriptions-item>
             <el-descriptions-item label="数据库版本">{{ systemInfo.databaseVersion }}</el-descriptions-item>
-            <el-descriptions-item label="运行时间">{{ systemInfo.uptime }}</el-descriptions-item>
-            <el-descriptions-item label="内存使用">{{ systemInfo.memoryUsage }}</el-descriptions-item>
+            <el-descriptions-item label="运行时间">{{ formatUptime(systemInfo.uptimeMillis) }}</el-descriptions-item>
+            <el-descriptions-item label="内存使用">{{ formatMemoryUsage(systemInfo.heapUsedBytes, systemInfo.heapMaxBytes) }}</el-descriptions-item>
           </el-descriptions>
         </el-card>
       </el-tab-pane>
@@ -692,7 +692,7 @@ import { ref, onMounted, nextTick, computed, watch, onBeforeUnmount } from "vue"
 import { ElMessage, ElMessageBox } from "element-plus"
 import { Delete, Refresh, Search, Document, User, Calendar, DataLine, RefreshLeft } from "@element-plus/icons-vue"
 import { getAllRecycleBinFiles, adminRestoreFile, adminScheduleDeleteFile } from "@/api/file"
-import { getRecycleSettings, updateRecycleSettings, getUploadPolicy, updateUploadPolicy, getPreviewConfig, updatePreviewConfig } from "@/api/system"
+import { getRecycleSettings, updateRecycleSettings, getUploadPolicy, updateUploadPolicy, getPreviewConfig, updatePreviewConfig, getSystemInfo } from "@/api/system"
 import { exportDownload as apiExportDownload, exportToServer as apiExportToServer, getBackupConfig as apiGetBackupConfig, updateBackupConfig as apiUpdateBackupConfig, precheck as apiPrecheck, importBackup as apiImportBackup, createExportJob as apiCreateExportJob, createImportJob as apiCreateImportJob, listJobs as apiListJobs, cancelJob as apiCancelJob, getJob as apiGetJob } from "@/api/backup"
 import { getStorageSummary, cleanupGarbageChunks, cleanupGarbageChunksByUser } from "@/api/storage"
 
@@ -727,12 +727,13 @@ export default {
     })
     
     const systemInfo = ref({
-      version: "2.0.0",
-      buildTime: "2024-01-01 12:00:00",
-      javaVersion: "17.0.2",
-      databaseVersion: "8.0.35",
-      uptime: "2天 3小时 45分钟",
-      memoryUsage: "256MB / 1024MB"
+      version: "",
+      buildTime: "",
+      javaVersion: "",
+      databaseVersion: "",
+      uptimeMillis: 0,
+      heapUsedBytes: 0,
+      heapMaxBytes: 0
     })
     const storageSummary = ref({ totalUsedBytes: 0, garbageChunksBytes: 0, perUserGarbage: [] })
     const cleaningAllChunks = ref(false)
@@ -831,6 +832,23 @@ export default {
       const d = Math.floor(diff / (24*3600*1000))
       const h = Math.floor((diff % (24*3600*1000)) / (3600*1000))
       return d > 0 ? `${d}天${h}小时` : `${h}小时`
+    }
+
+    const formatUptime = (millis) => {
+      if (!millis || millis <= 0) return ""
+      const totalSeconds = Math.floor(millis / 1000)
+      const days = Math.floor(totalSeconds / (24 * 3600))
+      const hours = Math.floor((totalSeconds % (24 * 3600)) / 3600)
+      const minutes = Math.floor((totalSeconds % 3600) / 60)
+      if (days > 0) return `${days}天 ${hours}小时 ${minutes}分钟`
+      if (hours > 0) return `${hours}小时 ${minutes}分钟`
+      return `${minutes}分钟`
+    }
+
+    const formatMemoryUsage = (usedBytes, maxBytes) => {
+      const used = formatStorage(usedBytes || 0)
+      const max = maxBytes && maxBytes > 0 ? formatStorage(maxBytes) : "未知"
+      return `${used} / ${max}`
     }
 
     const loadStorageSummary = async () => {
@@ -1695,6 +1713,16 @@ export default {
         try {
           const pc = await getPreviewConfig()
           previewPolicy.value.allowedSuffixes = Array.isArray(pc?.allowedSuffixes) ? normalizeSuffixes(pc.allowedSuffixes) : []
+        } catch {}
+        try {
+          const info = await getSystemInfo()
+          systemInfo.value.version = info.version || ""
+          systemInfo.value.buildTime = info.buildTime || ""
+          systemInfo.value.javaVersion = info.javaVersion || ""
+          systemInfo.value.databaseVersion = info.databaseVersion || ""
+          systemInfo.value.uptimeMillis = info.uptimeMillis || 0
+          systemInfo.value.heapUsedBytes = info.heapUsedBytes || 0
+          systemInfo.value.heapMaxBytes = info.heapMaxBytes || 0
         } catch {}
         // 加载自定义模板
         try {

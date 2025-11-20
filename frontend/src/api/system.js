@@ -46,3 +46,11 @@ export function updatePreviewConfig(data) {
     data
   })
 }
+
+// 系统信息
+export function getSystemInfo() {
+  return request({
+    url: "/admin/settings/system-info",
+    method: "get"
+  })
+}

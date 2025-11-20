@@ -20,6 +20,7 @@ public class AdminSystemController {
     private final UserService userService;
     private final com.filemanager.service.AuditLogService auditLogService;
     private final SystemSettingService settingService;
+    private final com.filemanager.service.FileService fileService;
 
     // 获取回收站相关设置
     @GetMapping("/recycle")
@@ -125,5 +126,33 @@ public class AdminSystemController {
         systemSettingService.setPreviewAllowedSuffixes(suffixes, admin);
 
         return Map.of("message", "预览配置已更新", "allowedSuffixes", systemSettingService.getPreviewAllowedSuffixes());
+    }
+
+    // 系统信息：运行时间与内存使用等
+    @GetMapping("/system-info")
+    public Map<String, Object> getSystemInfo() {
+        java.lang.management.RuntimeMXBean rb = java.lang.management.ManagementFactory.getRuntimeMXBean();
+        long uptimeMillis = rb.getUptime();
+        Runtime rt = Runtime.getRuntime();
+        long heapUsed = rt.totalMemory() - rt.freeMemory();
+        long heapMax = rt.maxMemory();
+        String javaVersion = System.getProperty("java.version");
+
+        // 数据库版本可选，若获取失败则返回空字符串
+        String dbVersion = "";
+        try {
+            var root = java.nio.file.Paths.get(fileService.getStorageRoot()).toAbsolutePath().normalize();
+            // 此处仅保留接口字段，具体数据库版本可在后续通过 DataSource 获取并补充
+        } catch (Exception ignore) {}
+
+        return Map.of(
+                "version", "2.0.0",
+                "buildTime", "",
+                "javaVersion", javaVersion != null ? javaVersion : "",
+                "databaseVersion", dbVersion,
+                "uptimeMillis", uptimeMillis,
+                "heapUsedBytes", heapUsed,
+                "heapMaxBytes", heapMax
+        );
     }
 }
