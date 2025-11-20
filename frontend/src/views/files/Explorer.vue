@@ -171,6 +171,23 @@
       </el-table>
     </div>
 
+    <el-dialog
+      v-model="imagePreviewVisible"
+      title="图片预览"
+      width="70%"
+      class="image-preview-dialog"
+      @closed="onImagePreviewClosed"
+    >
+      <div class="image-preview-wrapper" @wheel.prevent="onImageWheel">
+        <img
+          v-if="imagePreviewUrl"
+          :src="imagePreviewUrl"
+          class="image-preview-img"
+          :style="{ transform: `scale(${imageScale})` }"
+        />
+      </div>
+    </el-dialog>
+
     <!-- 新建文件夹对话框 -->
     <el-dialog v-model="newFolderDialogVisible" title="新建文件夹" width="400px">
       <el-form>
@@ -289,7 +306,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Folder, FolderOpened, Upload, Search, Document, Download, Delete, Edit, View, ArrowDown } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
-import { getFileList, deleteFile as deleteFileApi, renameFile as renameFileApi, getDownloadUrl } from '@/api/file'
+import { getFileList, deleteFile as deleteFileApi, renameFile as renameFileApi, getDownloadUrl, previewFile as previewFileApi } from '@/api/file'
 import { getFolderList, createFolder, deleteFolder as deleteFolderApi, renameFolder as renameFolderApi, getFolderPath } from '@/api/folder'
 import { useUploadQueue } from '@/composables/useUploadQueue'
 
@@ -313,6 +330,9 @@ const newFolderName = ref('')
 const uploadDrawerVisible = ref(false)
 const fileInputRef = ref(null)
 const resumeTaskId = ref(null)
+const imagePreviewVisible = ref(false)
+const imagePreviewUrl = ref('')
+const imageScale = ref(1)
 
 const breadcrumbs = ref([
   { id: null, name: '根目录' }
@@ -476,6 +496,44 @@ const formatFileType = (row) => {
 const getThumbnail = (row) => {
   if (row.type === 'folder') return ''
   return row.thumbnail || ''
+}
+
+const previewImage = async (file) => {
+  try {
+    const resp = await previewFileApi(file.id)
+    const blob = resp?.data
+    if (!(blob instanceof Blob)) {
+      throw new Error('预览数据无效')
+    }
+    const url = window.URL.createObjectURL(blob)
+    imagePreviewUrl.value = url
+    imageScale.value = 1
+    imagePreviewVisible.value = true
+  } catch (e) {
+    console.error('图片预览失败:', e)
+    ElMessage.error('图片预览失败')
+  }
+}
+
+const onImageWheel = (event) => {
+  const delta = event.deltaY || 0
+  let next = imageScale.value
+  if (delta > 0) {
+    next -= 0.1
+  } else if (delta < 0) {
+    next += 0.1
+  }
+  if (next < 0.5) next = 0.5
+  if (next > 4) next = 4
+  imageScale.value = next
+}
+
+const onImagePreviewClosed = () => {
+  imageScale.value = 1
+  if (imagePreviewUrl.value) {
+    try { window.URL.revokeObjectURL(imagePreviewUrl.value) } catch (e) {}
+  }
+  imagePreviewUrl.value = ''
 }
 
 const loadEntries = async () => {
@@ -695,6 +753,11 @@ const downloadFileEntry = async (file) => {
 }
 
 const previewFileEntry = (file) => {
+  const ext = getExtension({ name: file.originalFilename || file.name || '' })
+  if (['jpg', 'jpeg', 'png'].includes(ext)) {
+    previewImage(file)
+    return
+  }
   router.push({
     name: 'FilePreviewNew',
     params: { id: file.id },
@@ -898,5 +961,27 @@ watch(entries, () => {
 
 .op-btn-plain :deep(.el-icon) {
   font-size: 14px;
+}
+
+.image-preview-dialog :deep(.el-dialog__body) {
+  padding: 0;
+}
+
+.image-preview-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 80vh;
+  overflow: auto;
+}
+
+.image-preview-img {
+  max-width: 100%;
+  max-height: 80vh;
+  min-width: 80vh;
+  min-height: 70vh;
+  display: block;
+  margin: 0 auto;
+  object-fit: contain;
 }
 </style>
