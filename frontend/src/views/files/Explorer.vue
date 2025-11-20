@@ -60,10 +60,9 @@
     >
       <el-table
         :data="entries"
-        style="width: 100%"
+        style="width: 100%; table-layout: fixed;"
         v-loading="loading"
         :fit="false"
-        style="table-layout: fixed;"
       >
         <el-table-column label="名称" min-width="345">
           <template #default="{ row }">
