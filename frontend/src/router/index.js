@@ -53,6 +53,12 @@ const routes = [
         meta: { title: '文件管理', requiresAuth: true }
       },
       {
+        path: '/files-explorer',
+        name: 'FilesExplorer',
+        component: () => import('@/views/files/Explorer.vue'),
+        meta: { title: '文件管理（新版）', requiresAuth: true }
+      },
+      {
         path: '/folders',
         name: 'Folders',
         component: () => import('@/views/folders/List.vue'),

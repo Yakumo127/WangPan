@@ -1,0 +1,556 @@
+<template>
+  <div class="files-explorer-container">
+    <!-- 工具栏 -->
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <el-button type="primary" @click="openNewFolderDialog">
+          <el-icon><Folder /></el-icon>
+          新建文件夹
+        </el-button>
+        <el-button @click="openUploadDialog">
+          <el-icon><Upload /></el-icon>
+          上传文件
+        </el-button>
+      </div>
+
+      <div class="toolbar-right">
+        <el-input
+          v-model="searchKeyword"
+          placeholder="搜索文件或文件夹..."
+          style="width: 240px"
+          clearable
+          @keyup.enter="searchEntries"
+        >
+          <template #prefix>
+            <el-icon><Search /></el-icon>
+          </template>
+        </el-input>
+        <el-button @click="searchEntries">搜索</el-button>
+      </div>
+    </div>
+
+    <!-- 面包屑 -->
+    <div class="breadcrumb">
+      <el-breadcrumb separator="/">
+        <el-breadcrumb-item
+          v-for="item in breadcrumbs"
+          :key="item.id ?? 'root'"
+          @click="onBreadcrumbClick(item)"
+          class="breadcrumb-item-clickable"
+        >
+          {{ item.name }}
+        </el-breadcrumb-item>
+      </el-breadcrumb>
+    </div>
+
+    <!-- 列表 -->
+    <div class="entries-list">
+      <el-table
+        :data="entries"
+        style="width: 100%"
+        v-loading="loading"
+      >
+        <el-table-column label="名称" min-width="320">
+          <template #default="{ row }">
+            <div class="entry-info" @dblclick="onEntryDblClick(row)">
+              <el-icon class="entry-icon">
+                <FolderOpened v-if="row.type === 'folder'" />
+                <Document v-else />
+              </el-icon>
+              <span
+                class="entry-name"
+                :class="{ clickable: row.type === 'folder' || row.type === 'file' }"
+                @click.stop="onEntryClick(row)"
+              >
+                {{ row.name }}
+              </span>
+            </div>
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="size" label="大小" width="140">
+          <template #default="{ row }">
+            <span v-if="row.type === 'file'">
+              {{ formatFileSize(row.size) }}
+            </span>
+            <span v-else>--</span>
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="type" label="类型" width="140">
+          <template #default="{ row }">
+            <span v-if="row.type === 'folder'">文件夹</span>
+            <span v-else>{{ formatFileType(row) }}</span>
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="createTime" label="创建时间" width="200">
+          <template #default="{ row }">
+            {{ formatDateTime(row.createTime) }}
+          </template>
+        </el-table-column>
+
+        <el-table-column label="操作" width="360">
+          <template #default="{ row }">
+            <el-button-group v-if="row.type === 'folder'">
+              <el-button size="small" @click="enterFolder(row.raw)">
+                <el-icon><Folder /></el-icon>
+                打开
+              </el-button>
+              <el-button size="small" @click="renameFolderEntry(row.raw)">
+                <el-icon><Edit /></el-icon>
+                重命名
+              </el-button>
+              <el-button size="small" type="danger" @click="deleteFolderEntry(row.raw)">
+                <el-icon><Delete /></el-icon>
+                删除
+              </el-button>
+            </el-button-group>
+            <el-button-group v-else>
+              <el-button size="small" @click="previewFileEntry(row.raw)">
+                <el-icon><View /></el-icon>
+                预览
+              </el-button>
+              <el-button size="small" @click="downloadFileEntry(row.raw)">
+                <el-icon><Download /></el-icon>
+                下载
+              </el-button>
+              <el-button size="small" @click="renameFileEntry(row.raw)">
+                <el-icon><Edit /></el-icon>
+                重命名
+              </el-button>
+              <el-button size="small" type="danger" @click="deleteFileEntry(row.raw)">
+                <el-icon><Delete /></el-icon>
+                删除
+              </el-button>
+            </el-button-group>
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
+
+    <!-- 新建文件夹对话框 -->
+    <el-dialog v-model="newFolderDialogVisible" title="新建文件夹" width="400px">
+      <el-form>
+        <el-form-item label="名称" label-width="60px">
+          <el-input
+            v-model="newFolderName"
+            placeholder="请输入文件夹名称"
+            @keyup.enter="confirmCreateFolder"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="newFolderDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmCreateFolder">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 上传沿用现有 Files 页逻辑：此处仅打开原列表上传对话框作为过渡，可后续内聚 -->
+    <el-dialog v-model="uploadDialogVisible" title="上传文件（当前目录）" width="600px">
+      <p>当前目录：{{ currentFolderLabel }}</p>
+      <p>上传逻辑暂复用原“文件管理”页面，后续可将上传逻辑迁移到本页。</p>
+      <template #footer>
+        <el-button @click="uploadDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Folder, FolderOpened, Upload, Search, Document, Download, Delete, Edit, View } from '@element-plus/icons-vue'
+import { useRouter } from 'vue-router'
+import { getFileList, deleteFile as deleteFileApi, renameFile as renameFileApi, getDownloadUrl } from '@/api/file'
+import { getFolderList, createFolder, deleteFolder as deleteFolderApi, renameFolder as renameFolderApi, getFolderPath } from '@/api/folder'
+
+const router = useRouter()
+
+const loading = ref(false)
+const currentFolderId = ref(null)
+const folderList = ref([])
+const fileList = ref([])
+const searchKeyword = ref('')
+const newFolderDialogVisible = ref(false)
+const newFolderName = ref('')
+const uploadDialogVisible = ref(false)
+
+const breadcrumbs = ref([
+  { id: null, name: '根目录' }
+])
+
+const entries = computed(() => {
+  const folders = (folderList.value || []).map(f => ({
+    id: f.id,
+    name: f.name,
+    type: 'folder',
+    createTime: f.createTime,
+    size: null,
+    raw: f
+  }))
+  const files = (fileList.value || []).map(f => ({
+    id: f.id,
+    name: f.originalFilename || f.name || f.filename,
+    type: 'file',
+    createTime: f.createTime,
+    size: f.size,
+    contentType: f.contentType,
+    raw: f
+  }))
+  return [...folders, ...files]
+})
+
+const currentFolderLabel = computed(() => {
+  const last = breadcrumbs.value[breadcrumbs.value.length - 1]
+  return last ? last.name : '根目录'
+})
+
+const formatFileSize = (bytes) => {
+  const n = Number(bytes)
+  if (!n || n <= 0) return ''
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(n) / Math.log(k))
+  return `${parseFloat((n / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`
+}
+
+const formatDateTime = (datetime) => {
+  if (!datetime) return ''
+  const d = new Date(datetime)
+  if (isNaN(d.getTime())) return ''
+  return d.toLocaleString()
+}
+
+const formatFileType = (row) => {
+  const ct = (row.contentType || '').toString()
+  if (!ct) return '文件'
+  if (ct.includes('pdf')) return 'PDF 文件'
+  if (ct.startsWith('image/')) return '图片'
+  if (ct.startsWith('video/')) return '视频'
+  if (ct.startsWith('text/')) return '文本'
+  return ct
+}
+
+const loadEntries = async () => {
+  loading.value = true
+  try {
+    const [folders, files] = await Promise.all([
+      getFolderList({ parentId: currentFolderId.value || null }),
+      getFileList({ folderId: currentFolderId.value || null })
+    ])
+    folderList.value = folders || []
+    fileList.value = files || []
+  } catch (e) {
+    console.error('加载文件/文件夹列表失败:', e)
+    ElMessage.error('加载文件/文件夹列表失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+const loadBreadcrumb = async () => {
+  if (!currentFolderId.value) {
+    breadcrumbs.value = [{ id: null, name: '根目录' }]
+    return
+  }
+  try {
+    const path = await getFolderPath(currentFolderId.value)
+    const list = [{ id: null, name: '根目录' }]
+    if (Array.isArray(path)) {
+      path.forEach(f => {
+        list.push({ id: f.id, name: f.name })
+      })
+    }
+    breadcrumbs.value = list
+  } catch (e) {
+    console.error('加载目录路径失败:', e)
+    breadcrumbs.value = [{ id: null, name: '根目录' }]
+  }
+}
+
+const refreshAll = async () => {
+  await loadBreadcrumb()
+  await loadEntries()
+}
+
+const onBreadcrumbClick = (item) => {
+  if (item.id === currentFolderId.value) return
+  currentFolderId.value = item.id
+  refreshAll()
+}
+
+const enterFolder = (folder) => {
+  currentFolderId.value = folder.id
+  refreshAll()
+}
+
+const onEntryClick = (row) => {
+  if (row.type === 'folder') {
+    enterFolder(row.raw)
+  }
+}
+
+const onEntryDblClick = (row) => {
+  if (row.type === 'folder') {
+    enterFolder(row.raw)
+  } else if (row.type === 'file') {
+    previewFileEntry(row.raw)
+  }
+}
+
+const openNewFolderDialog = () => {
+  newFolderName.value = ''
+  newFolderDialogVisible.value = true
+}
+
+const confirmCreateFolder = async () => {
+  const name = newFolderName.value.trim()
+  if (!name) {
+    ElMessage.warning('文件夹名称不能为空')
+    return
+  }
+  try {
+    await createFolder({
+      name,
+      parentId: currentFolderId.value || null
+    })
+    ElMessage.success('文件夹创建成功')
+    newFolderDialogVisible.value = false
+    await loadEntries()
+  } catch (e) {
+    console.error('创建文件夹失败:', e)
+    ElMessage.error('创建文件夹失败')
+  }
+}
+
+const renameFolderEntry = async (folder) => {
+  try {
+    const { value } = await ElMessageBox.prompt(
+      '请输入新的文件夹名称',
+      '重命名文件夹',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        inputValue: folder.name,
+        inputPattern: /.+/,
+        inputErrorMessage: '名称不能为空'
+      }
+    )
+    await renameFolderApi(folder.id, value)
+    ElMessage.success('文件夹重命名成功')
+    await loadEntries()
+  } catch (e) {
+    if (e !== 'cancel') {
+      console.error('文件夹重命名失败:', e)
+      ElMessage.error('文件夹重命名失败')
+    }
+  }
+}
+
+const deleteFolderEntry = async (folder) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除文件夹 "${folder.name}" 吗？`,
+      '删除确认',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+    await deleteFolderApi(folder.id)
+    ElMessage.success('文件夹删除成功')
+    await loadEntries()
+  } catch (e) {
+    if (e !== 'cancel') {
+      console.error('文件夹删除失败:', e)
+      ElMessage.error('文件夹删除失败')
+    }
+  }
+}
+
+const renameFileEntry = async (file) => {
+  try {
+    const { value } = await ElMessageBox.prompt(
+      '请输入新的文件名称',
+      '重命名文件',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        inputValue: file.originalFilename || file.name || '',
+        inputPattern: /.+/,
+        inputErrorMessage: '文件名不能为空'
+      }
+    )
+    await renameFileApi(file.id, value)
+    ElMessage.success('文件重命名成功')
+    await loadEntries()
+  } catch (e) {
+    if (e !== 'cancel') {
+      console.error('文件重命名失败:', e)
+      ElMessage.error('文件重命名失败')
+    }
+  }
+}
+
+const deleteFileEntry = async (file) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除文件 "${file.originalFilename || file.name}" 吗？`,
+      '删除确认',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+    await deleteFileApi(file.id)
+    ElMessage.success('文件删除成功')
+    await loadEntries()
+  } catch (e) {
+    if (e !== 'cancel') {
+      console.error('文件删除失败:', e)
+      ElMessage.error('文件删除失败')
+    }
+  }
+}
+
+const downloadFileEntry = async (file) => {
+  try {
+    const res = await getDownloadUrl(file.id)
+    const url = res && res.url
+    if (!url) throw new Error('下载链接为空')
+    const a = document.createElement('a')
+    a.href = url
+    a.download = file.originalFilename || file.name || 'download'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+  } catch (e) {
+    console.error('文件下载失败:', e)
+    ElMessage.error('文件下载失败')
+  }
+}
+
+const previewFileEntry = (file) => {
+  const ext = (() => {
+    const name = (file.originalFilename || file.name || '').toString()
+    const idx = name.lastIndexOf('.')
+    if (idx < 0) return ''
+    return name.slice(idx + 1).toLowerCase()
+  })()
+
+  // 图片仍使用图片对话框预览逻辑（复用已有行为）
+  if (['jpg', 'jpeg', 'png'].includes(ext)) {
+    router.push({
+      name: 'Files',
+      query: { previewImageId: file.id }
+    })
+  } else {
+    // 非图片：跳转到新版预览页（试验用）
+    router.push({
+      name: 'FilePreviewNew',
+      params: { id: file.id },
+      query: {
+        name: file.originalFilename || file.name || '',
+        size: file.size || '',
+        createTime: file.createTime || '',
+        updateTime: file.updateTime || '',
+        location: file.folderPath || ''
+      }
+    })
+  }
+}
+
+const searchEntries = async () => {
+  // 第一版：仅提示“暂未实现目录范围搜索”，避免影响现有逻辑
+  if (!searchKeyword.value.trim()) {
+    await loadEntries()
+    return
+  }
+  ElMessage.info('目录范围内的搜索功能暂未实现，后续迭代中支持')
+}
+
+const openUploadDialog = () => {
+  uploadDialogVisible.value = true
+}
+
+onMounted(() => {
+  refreshAll()
+})
+</script>
+
+<style scoped>
+.files-explorer-container {
+  padding: 20px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.toolbar-left {
+  display: flex;
+  gap: 10px;
+}
+
+.toolbar-right {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.breadcrumb {
+  margin-bottom: 16px;
+  padding: 10px 16px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.breadcrumb-item-clickable {
+  cursor: pointer;
+}
+
+.entries-list {
+  flex: 1;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+}
+
+.entry-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.entry-icon {
+  font-size: 18px;
+  color: #409eff;
+}
+
+.entry-name {
+  font-weight: 500;
+}
+
+.entry-name.clickable {
+  color: #409eff;
+  cursor: pointer;
+  text-decoration: underline;
+}
+</style>
+

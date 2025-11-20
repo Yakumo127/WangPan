@@ -24,6 +24,11 @@
           <span>文件管理</span>
         </el-menu-item>
         
+        <el-menu-item index="/files-explorer">
+          <el-icon><Files /></el-icon>
+          <span>文件管理（新版）</span>
+        </el-menu-item>
+        
         <el-menu-item index="/folders">
           <el-icon><Folder /></el-icon>
           <span>文件夹管理</span>
