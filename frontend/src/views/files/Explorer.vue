@@ -63,7 +63,7 @@
         style="width: 100%"
         v-loading="loading"
       >
-        <el-table-column label="名称" min-width="360">
+        <el-table-column label="名称" min-width="345">
           <template #default="{ row }">
             <div class="entry-info" @dblclick="onEntryDblClick(row)">
               <div class="entry-thumb">
@@ -84,7 +84,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="size" label="大小" width="140">
+        <el-table-column prop="size" label="大小" width="100">
           <template #default="{ row }">
             <span v-if="row.type === 'file'">
               {{ formatFileSize(row.size) }}
@@ -714,7 +714,7 @@ onMounted(() => {
 }
 
 .entries-list :deep(.el-table__row) {
-  height: 50px;
+  height: 40px;
 }
 
 .entry-info {
