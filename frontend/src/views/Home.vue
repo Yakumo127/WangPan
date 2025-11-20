@@ -182,6 +182,7 @@ import {
 } from '@element-plus/icons-vue'
 import { getFileList } from '@/api/file'
 import { useAuthStore } from '@/store/auth'
+import { getToken } from '@/utils/auth'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -298,21 +299,32 @@ const goToProfile = () => {
   router.push('/profile')
 }
 
-// 下载文件
+// 下载文件（使用 fetch + a 链接，避免 Axios 超时限制）
 const downloadFile = async (file) => {
   try {
-    const { downloadFile: downloadFileApi } = await import('@/api/file')
-    const response = await downloadFileApi(file.id)
-    const blob = new Blob([response.data])
+    const token = getToken()
+    const headers = {}
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
+    }
+    const res = await fetch(`/api/files/download/${file.id}`, {
+      method: 'GET',
+      headers
+    })
+    if (!res.ok) {
+      throw new Error(`下载失败，状态码：${res.status}`)
+    }
+    const blob = await res.blob()
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = file.originalFilename || file.name
+    a.download = file.originalFilename || file.name || 'download'
     document.body.appendChild(a)
     a.click()
     window.URL.revokeObjectURL(url)
     document.body.removeChild(a)
   } catch (error) {
+    console.error('文件下载失败:', error)
     ElMessage.error('文件下载失败')
   }
 }

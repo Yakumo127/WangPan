@@ -93,7 +93,7 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
-import { getAdminFileList as getFiles, adminDownloadFile, deleteFile as deleteFileApi, adminRestoreFile, adminPermanentDeleteFile } from '@/api/file'
+import { getAdminFileList as getFiles, deleteFile as deleteFileApi, adminRestoreFile, adminPermanentDeleteFile } from '@/api/file'
 import { getToken } from '@/utils/auth'
 
 export default {
@@ -141,15 +141,32 @@ export default {
     }
     
     const downloadFile = async (file) => {
-      // 管理员下载使用 admin 接口
-      const res = await adminDownloadFile(file.id)
-      const blob = new Blob([res.data], { type: res.headers['content-type'] || 'application/octet-stream' })
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = file.originalFilename || 'download'
-      a.click()
-      window.URL.revokeObjectURL(url)
+      try {
+        const token = getToken()
+        const headers = {}
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`
+        }
+        const res = await fetch(`/api/files/admin/download/${file.id}`, {
+          method: 'GET',
+          headers
+        })
+        if (!res.ok) {
+          throw new Error(`下载失败，状态码：${res.status}`)
+        }
+        const blob = await res.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = file.originalFilename || 'download'
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+      } catch (error) {
+        console.error('管理员下载失败:', error)
+        ElMessage.error('文件下载失败')
+      }
     }
     
     const deleteFile = async (file) => {
