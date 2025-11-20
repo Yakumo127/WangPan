@@ -22,6 +22,9 @@
         <template v-else-if="viewerType === 'text'">
           <pre class="preview-text">{{ textContent }}</pre>
         </template>
+        <template v-else-if="viewerType === 'pdf'">
+          <PdfViewer v-if="pdfData" :data="pdfData" />
+        </template>
         <template v-else>
           <iframe v-if="blobUrl" :src="blobUrl" class="preview-iframe" />
         </template>
@@ -36,6 +39,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, WarningFilled } from '@element-plus/icons-vue'
 import { previewFile as previewFileApi } from '@/api/file'
+import PdfViewer from '@/components/PdfViewer.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -47,6 +51,7 @@ const loading = ref(false)
 const error = ref('')
 const blobUrl = ref('')
 const textContent = ref('')
+const pdfData = ref(null)
 
 const getExt = () => {
   const name = filename.value || ''
@@ -79,6 +84,9 @@ const loadPreview = async () => {
     }
     if (viewerType.value === 'text') {
       textContent.value = await blob.text()
+    } else if (viewerType.value === 'pdf') {
+      const buffer = await blob.arrayBuffer()
+      pdfData.value = new Uint8Array(buffer)
     } else {
       const url = window.URL.createObjectURL(blob)
       blobUrl.value = url
