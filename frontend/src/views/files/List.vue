@@ -135,6 +135,14 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="imagePreviewVisible" title="图片预览" width="60%">
+      <img
+        v-if="imagePreviewUrl"
+        :src="imagePreviewUrl"
+        style="max-width:100%;max-height:70vh;display:block;margin:0 auto;"
+      />
+    </el-dialog>
   </div>
 </template>
 
