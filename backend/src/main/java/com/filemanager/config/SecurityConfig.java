@@ -24,11 +24,8 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
-import org.springframework.beans.factory.annotation.Value;
 
 import java.util.Arrays;
-import java.util.List;
-import java.util.stream.Collectors;
 
 @Configuration
 @EnableWebSecurity
@@ -41,9 +38,6 @@ public class SecurityConfig {
     @Autowired
     @Lazy
     private UserDetailsService userDetailsService;
-
-    @Value("${cors.allowed-origins:}")
-    private String corsAllowedOrigins;
     
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -76,20 +70,10 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        // 收紧：仅允许白名单来源（默认 localhost:3000/127.0.0.1:3000），可通过 cors.allowed-origins 覆盖
-        List<String> origins = null;
-        if (corsAllowedOrigins != null && !corsAllowedOrigins.trim().isEmpty()) {
-            origins = Arrays.stream(corsAllowedOrigins.split(","))
-                    .map(String::trim)
-                    .filter(s -> !s.isEmpty())
-                    .collect(Collectors.toList());
-        }
-        if (origins == null || origins.isEmpty()) {
-            origins = Arrays.asList("http://localhost:3000", "http://127.0.0.1:3000");
-        }
-        configuration.setAllowedOriginPatterns(origins);
+        // 放开：允许任意来源与请求头
+        configuration.setAllowedOriginPatterns(Arrays.asList("*"));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "Accept", "Origin"));
+        configuration.setAllowedHeaders(Arrays.asList("*"));
         configuration.setAllowCredentials(true);
         
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
