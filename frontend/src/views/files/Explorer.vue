@@ -59,11 +59,23 @@
       @drop.prevent="onDropFiles"
     >
       <el-table
+        ref="tableRef"
         :data="entries"
         style="width: 100%; table-layout: fixed;"
         v-loading="loading"
         :fit="false"
+        height="100%"
+        @selection-change="onSelectionChange"
       >
+        <el-table-column type="selection" width="50" align="center">
+          <template #header>
+            <el-checkbox
+              v-model="allChecked"
+              :indeterminate="isIndeterminate"
+              @change="onToggleAll"
+            />
+          </template>
+        </el-table-column>
         <el-table-column label="名称" min-width="345">
           <template #default="{ row }">
             <div class="entry-info" @dblclick="onEntryDblClick(row)">
@@ -282,6 +294,7 @@ import { useUploadQueue } from '@/composables/useUploadQueue'
 const router = useRouter()
 
 const loading = ref(false)
+const tableRef = ref(null)
 const currentFolderId = ref(null)
 const folderList = ref([])
 const fileList = ref([])
@@ -351,6 +364,28 @@ watch(hasRunningTasks, (val) => {
 const hasRestorableTasks = computed(() =>
   uploadQueue.value.some(t => !t.file && t.status === 'paused')
 )
+
+// 选择列状态
+const selectedRows = ref([])
+const allChecked = ref(false)
+const isIndeterminate = ref(false)
+
+const onSelectionChange = (sel) => {
+  selectedRows.value = sel
+  const total = entries.value.length
+  allChecked.value = total > 0 && sel.length === total
+  isIndeterminate.value = sel.length > 0 && sel.length < total
+}
+
+const onToggleAll = (val) => {
+  const refTable = tableRef.value
+  if (!refTable) return
+  if (val) {
+    entries.value.forEach(row => refTable.toggleRowSelection(row, true))
+  } else {
+    refTable.clearSelection()
+  }
+}
 
 const formatFileSize = (bytes) => {
   const n = Number(bytes)
@@ -424,21 +459,34 @@ const loadBreadcrumb = async () => {
   }
 }
 
-const refreshAll = async () => {
-  await loadBreadcrumb()
-  await loadEntries()
+  const refreshAll = async () => {
+    await loadBreadcrumb()
+    await loadEntries()
+  }
+
+const clearSelection = () => {
+  const refTable = tableRef.value
+  if (refTable) {
+    refTable.clearSelection()
+  }
+  selectedRows.value = []
+  allChecked.value = false
+  isIndeterminate.value = false
 }
 
-const onBreadcrumbClick = (item) => {
-  if (item.id === currentFolderId.value) return
-  currentFolderId.value = item.id
+  const onBreadcrumbClick = (item) => {
+    if (item.id === currentFolderId.value) return
+    currentFolderId.value = item.id
+    clearSelection()
+  clearSelection()
   refreshAll()
 }
 
-const enterFolder = (folder) => {
-  currentFolderId.value = folder.id
-  refreshAll()
-}
+  const enterFolder = (folder) => {
+    currentFolderId.value = folder.id
+    clearSelection()
+    refreshAll()
+  }
 
 const onEntryClick = (row) => {
   if (row.type === 'folder') {
@@ -661,6 +709,10 @@ onMounted(() => {
     ElMessage.info('检测到上次会话有未完成的上传任务，请为对应任务选择文件继续上传')
   }
 })
+
+watch(entries, () => {
+  clearSelection()
+})
 </script>
 
 <style scoped>
@@ -711,7 +763,7 @@ onMounted(() => {
   background: #fff;
   border-radius: 8px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-  overflow: hidden auto;
+  overflow: hidden;
 }
 
 .entries-list :deep(.el-table__row) {
