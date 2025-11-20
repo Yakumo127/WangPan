@@ -793,7 +793,7 @@ onMounted(() => {
   max-width: 100%;
   max-height: 80vh;
   min-width: 80vh;
-  min-height: 70ch;
+  min-height: 70vh;
   display: block;
   margin: 0 auto;
   object-fit: contain;
