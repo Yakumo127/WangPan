@@ -11,7 +11,8 @@
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
-import * as pdfjsLib from 'pdfjs-dist'
+// 按官方推荐从浏览器构建入口引入，避免直接用包根导致 API 不完整
+import * as pdfjsLib from 'pdfjs-dist/build/pdf'
 
 // 配置 pdf.js worker，当前指向官方 CDN，后续可按需改为本地静态资源
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js'
@@ -135,4 +136,3 @@ onBeforeUnmount(() => {
   color: #f56c6c;
 }
 </style>
-
