@@ -33,7 +33,7 @@ export async function checkFastUpload({ hash, filename, folderId, parentId }) {
 }
 
 // 直传小文件
-export function directUpload({ file, folderId, filename, onUploadProgress, cancelToken }) {
+export function directUpload({ file, folderId, filename, onUploadProgress, signal }) {
   const formData = new FormData()
   formData.append('file', file)
   if (folderId != null) formData.append('folderId', folderId)
@@ -44,12 +44,12 @@ export function directUpload({ file, folderId, filename, onUploadProgress, cance
     data: formData,
     headers: { 'Content-Type': 'multipart/form-data' },
     onUploadProgress,
-    cancelToken
+    signal
   })
 }
 
 // 分片上传单个分片
-export function uploadChunk({ hash, index, total, chunk, onUploadProgress, cancelToken }) {
+export function uploadChunk({ hash, index, total, chunk, onUploadProgress, signal }) {
   const formData = new FormData()
   formData.append('file', chunk)
   formData.append('fileHash', hash)
@@ -61,7 +61,7 @@ export function uploadChunk({ hash, index, total, chunk, onUploadProgress, cance
     data: formData,
     headers: { 'Content-Type': 'multipart/form-data' },
     onUploadProgress,
-    cancelToken
+    signal
   })
 }
 

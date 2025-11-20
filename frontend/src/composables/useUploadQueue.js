@@ -11,6 +11,7 @@ const CHUNK_THRESHOLD = 10 * 1024 * 1024 // 10MB 以上采用分片
 const CHUNK_SIZE = 4 * 1024 * 1024      // 每片 4MB
 const MAX_CHUNK_CONCURRENCY = 3
 const MAX_CHUNK_RETRY = 3
+const STORAGE_KEY = 'efm_upload_queue_v1'
 
 export function useUploadQueue(options = {}) {
   const {
@@ -24,6 +25,66 @@ export function useUploadQueue(options = {}) {
   const hasRunningTasks = computed(() =>
     uploadQueue.value.some((t) => t.status === 'hashing' || t.status === 'checking_fast' || t.status === 'uploading')
   )
+
+  const persistState = () => {
+    try {
+      const tasks = uploadQueue.value
+        .filter(t => t.status !== 'completed' && t.status !== 'canceled')
+        .map(t => ({
+          id: t.id,
+          name: t.name,
+          size: t.size,
+          folderId: t.folderId,
+          hash: t.hash,
+          useChunks: t.useChunks,
+          createdAt: t.createdAt,
+          lastStatus: t.status
+        }))
+      const payload = { version: 1, tasks }
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('持久化上传队列失败:', e)
+    }
+  }
+
+  const restoreFromStorage = () => {
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY)
+      if (!raw) return
+      const parsed = JSON.parse(raw)
+      if (!parsed || !Array.isArray(parsed.tasks)) return
+      const now = Date.now()
+      for (const t of parsed.tasks) {
+        const task = {
+          id: t.id || `${now}-${Math.random().toString(16).slice(2)}`,
+          file: null,
+          name: t.name,
+          size: t.size,
+          folderId: t.folderId ?? null,
+          hash: t.hash || null,
+          status: 'paused',
+          progress: 0,
+          uploadedBytes: 0,
+          errorMessage: '',
+          isFastUploaded: false,
+          useChunks: !!t.useChunks,
+          totalChunks: 0,
+          chunks: [],
+          createdAt: t.createdAt || now,
+          updatedAt: now,
+          controllers: {
+            hashingController: null,
+            requestControllers: new Set()
+          }
+        }
+        uploadQueue.value.push(task)
+      }
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('恢复上传队列失败:', e)
+    }
+  }
 
   const enqueueFiles = (files, folderId) => {
     const fid = folderId != null ? folderId : getCurrentFolderId()
@@ -48,15 +109,21 @@ export function useUploadQueue(options = {}) {
         totalChunks: 0,
         chunks: [],
         createdAt: now,
-        updatedAt: now
+        updatedAt: now,
+        controllers: {
+          hashingController: null,
+          requestControllers: new Set()
+        }
       }
       uploadQueue.value.push(task)
     }
+    persistState()
     schedule()
   }
 
   const updateTask = (task, patch) => {
     Object.assign(task, patch, { updatedAt: Date.now() })
+    persistState()
   }
 
   const schedule = () => {
@@ -69,12 +136,34 @@ export function useUploadQueue(options = {}) {
   }
 
   const startTask = async (task) => {
+    if (!task.file) {
+      // 任务恢复后尚未绑定文件，跳过
+      return
+    }
     activeUploadsCount.value += 1
     try {
       // 1. 计算哈希
+      const hashingController = new AbortController()
+      if (!task.controllers) {
+        task.controllers = { hashingController, requestControllers: new Set() }
+      } else {
+        task.controllers.hashingController = hashingController
+      }
       updateTask(task, { status: 'hashing', progress: 0 })
-      const hash = await computeFileSha256(task.file)
+      const hash = await computeFileSha256(task.file, {
+        signal: hashingController.signal,
+        onProgress: (loaded, total) => {
+          // 仅作为额外信息，不改变主逻辑
+          if (total > 0) {
+            const pct = Math.round((loaded / total) * 10)
+            if (pct > 0 && pct < 10 && task.status === 'hashing') {
+              updateTask(task, { progress: pct })
+            }
+          }
+        }
+      })
       updateTask(task, { hash, status: 'checking_fast' })
+      task.controllers.hashingController = null
 
       // 2. 秒传检查
       try {
@@ -114,11 +203,20 @@ export function useUploadQueue(options = {}) {
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error('上传任务失败:', e)
-      updateTask(task, {
-        status: 'failed',
-        errorMessage: e?.message || '上传失败'
-      })
-      ElMessage.error(`上传失败：${task.name}`)
+      if (task.status === 'paused' || task.status === 'canceled') {
+        // 用户主动暂停/取消，不视为失败
+      } else if (e && e.code === 'HASH_ABORTED') {
+        // 哈希阶段被中断，同样不视为失败
+        updateTask(task, {
+          status: 'paused'
+        })
+      } else {
+        updateTask(task, {
+          status: 'failed',
+          errorMessage: e?.message || '上传失败'
+        })
+        ElMessage.error(`上传失败：${task.name}`)
+      }
     } finally {
       activeUploadsCount.value -= 1
       schedule()
@@ -127,6 +225,8 @@ export function useUploadQueue(options = {}) {
 
   const uploadDirect = async (task) => {
     updateTask(task, { status: 'uploading', progress: 0 })
+    const controller = new AbortController()
+    task.controllers?.requestControllers.add(controller)
     await directUpload({
       file: task.file,
       folderId: task.folderId,
@@ -136,7 +236,10 @@ export function useUploadQueue(options = {}) {
           const pct = Math.round((evt.loaded / evt.total) * 100)
           updateTask(task, { progress: pct, uploadedBytes: evt.loaded })
         }
-      }
+      },
+      signal: controller.signal
+    }).finally(() => {
+      task.controllers?.requestControllers.delete(controller)
     })
   }
 
@@ -190,12 +293,15 @@ export function useUploadQueue(options = {}) {
 
     // 分片上传调度
     const doUploadChunk = async (chunkState) => {
+      if (task.status === 'paused' || task.status === 'canceled') return
       if (chunkState.uploaded) return
       if (chunkState.uploading) return
       if (chunkState.retryCount > MAX_CHUNK_RETRY) {
         throw new Error(`分片 #${chunkState.index} 重试次数超限`)
       }
       chunkState.uploading = true
+      const controller = new AbortController()
+      task.controllers?.requestControllers.add(controller)
       try {
         const start = (chunkState.index - 1) * CHUNK_SIZE
         const end = Math.min(task.size, chunkState.index * CHUNK_SIZE)
@@ -204,7 +310,8 @@ export function useUploadQueue(options = {}) {
           hash: task.hash,
           index: chunkState.index,
           total: totalChunks,
-          chunk: blob
+          chunk: blob,
+          signal: controller.signal
         })
         chunkState.uploaded = true
         chunkState.errorMessage = ''
@@ -229,6 +336,7 @@ export function useUploadQueue(options = {}) {
         }
       } finally {
         chunkState.uploading = false
+        task.controllers?.requestControllers.delete(controller)
       }
     }
 
@@ -236,6 +344,7 @@ export function useUploadQueue(options = {}) {
     const runChunks = async () => {
       // 简单并发控制：每轮挑选未上传且未在上传中的分片
       while (true) {
+        if (task.status === 'paused' || task.status === 'canceled') break
         const pending = (task.chunks || []).filter(c => !c.uploaded && !c.uploading)
         if (!pending.length) break
         const batch = pending.slice(0, MAX_CHUNK_CONCURRENCY)
@@ -264,7 +373,17 @@ export function useUploadQueue(options = {}) {
     if (!task) return
     if (task.status === 'uploading' || task.status === 'hashing' || task.status === 'checking_fast') {
       updateTask(task, { status: 'paused' })
-      ElMessage.info(`已标记暂停：${task.name}（当前分片会自然完成，后续不再继续）`)
+      // 中断当前哈希与请求
+      if (task.controllers?.hashingController) {
+        task.controllers.hashingController.abort()
+        task.controllers.hashingController = null
+      }
+      if (task.controllers?.requestControllers) {
+        for (const c of task.controllers.requestControllers) {
+          c.abort()
+        }
+        task.controllers.requestControllers.clear()
+      }
     }
   }
 
@@ -282,7 +401,19 @@ export function useUploadQueue(options = {}) {
     if (idx === -1) return
     const task = uploadQueue.value[idx]
     if (task.status === 'completed') return
+    updateTask(task, { status: 'canceled' })
+    if (task.controllers?.hashingController) {
+      task.controllers.hashingController.abort()
+      task.controllers.hashingController = null
+    }
+    if (task.controllers?.requestControllers) {
+      for (const c of task.controllers.requestControllers) {
+        c.abort()
+      }
+      task.controllers.requestControllers.clear()
+    }
     uploadQueue.value.splice(idx, 1)
+    persistState()
   }
 
   const retryTask = (taskId) => {
@@ -298,6 +429,35 @@ export function useUploadQueue(options = {}) {
     schedule()
   }
 
+  const attachFileToTask = (taskId, file) => {
+    const task = uploadQueue.value.find((t) => t.id === taskId)
+    if (!task) return
+    if (!file) {
+      ElMessage.error('请选择文件')
+      return
+    }
+    if (file.name !== task.name || file.size !== task.size) {
+      ElMessage.error('选择的文件与原任务不一致')
+      return
+    }
+    task.file = file
+    // 根据实际大小重新判断是否分片
+    const useChunks = file.size >= CHUNK_THRESHOLD
+    task.useChunks = useChunks
+    task.totalChunks = 0
+    task.chunks = []
+    updateTask(task, {
+      status: 'pending',
+      progress: 0,
+      uploadedBytes: 0,
+      errorMessage: ''
+    })
+    schedule()
+  }
+
+  // 初始化：尝试恢复上次会话中的未完成任务
+  restoreFromStorage()
+
   return {
     uploadQueue,
     hasRunningTasks,
@@ -306,5 +466,7 @@ export function useUploadQueue(options = {}) {
     resumeTask,
     cancelTask,
     retryTask
+    ,
+    attachFileToTask
   }
 }

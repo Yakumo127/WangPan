@@ -204,6 +204,15 @@
         <el-table-column label="操作" width="220">
           <template #default="{ row }">
             <el-button
+              v-if="!row.file && row.status === 'paused'"
+              type="primary"
+              link
+              size="small"
+              @click="onSelectFileForTask(row.id)"
+            >
+              选择文件
+            </el-button>
+            <el-button
               v-if="row.status === 'failed'"
               type="primary"
               link
@@ -266,6 +275,7 @@ const newFolderDialogVisible = ref(false)
 const newFolderName = ref('')
 const uploadDrawerVisible = ref(false)
 const fileInputRef = ref(null)
+const resumeTaskId = ref(null)
 
 const breadcrumbs = ref([
   { id: null, name: '根目录' }
@@ -305,7 +315,8 @@ const {
   pauseTask,
   resumeTask,
   cancelTask,
-  retryTask
+  retryTask,
+  attachFileToTask
 } = useUploadQueue({
   getCurrentFolderId: () => currentFolderId.value,
   onTaskCompleted: () => {
@@ -319,6 +330,10 @@ watch(hasRunningTasks, (val) => {
     uploadDrawerVisible.value = true
   }
 })
+
+const hasRestorableTasks = computed(() =>
+  uploadQueue.some(t => !t.file && t.status === 'paused')
+)
 
 const formatFileSize = (bytes) => {
   const n = Number(bytes)
@@ -600,7 +615,13 @@ const openFilePicker = () => {
 const onFileInputChange = (e) => {
   const files = e?.target?.files
   if (!files || !files.length) return
-  enqueueFiles(files, currentFolderId.value || null)
+  if (resumeTaskId.value) {
+    const taskId = resumeTaskId.value
+    resumeTaskId.value = null
+    attachFileToTask(taskId, files[0])
+  } else {
+    enqueueFiles(files, currentFolderId.value || null)
+  }
 }
 
 const onDragOver = (e) => {
@@ -613,8 +634,20 @@ const onDropFiles = (e) => {
   enqueueFiles(files, currentFolderId.value || null)
 }
 
+const onSelectFileForTask = (taskId) => {
+  resumeTaskId.value = taskId
+  if (fileInputRef.value) {
+    fileInputRef.value.value = ''
+    fileInputRef.value.click()
+  }
+}
+
 onMounted(() => {
   refreshAll()
+  if (hasRestorableTasks.value) {
+    uploadDrawerVisible.value = true
+    ElMessage.info('检测到上次会话有未完成的上传任务，请为对应任务选择文件继续上传')
+  }
 })
 </script>
 

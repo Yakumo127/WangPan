@@ -38,6 +38,10 @@ service.interceptors.response.use(
   },
   async error => {
     console.error('Response error:', error)
+    // 主动取消（如上传暂停/取消）不提示错误
+    if (error && error.code === 'ERR_CANCELED') {
+      return Promise.reject(error)
+    }
     let msg = '请求失败'
     const { response, request } = error || {}
 
