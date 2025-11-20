@@ -22,9 +22,6 @@
         <template v-else-if="viewerType === 'text'">
           <pre class="preview-text">{{ textContent }}</pre>
         </template>
-        <template v-else-if="viewerType === 'pdf'">
-          <PdfViewer v-if="pdfData" :data="pdfData" />
-        </template>
         <template v-else>
           <iframe v-if="blobUrl" :src="blobUrl" class="preview-iframe" />
         </template>
@@ -39,7 +36,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, WarningFilled } from '@element-plus/icons-vue'
 import { previewFile as previewFileApi } from '@/api/file'
-import PdfViewer from '@/components/PdfViewer.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -51,7 +47,6 @@ const loading = ref(false)
 const error = ref('')
 const blobUrl = ref('')
 const textContent = ref('')
-const pdfData = ref(null)
 const viewerType = ref('unknown')
 
 const getExt = () => {
@@ -92,11 +87,12 @@ const loadPreview = async () => {
 
     if (viewerType.value === 'text') {
       textContent.value = await blob.text()
-    } else if (viewerType.value === 'pdf') {
-      const buffer = await blob.arrayBuffer()
-      pdfData.value = new Uint8Array(buffer)
     } else {
-      const url = window.URL.createObjectURL(blob)
+      let finalBlob = blob
+      if (viewerType.value === 'pdf' && blob.type !== 'application/pdf') {
+        finalBlob = new Blob([blob], { type: 'application/pdf' })
+      }
+      const url = window.URL.createObjectURL(finalBlob)
       blobUrl.value = url
     }
   } catch (e) {
