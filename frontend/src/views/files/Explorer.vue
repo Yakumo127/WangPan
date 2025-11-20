@@ -66,6 +66,7 @@
         :fit="false"
         height="100%"
         @selection-change="onSelectionChange"
+        @header-dragend="onHeaderDragEnd"
       >
         <el-table-column type="selection" width="50" align="center">
           <template #header>
@@ -76,7 +77,7 @@
             />
           </template>
         </el-table-column>
-        <el-table-column label="名称" min-width="345">
+        <el-table-column label="名称" :min-width="columnWidths.name" column-key="col-name">
           <template #default="{ row }">
             <div class="entry-info" @dblclick="onEntryDblClick(row)">
               <div class="entry-thumb">
@@ -97,7 +98,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="size" label="大小" width="100">
+        <el-table-column prop="size" label="大小" :width="columnWidths.size" column-key="col-size">
           <template #default="{ row }">
             <span v-if="row.type === 'file'">
               {{ formatFileSize(row.size) }}
@@ -106,19 +107,19 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="type" label="类型" width="120">
+        <el-table-column prop="type" label="类型" :width="columnWidths.type" column-key="col-type">
           <template #default="{ row }">
             <span>{{ formatFileType(row) }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column prop="createTime" label="创建时间" width="160">
+        <el-table-column prop="createTime" label="创建时间" :width="columnWidths.createTime" column-key="col-create">
           <template #default="{ row }">
             {{ formatDateTime(row.createTime) }}
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="180" align="center">
+        <el-table-column label="操作" :width="columnWidths.actions" column-key="col-actions" align="center">
           <template #default="{ row }">
             <div class="op-group" v-if="row.type === 'folder'">
               <el-tooltip content="打开" placement="top">
@@ -295,6 +296,13 @@ const router = useRouter()
 
 const loading = ref(false)
 const tableRef = ref(null)
+const columnWidths = ref({
+  name: 345,
+  size: 100,
+  type: 120,
+  createTime: 160,
+  actions: 180
+})
 const currentFolderId = ref(null)
 const folderList = ref([])
 const fileList = ref([])
@@ -365,6 +373,29 @@ const hasRestorableTasks = computed(() =>
   uploadQueue.value.some(t => !t.file && t.status === 'paused')
 )
 
+const STORAGE_KEY_WIDTHS = 'efm_explorer_column_widths_v1'
+
+const loadColumnWidths = () => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_WIDTHS)
+    if (!raw) return
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === 'object') {
+      columnWidths.value = { ...columnWidths.value, ...parsed }
+    }
+  } catch (e) {
+    // ignore
+  }
+}
+
+const saveColumnWidths = () => {
+  try {
+    localStorage.setItem(STORAGE_KEY_WIDTHS, JSON.stringify(columnWidths.value))
+  } catch (e) {
+    // ignore
+  }
+}
+
 // 选择列状态
 const selectedRows = ref([])
 const allChecked = ref(false)
@@ -385,6 +416,30 @@ const onToggleAll = (val) => {
   } else {
     refTable.clearSelection()
   }
+}
+
+const onHeaderDragEnd = (newWidth, oldWidth, column, event) => {
+  if (!column || !column.columnKey) return
+  switch (column.columnKey) {
+    case 'col-name':
+      columnWidths.value.name = newWidth
+      break
+    case 'col-size':
+      columnWidths.value.size = newWidth
+      break
+    case 'col-type':
+      columnWidths.value.type = newWidth
+      break
+    case 'col-create':
+      columnWidths.value.createTime = newWidth
+      break
+    case 'col-actions':
+      columnWidths.value.actions = newWidth
+      break
+    default:
+      break
+  }
+  saveColumnWidths()
 }
 
 const formatFileSize = (bytes) => {
@@ -703,6 +758,7 @@ const onSelectFileForTask = (taskId) => {
 }
 
 onMounted(() => {
+  loadColumnWidths()
   refreshAll()
   if (hasRestorableTasks.value) {
     uploadDrawerVisible.value = true
