@@ -97,7 +97,7 @@
       <el-form :model="uploadForm" label-width="80px">
         <el-form-item label="选择文件夹">
           <el-select v-model="uploadForm.folderId" placeholder="选择目标文件夹（可选）" clearable>
-            <el-option label="根目录" :value="null" />
+            <el-option label="根目录" value="" />
             <el-option 
               v-for="folder in availableFolders" 
               :key="folder.id" 
@@ -132,7 +132,10 @@
             <span class="progress-speed" v-if="progress.speed">{{ progress.speed }}</span>
             <span class="progress-percent">{{ progress.percent }}%</span>
           </div>
-          <el-progress :percentage="progress.percent" :status="progress.status" />
+          <el-progress
+            :percentage="progress.percent"
+            :status="progress.status === 'exception' ? 'exception' : (progress.status === 'success' ? 'success' : '')"
+          />
         </div>
       </div>
       

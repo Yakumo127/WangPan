@@ -1799,6 +1799,7 @@ export default {
       manualPurgeExpired,
       saveConfig,
       resetConfig,
+      saveManualPurgeSetting,
       previewPolicy,
       previewInvalidSuffixes,
       onPreviewSuffixesChange,
