@@ -516,6 +516,141 @@ public class FileService {
         } catch (IOException ignore) {}
         return latest[0];
     }
+
+    // 计算存储占用与垃圾分片统计（olderThanHours 用于判定垃圾分片）
+    public Map<String, Object> computeStorageSummary(long olderThanHours) {
+        Path root = Paths.get(storagePath).toAbsolutePath().normalize();
+        long totalUsedBytes = 0L;
+        try (java.util.stream.Stream<Path> stream = Files.walk(root)) {
+            totalUsedBytes = stream.filter(Files::isRegularFile)
+                    .mapToLong(p -> {
+                        try { return Files.size(p); } catch (IOException e) { return 0L; }
+                    }).sum();
+        } catch (IOException ignore) {}
+
+        long garbageBytes = 0L;
+        java.util.Map<Long, UserGarbage> perUser = new java.util.HashMap<>();
+        Path chunksRoot = Paths.get(storagePath, "chunks");
+        if (olderThanHours > 0 && Files.exists(chunksRoot) && Files.isDirectory(chunksRoot)) {
+            long now = System.currentTimeMillis();
+            long thresholdMs = olderThanHours * 3600_000L;
+            try (java.util.stream.Stream<Path> users = Files.list(chunksRoot)) {
+                users.filter(p -> Files.isDirectory(p) && p.getFileName().toString().startsWith("user_"))
+                        .forEach(userDir -> {
+                            String name = userDir.getFileName().toString();
+                            Long uid = null;
+                            try {
+                                uid = Long.parseLong(name.substring("user_".length()));
+                            } catch (Exception ignore) {}
+                            if (uid == null) return;
+                            try (java.util.stream.Stream<Path> hashes = Files.list(userDir)) {
+                                hashes.filter(Files::isDirectory).forEach(hashDir -> {
+                                    long latest = getLatestModifiedMillis(hashDir);
+                                    if (latest > 0 && (now - latest) > thresholdMs) {
+                                        final long[] sizeAcc = {0L};
+                                        final long[] oldest = {Long.MAX_VALUE};
+                                        final long[] newest = {0L};
+                                        try (java.util.stream.Stream<Path> stream = Files.walk(hashDir)) {
+                                            stream.filter(Files::isRegularFile).forEach(p -> {
+                                                try {
+                                                    long s = Files.size(p);
+                                                    sizeAcc[0] += s;
+                                                    long m = Files.getLastModifiedTime(p).toMillis();
+                                                    if (m < oldest[0]) oldest[0] = m;
+                                                    if (m > newest[0]) newest[0] = m;
+                                                } catch (IOException ignore) {}
+                                            });
+                                        } catch (IOException ignore) {}
+                                        if (sizeAcc[0] > 0) {
+                                            garbageBytes += sizeAcc[0];
+                                            UserGarbage g = perUser.computeIfAbsent(uid, k -> new UserGarbage());
+                                            g.userId = uid;
+                                            g.chunkBytes += sizeAcc[0];
+                                            g.chunkCount += 1;
+                                            if (oldest[0] != Long.MAX_VALUE) {
+                                                if (g.oldestChunkTime == null || oldest[0] < g.oldestChunkTime) g.oldestChunkTime = oldest[0];
+                                                if (g.newestChunkTime == null || newest[0] > g.newestChunkTime) g.newestChunkTime = newest[0];
+                                            }
+                                        }
+                                    }
+                                });
+                            } catch (IOException ignore) {}
+                        });
+            } catch (IOException ignore) {}
+        }
+
+        java.util.List<java.util.Map<String, Object>> perUserList = new java.util.ArrayList<>();
+        for (UserGarbage g : perUser.values()) {
+            com.filemanager.entity.User u = null;
+            try { u = userRepository.findById(g.userId).orElse(null); } catch (Exception ignore) {}
+            String username = u != null ? u.getUsername() : ("user_" + g.userId);
+            String displayName = u != null ? (u.getDisplayName() != null ? u.getDisplayName() : u.getUsername()) : username;
+            java.util.Map<String, Object> m = new java.util.HashMap<>();
+            m.put("userId", g.userId);
+            m.put("username", username);
+            m.put("displayName", displayName);
+            m.put("chunkCount", g.chunkCount);
+            m.put("chunkBytes", g.chunkBytes);
+            m.put("oldestChunkTime", g.oldestChunkTime != null ? java.time.Instant.ofEpochMilli(g.oldestChunkTime) : null);
+            m.put("newestChunkTime", g.newestChunkTime != null ? java.time.Instant.ofEpochMilli(g.newestChunkTime) : null);
+            perUserList.add(m);
+        }
+        return Map.of(
+                "totalUsedBytes", totalUsedBytes,
+                "garbageChunksBytes", garbageBytes,
+                "perUserGarbage", perUserList
+        );
+    }
+
+    // 清理垃圾分片（全局或按用户），返回删除的目录数量与总字节
+    public Map<String, Object> cleanupGarbageChunks(long olderThanHours, Long userId) {
+        long deletedChunks = 0L;
+        long deletedBytes = 0L;
+        if (olderThanHours <= 0) return Map.of("deletedChunks", 0L, "deletedBytes", 0L);
+        Path chunksRoot = Paths.get(storagePath, "chunks");
+        if (!Files.exists(chunksRoot) || !Files.isDirectory(chunksRoot)) return Map.of("deletedChunks", 0L, "deletedBytes", 0L);
+        long now = System.currentTimeMillis();
+        long thresholdMs = olderThanHours * 3600_000L;
+        try (java.util.stream.Stream<Path> users = Files.list(chunksRoot)) {
+            users.filter(p -> Files.isDirectory(p) && p.getFileName().toString().startsWith("user_"))
+                    .forEach(userDir -> {
+                        String name = userDir.getFileName().toString();
+                        Long uid = null;
+                        try {
+                            uid = Long.parseLong(name.substring("user_".length()));
+                        } catch (Exception ignore) {}
+                        if (uid == null) return;
+                        if (userId != null && !userId.equals(uid)) return;
+                        try (java.util.stream.Stream<Path> hashes = Files.list(userDir)) {
+                            hashes.filter(Files::isDirectory).forEach(hashDir -> {
+                                long latest = getLatestModifiedMillis(hashDir);
+                                if (latest > 0 && (now - latest) > thresholdMs) {
+                                    final long[] sizeAcc = {0L};
+                                    try (java.util.stream.Stream<Path> stream = Files.walk(hashDir)) {
+                                        stream.filter(Files::isRegularFile).forEach(p -> {
+                                            try { sizeAcc[0] += Files.size(p); } catch (IOException ignore) {}
+                                        });
+                                    } catch (IOException ignore) {}
+                                    try {
+                                        deleteDirectoryRecursively(hashDir);
+                                        deletedChunks++;
+                                        deletedBytes += sizeAcc[0];
+                                    } catch (IOException ignore) {}
+                                }
+                            });
+                        } catch (IOException ignore) {}
+                    });
+        } catch (IOException ignore) {}
+        return Map.of("deletedChunks", deletedChunks, "deletedBytes", deletedBytes);
+    }
+
+    private static class UserGarbage {
+        Long userId;
+        long chunkBytes;
+        long chunkCount;
+        Long oldestChunkTime;
+        Long newestChunkTime;
+    }
     
     public File getFile(Long fileId, Long userId) {
         return fileRepository.findByIdAndUserIdAndDeletedFalse(fileId, userId)

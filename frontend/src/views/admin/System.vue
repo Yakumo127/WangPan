@@ -591,6 +591,98 @@
           </el-descriptions>
         </el-card>
       </el-tab-pane>
+      <!-- 系统信息 -->
+      <el-tab-pane label="系统信息" name="info">
+        <el-card class="box-card">
+          <template #header>
+            <div class="card-header">
+              <span>系统信息</span>
+            </div>
+          </template>
+          
+          <el-descriptions :column="2" border>
+            <el-descriptions-item label="系统版本">{{ systemInfo.version }}</el-descriptions-item>
+            <el-descriptions-item label="构建时间">{{ systemInfo.buildTime }}</el-descriptions-item>
+            <el-descriptions-item label="Java版本">{{ systemInfo.javaVersion }}</el-descriptions-item>
+            <el-descriptions-item label="数据库版本">{{ systemInfo.databaseVersion }}</el-descriptions-item>
+            <el-descriptions-item label="运行时间">{{ systemInfo.uptime }}</el-descriptions-item>
+            <el-descriptions-item label="内存使用">{{ systemInfo.memoryUsage }}</el-descriptions-item>
+          </el-descriptions>
+        </el-card>
+      </el-tab-pane>
+
+      <!-- 存储与空间 -->
+      <el-tab-pane label="存储与空间" name="storage">
+        <el-card class="box-card">
+          <template #header>
+            <div class="card-header">
+              <span>存储概览</span>
+            </div>
+          </template>
+          <div class="storage-summary">
+            <div class="summary-item">
+              <div class="label">总文件占用</div>
+              <div class="value">{{ formatStorage(storageSummary.totalUsedBytes || 0) }}</div>
+            </div>
+            <div class="summary-item">
+              <div class="label">垃圾分片占用</div>
+              <div class="value">{{ formatStorage(storageSummary.garbageChunksBytes || 0) }}</div>
+            </div>
+            <div class="summary-actions">
+              <el-button
+                type="danger"
+                :loading="cleaningAllChunks"
+                @click="confirmCleanupAllChunks"
+              >
+                清理所有垃圾分片
+              </el-button>
+            </div>
+          </div>
+        </el-card>
+
+        <el-card class="box-card" style="margin-top:16px;">
+          <template #header>
+            <div class="card-header">
+              <span>按用户垃圾分片统计</span>
+            </div>
+          </template>
+          <el-table :data="storageSummary.perUserGarbage || []" style="width:100%;">
+            <el-table-column prop="username" label="用户名" width="160" />
+            <el-table-column prop="displayName" label="显示名" width="180" />
+            <el-table-column label="垃圾分片数" width="120">
+              <template #default="{ row }">
+                {{ row.chunkCount || 0 }}
+              </template>
+            </el-table-column>
+            <el-table-column label="占用空间" width="160">
+              <template #default="{ row }">
+                {{ formatStorage(row.chunkBytes || 0) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="最早分片时间" width="200">
+              <template #default="{ row }">
+                {{ formatDateTime(row.oldestChunkTime) || '-' }}
+              </template>
+            </el-table-column>
+            <el-table-column label="最新分片时间" width="200">
+              <template #default="{ row }">
+                {{ formatDateTime(row.newestChunkTime) || '-' }}
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="180">
+              <template #default="{ row }">
+                <el-button
+                  size="small"
+                  type="danger"
+                  @click="confirmCleanupUserChunks(row)"
+                >
+                  清理该用户
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-card>
+      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
@@ -602,6 +694,7 @@ import { Delete, Refresh, Search, Document, User, Calendar, DataLine, RefreshLef
 import { getAllRecycleBinFiles, adminRestoreFile, adminScheduleDeleteFile } from "@/api/file"
 import { getRecycleSettings, updateRecycleSettings, getUploadPolicy, updateUploadPolicy, getPreviewConfig, updatePreviewConfig } from "@/api/system"
 import { exportDownload as apiExportDownload, exportToServer as apiExportToServer, getBackupConfig as apiGetBackupConfig, updateBackupConfig as apiUpdateBackupConfig, precheck as apiPrecheck, importBackup as apiImportBackup, createExportJob as apiCreateExportJob, createImportJob as apiCreateImportJob, listJobs as apiListJobs, cancelJob as apiCancelJob, getJob as apiGetJob } from "@/api/backup"
+import { getStorageSummary, cleanupGarbageChunks, cleanupGarbageChunksByUser } from "@/api/storage"
 
 export default {
   name: "System",
@@ -641,6 +734,8 @@ export default {
       uptime: "2天 3小时 45分钟",
       memoryUsage: "256MB / 1024MB"
     })
+    const storageSummary = ref({ totalUsedBytes: 0, garbageChunksBytes: 0, perUserGarbage: [] })
+    const cleaningAllChunks = ref(false)
     const uploadPolicy = ref({ allowAll: true, allowedSuffixes: [] })
     const invalidSuffixes = ref([])
     const previewPolicy = ref({ allowedSuffixes: [] })
@@ -736,6 +831,48 @@ export default {
       const d = Math.floor(diff / (24*3600*1000))
       const h = Math.floor((diff % (24*3600*1000)) / (3600*1000))
       return d > 0 ? `${d}天${h}小时` : `${h}小时`
+    }
+
+    const loadStorageSummary = async () => {
+      try {
+        const res = await getStorageSummary()
+        storageSummary.value = res || { totalUsedBytes: 0, garbageChunksBytes: 0, perUserGarbage: [] }
+      } catch (e) {
+        ElMessage.error(e?.message || '加载存储概览失败')
+      }
+    }
+
+    const confirmCleanupAllChunks = async () => {
+      try {
+        await ElMessageBox.confirm(
+          `将清理所有“超过 1 小时未合并且无活跃上传任务”的分片文件，本操作不可恢复。\n预计可释放约 ${formatStorage(storageSummary.value.garbageChunksBytes || 0)} 磁盘空间，是否继续？`,
+          '确认清理',
+          { type: 'warning', confirmButtonText: '继续', cancelButtonText: '取消' }
+        )
+        cleaningAllChunks.value = true
+        const res = await cleanupGarbageChunks()
+        ElMessage.success(`已清理 ${res.deletedChunks || 0} 个分片目录，释放 ${formatStorage(res.deletedBytes || 0)} 空间`)
+        await loadStorageSummary()
+      } catch (e) {
+        if (e !== 'cancel') ElMessage.error(e?.message || '清理失败')
+      } finally {
+        cleaningAllChunks.value = false
+      }
+    }
+
+    const confirmCleanupUserChunks = async (row) => {
+      try {
+        await ElMessageBox.confirm(
+          `将清理用户「${row.displayName || row.username}」所有“超过 1 小时未合并且无活跃上传任务”的分片文件，本操作不可恢复。\n预计可释放约 ${formatStorage(row.chunkBytes || 0)} 磁盘空间，是否继续？`,
+          '确认清理',
+          { type: 'warning', confirmButtonText: '继续', cancelButtonText: '取消' }
+        )
+        const res = await cleanupGarbageChunksByUser({ userId: row.userId })
+        ElMessage.success(`已为该用户清理 ${res.deletedChunks || 0} 个分片目录，释放 ${formatStorage(res.deletedBytes || 0)} 空间`)
+        await loadStorageSummary()
+      } catch (e) {
+        if (e !== 'cancel') ElMessage.error(e?.message || '清理失败')
+      }
     }
     
     // 处理选择变化
@@ -1567,6 +1704,7 @@ export default {
             if (obj && typeof obj === 'object') templatesMap.value = obj
           }
         } catch {}
+        await loadStorageSummary()
       } catch (e) {}
       nextTick(() => {
         loadRecycleBinData()
