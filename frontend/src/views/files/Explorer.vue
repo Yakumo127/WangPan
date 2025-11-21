@@ -403,6 +403,7 @@ const folderTreeData = ref([])
 const folderTreeLoading = ref(false)
 const expandedKeys = ref([])
 const folderCache = ref(new Map())
+const folderLoading = ref(new Map()) // parentId -> Promise
 
 const breadcrumbs = ref([
   { id: null, name: '根目录' }
@@ -896,6 +897,7 @@ const loadFolderTreeRoot = async () => {
   folderTreeData.value = []
   expandedKeys.value = []
   folderCache.value = new Map()
+  folderLoading.value = new Map()
   try {
     const cached = folderCache.value.get('root')
     let roots = cached
@@ -925,8 +927,9 @@ const loadFolderChildren = async (node, resolve) => {
     return
   }
   try {
-    if (folderCache.value.has(data.id)) {
-      const cached = folderCache.value.get(data.id) || []
+    const parentKey = data.id
+    if (folderCache.value.has(parentKey)) {
+      const cached = folderCache.value.get(parentKey) || []
       const mappedCached = dedupeFolders(cached).map(f => ({
         id: f.id,
         label: f.name,
@@ -936,8 +939,25 @@ const loadFolderChildren = async (node, resolve) => {
       resolve(mappedCached)
       return
     }
-    const children = await getFolderList({ parentId: data.id })
-    folderCache.value.set(data.id, children || [])
+    // 防止同一 parentId 并发重复请求
+    if (folderLoading.value.has(parentKey)) {
+      const p = folderLoading.value.get(parentKey)
+      await p
+      const cachedAfter = folderCache.value.get(parentKey) || []
+      const mappedCached = dedupeFolders(cachedAfter).map(f => ({
+        id: f.id,
+        label: f.name,
+        children: [],
+        hasChildren: true
+      }))
+      resolve(mappedCached)
+      return
+    }
+    const promise = getFolderList({ parentId: parentKey })
+    folderLoading.value.set(parentKey, promise)
+    const children = await promise
+    folderCache.value.set(parentKey, children || [])
+    folderLoading.value.delete(parentKey)
     const mapped = dedupeFolders(children || []).map(f => ({
       id: f.id,
       label: f.name,
