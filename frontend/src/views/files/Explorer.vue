@@ -402,6 +402,7 @@ const moveCopyItem = ref(null) // { type: 'file' | 'folder', data: raw }
 const folderTreeData = ref([])
 const folderTreeLoading = ref(false)
 const expandedKeys = ref([])
+const folderCache = ref(new Map())
 
 const breadcrumbs = ref([
   { id: null, name: '根目录' }
@@ -894,8 +895,14 @@ const loadFolderTreeRoot = async () => {
   folderTreeLoading.value = true
   folderTreeData.value = []
   expandedKeys.value = []
+  folderCache.value = new Map()
   try {
-    const roots = await getFolderList({ parentId: null })
+    const cached = folderCache.value.get('root')
+    let roots = cached
+    if (!roots) {
+      roots = await getFolderList({ parentId: null })
+      folderCache.value.set('root', roots || [])
+    }
     const mapped = dedupeFolders(roots || []).map(f => ({
       id: f.id,
       label: f.name,
@@ -903,7 +910,6 @@ const loadFolderTreeRoot = async () => {
       hasChildren: true
     }))
     folderTreeData.value = mapped
-    expandedKeys.value = mapped.map(f => f.id)
   } catch (e) {
     console.error('加载根目录失败', e)
     ElMessage.error('加载目录失败')
@@ -919,7 +925,19 @@ const loadFolderChildren = async (node, resolve) => {
     return
   }
   try {
+    if (folderCache.value.has(data.id)) {
+      const cached = folderCache.value.get(data.id) || []
+      const mappedCached = dedupeFolders(cached).map(f => ({
+        id: f.id,
+        label: f.name,
+        children: [],
+        hasChildren: true
+      }))
+      resolve(mappedCached)
+      return
+    }
     const children = await getFolderList({ parentId: data.id })
+    folderCache.value.set(data.id, children || [])
     const mapped = dedupeFolders(children || []).map(f => ({
       id: f.id,
       label: f.name,
