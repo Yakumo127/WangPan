@@ -208,16 +208,6 @@
       class="move-copy-dialog"
       @close="closeMoveCopyDialog"
     >
-      <template #header="{ close }">
-        <div class="move-copy-header">
-          <div class="move-copy-title">
-            {{ moveCopyType === 'copy' ? `复制 ${moveCopyItem?.data?.originalFilename || moveCopyItem?.data?.name || ''} 到` : `移动 ${moveCopyItem?.data?.originalFilename || moveCopyItem?.data?.name || ''} 到` }}
-          </div>
-          <el-button text @click="() => { closeMoveCopyDialog(); close(); }">
-            <el-icon><Close /></el-icon>
-          </el-button>
-        </div>
-      </template>
       <div class="move-copy-body">
         <el-tree
           v-loading="folderTreeLoading"
