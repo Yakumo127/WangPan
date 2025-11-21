@@ -99,7 +99,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="size" label="大小" :width="columnWidths.size" column-key="col-size">
+        <el-table-column prop="size" label="大小" :width="columnWidths.size" column-key="col-size" align="center">
           <template #default="{ row }">
             <span v-if="row.type === 'file'">
               {{ formatFileSize(row.size) }}
@@ -108,7 +108,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="type" label="类型" :width="columnWidths.type" column-key="col-type">
+        <el-table-column prop="type" label="类型" :width="columnWidths.type" column-key="col-type" align="center">
           <template #default="{ row }">
             <span>{{ formatFileType(row) }}</span>
           </template>
@@ -896,7 +896,7 @@ watch(entries, () => {
 }
 
 .entries-list :deep(.el-table__cell) {
-  padding: 6px 8px;
+  padding: 6px 6px;
   line-height: 20px;
 }
 
