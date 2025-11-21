@@ -2,15 +2,34 @@
   <div class="files-explorer-container">
     <!-- 工具栏 -->
     <div class="toolbar">
-      <div class="toolbar-left">
-        <el-button type="primary" @click="openNewFolderDialog">
-          <el-icon><Folder /></el-icon>
-          新建文件夹
-        </el-button>
+      <div class="toolbar-left" v-if="!hasSelection">
         <el-button @click="openFilePicker">
           <el-icon><Upload /></el-icon>
           上传文件
         </el-button>
+        <el-button type="primary" @click="openNewFolderDialog">
+          <el-icon><Folder /></el-icon>
+          新建文件夹
+        </el-button>
+      </div>
+      <div class="toolbar-left" v-else>
+        <el-button type="primary" @click="openMoveCopyDialogForSelection('move')">移动</el-button>
+        <el-button @click="openMoveCopyDialogForSelection('copy')">复制</el-button>
+        <el-button type="danger" plain @click="deleteSelected">删除</el-button>
+        <el-button @click="downloadSelected">下载</el-button>
+        <el-dropdown>
+          <el-button>
+            更多
+            <el-icon class="dropdown-icon"><ArrowDown /></el-icon>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item :disabled="selectedRows.length !== 1" @click="renameSelected">
+                重命名
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
 
       <div class="toolbar-right">
@@ -203,7 +222,7 @@
 
     <el-dialog
       v-model="moveCopyDialogVisible"
-      :title="moveCopyType === 'copy' ? `复制 ${moveCopyItem?.data?.originalFilename || moveCopyItem?.data?.name || ''} 到` : `移动 ${moveCopyItem?.data?.originalFilename || moveCopyItem?.data?.name || ''} 到`"
+      :title="moveCopyTitle"
       width="520px"
       class="move-copy-dialog"
       @close="closeMoveCopyDialog"
@@ -225,7 +244,7 @@
           </template>
         </el-tree>
         <el-form label-width="100px" class="move-copy-form">
-          <el-form-item label="新名称">
+          <el-form-item v-if="moveCopyMode === 'single'" label="新名称">
             <el-input v-model="moveCopyTargetName" placeholder="不填则沿用原名" />
           </el-form-item>
         </el-form>
@@ -388,7 +407,8 @@ const moveCopyTargetName = ref('')
 const moveCopyLoading = ref(false)
 const moveCopyError = ref('')
 const moveCopyType = ref('copy') // 'copy' | 'move'
-const moveCopyItem = ref(null) // { type: 'file' | 'folder', data: raw }
+const moveCopyItems = ref([]) // [{ type: 'file' | 'folder', raw }]
+const moveCopyMode = ref('single') // 'single' | 'batch'
 const folderTreeData = ref([])
 const folderTreeLoading = ref(false)
 const expandedKeys = ref([])
@@ -511,10 +531,29 @@ const saveColumnWidths = () => {
   }
 }
 
+const moveCopyTitle = computed(() => {
+  const actionText = moveCopyType.value === 'copy' ? '复制' : '移动'
+  if (!moveCopyItems.value.length) {
+    return `${actionText}到`
+  }
+  if (moveCopyMode.value === 'batch' && moveCopyItems.value.length > 1) {
+    return `${actionText} ${moveCopyItems.value.length} 项到`
+  }
+  const current = moveCopyItems.value[0]
+  const name =
+    current?.raw?.originalFilename ||
+    current?.raw?.name ||
+    current?.raw?.filename ||
+    ''
+  return `${actionText} ${name} 到`
+})
+
 // 选择列状态
 const selectedRows = ref([])
 const allChecked = ref(false)
 const isIndeterminate = ref(false)
+const hasSelection = computed(() => selectedRows.value.length > 0)
+const singleSelection = computed(() => (selectedRows.value.length === 1 ? selectedRows.value[0] : null))
 
 const onSelectionChange = (sel) => {
   selectedRows.value = sel
@@ -919,6 +958,14 @@ const onSelectFileForTask = (taskId) => {
   }
 }
 
+const buildMoveCopyItem = (item, itemType) => {
+  if (!item) return null
+  return {
+    type: itemType || item.type || '',
+    raw: item.raw || item
+  }
+}
+
 const loadFolderTreeRoot = async () => {
   folderTreeLoading.value = true
   folderTreeData.value = []
@@ -962,10 +1009,33 @@ const loadFolderChildren = async (node, resolve) => {
 }
 
 const openMoveCopyDialog = (type, item, itemType) => {
+  const normalized = buildMoveCopyItem(item, itemType)
+  if (!normalized) return
   moveCopyType.value = type
-  moveCopyItem.value = { type: itemType, data: item }
+  moveCopyMode.value = 'single'
+  moveCopyItems.value = [normalized]
   moveCopyTargetFolderId.value = currentFolderId.value
-  moveCopyTargetName.value = item.originalFilename || item.name || ''
+  moveCopyTargetName.value = normalized.raw?.originalFilename || normalized.raw?.name || normalized.raw?.filename || ''
+  moveCopyError.value = ''
+  moveCopyDialogVisible.value = true
+  loadFolderTreeRoot()
+}
+
+const openMoveCopyDialogForSelection = (type) => {
+  if (!hasSelection.value) {
+    ElMessage.warning('请先选择文件或文件夹')
+    return
+  }
+  moveCopyType.value = type
+  moveCopyMode.value = selectedRows.value.length > 1 ? 'batch' : 'single'
+  moveCopyItems.value = selectedRows.value.map(item => ({
+    type: item.type,
+    raw: item.raw
+  }))
+  moveCopyTargetFolderId.value = currentFolderId.value
+  moveCopyTargetName.value = moveCopyMode.value === 'single'
+    ? (moveCopyItems.value[0]?.raw?.originalFilename || moveCopyItems.value[0]?.raw?.name || moveCopyItems.value[0]?.raw?.filename || '')
+    : ''
   moveCopyError.value = ''
   moveCopyDialogVisible.value = true
   loadFolderTreeRoot()
@@ -973,8 +1043,82 @@ const openMoveCopyDialog = (type, item, itemType) => {
 
 const closeMoveCopyDialog = () => {
   moveCopyDialogVisible.value = false
-  moveCopyItem.value = null
+  moveCopyItems.value = []
+  moveCopyMode.value = 'single'
   moveCopyError.value = ''
+}
+
+const deleteSelected = async () => {
+  if (!selectedRows.value.length) {
+    ElMessage.warning('请先选择要删除的条目')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除选中的 ${selectedRows.value.length} 个条目吗？`,
+      '删除确认',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+    for (const item of selectedRows.value) {
+      if (!item || !item.raw) continue
+      if (item.type === 'file') {
+        await deleteFileApi(item.raw.id)
+      } else {
+        await deleteFolderApi(item.raw.id)
+      }
+    }
+    const affectedParents = new Set()
+    affectedParents.add(currentFolderId.value || null)
+    selectedRows.value.forEach(item => {
+      if (!item || !item.raw) return
+      if (item.type === 'folder') {
+        affectedParents.add(item.raw.parentId ?? null)
+      } else {
+        affectedParents.add(item.raw.folderId ?? null)
+      }
+    })
+    affectedParents.forEach(pid => invalidateFolderCache(pid ?? null))
+    ElMessage.success('删除成功')
+    clearSelection()
+    refreshAll()
+  } catch (e) {
+    if (e !== 'cancel') {
+      console.error('批量删除失败:', e)
+      ElMessage.error('删除失败')
+    }
+  }
+}
+
+const downloadSelected = async () => {
+  const files = selectedRows.value.filter(item => item.type === 'file')
+  if (!files.length) {
+    ElMessage.warning('请选择需要下载的文件')
+    return
+  }
+  if (files.length !== selectedRows.value.length) {
+    ElMessage.info('已忽略选中的文件夹，当前仅支持批量下载文件')
+  }
+  for (const item of files) {
+    await downloadFileEntry(item.raw)
+  }
+}
+
+const renameSelected = async () => {
+  if (!singleSelection.value) {
+    ElMessage.warning('请选择单个条目进行重命名')
+    return
+  }
+  const item = singleSelection.value
+  if (item.type === 'file') {
+    await renameFileEntry(item.raw)
+  } else {
+    await renameFolderEntry(item.raw)
+  }
+  clearSelection()
 }
 
 const onFolderTreeNodeClick = (node) => {
@@ -982,41 +1126,49 @@ const onFolderTreeNodeClick = (node) => {
 }
 
 const handleMoveCopySubmit = async () => {
-  if (!moveCopyItem.value) return
+  if (!moveCopyItems.value.length) return
   moveCopyLoading.value = true
   moveCopyError.value = ''
-  const isFile = moveCopyItem.value.type === 'file'
-  const raw = moveCopyItem.value.data
-  const targetName = moveCopyTargetName.value ? moveCopyTargetName.value.trim() : ''
+  const targetName = moveCopyMode.value === 'single'
+    ? (moveCopyTargetName.value ? moveCopyTargetName.value.trim() : '')
+    : ''
   try {
-    if (moveCopyType.value === 'copy') {
-      if (isFile) {
-        await copyFileApi(raw.id, moveCopyTargetFolderId.value || null, targetName)
+    for (const item of moveCopyItems.value) {
+      if (!item || !item.raw) continue
+      const isFile = item.type === 'file'
+      if (moveCopyType.value === 'copy') {
+        if (isFile) {
+          await copyFileApi(item.raw.id, moveCopyTargetFolderId.value || null, targetName)
+        } else {
+          await copyFolderApi(item.raw.id, moveCopyTargetFolderId.value || null, targetName)
+        }
       } else {
-        await copyFolderApi(raw.id, moveCopyTargetFolderId.value || null, targetName)
+        if (isFile) {
+          await moveFileApi(item.raw.id, moveCopyTargetFolderId.value || null, targetName)
+        } else {
+          await moveFolderApi(item.raw.id, moveCopyTargetFolderId.value || null, targetName)
+        }
       }
-      ElMessage.success('复制成功')
-    } else {
-      if (isFile) {
-        await moveFileApi(raw.id, moveCopyTargetFolderId.value || null, targetName)
-      } else {
-        await moveFolderApi(raw.id, moveCopyTargetFolderId.value || null, targetName)
-      }
-      ElMessage.success('移动成功')
     }
     const affectedParents = new Set()
     affectedParents.add(currentFolderId.value || null)
     affectedParents.add(moveCopyTargetFolderId.value || null)
-    if (!isFile) {
-      affectedParents.add(raw.parentId ?? null)
-    }
+    moveCopyItems.value.forEach(item => {
+      if (!item || !item.raw) return
+      if (item.type === 'folder') {
+        affectedParents.add(item.raw.parentId ?? null)
+      } else {
+        affectedParents.add(item.raw.folderId ?? null)
+      }
+    })
     affectedParents.forEach(pid => invalidateFolderCache(pid ?? null))
+    ElMessage.success(moveCopyType.value === 'copy' ? '复制成功' : '移动成功')
     closeMoveCopyDialog()
     refreshAll()
   } catch (e) {
     const msg = e?.response?.data?.message || e?.message || '操作失败'
     moveCopyError.value = msg
-    if (msg.includes('同名')) {
+    if (moveCopyMode.value === 'single' && msg.includes('同名')) {
       ElMessageBox.prompt(
         '目标目录已存在同名，是否输入新名称？',
         '重命名后重试',
@@ -1057,6 +1209,8 @@ watch(moveCopyDialogVisible, (val) => {
     moveCopyError.value = ''
     moveCopyTargetName.value = ''
     moveCopyTargetFolderId.value = currentFolderId.value
+    moveCopyItems.value = []
+    moveCopyMode.value = 'single'
   }
 })
 

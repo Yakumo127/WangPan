@@ -55,6 +55,11 @@ jwt:
   secret: enterpriseFileManagerSecretKey2024
   expiration: 86400000  # 24小时
 
+download:
+  token:
+    secret: enterpriseFileManagerDownloadSecretKey2024
+    ttl-seconds: 10
+
 # 文件存储配置
 file:
   storage:
