@@ -967,6 +967,17 @@ watch(entries, () => {
   padding: 0;
 }
 
+.image-preview-dialog :deep(.el-dialog__header) {
+  display: flex;
+  justify-content: center;
+  padding: 16px 16px 8px;
+}
+
+.image-preview-dialog :deep(.el-dialog__title) {
+  width: 100%;
+  text-align: center;
+}
+
 .image-preview-wrapper {
   display: flex;
   align-items: center;
