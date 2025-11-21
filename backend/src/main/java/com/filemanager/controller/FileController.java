@@ -1405,7 +1405,7 @@ public class FileController {
             Long targetFolderId = request.get("folderId") != null ? 
                 Long.parseLong(request.get("folderId").toString()) : null;
             
-            String newName = body.get("newName") != null ? body.get("newName").toString() : null;
+            String newName = request.get("newName") != null ? request.get("newName").toString() : null;
 
             File movedFile = fileService.moveFile(fileId, userId, targetFolderId, newName);
             
