@@ -892,9 +892,11 @@ const onSelectFileForTask = (taskId) => {
 
 const loadFolderTreeRoot = async () => {
   folderTreeLoading.value = true
+  folderTreeData.value = []
+  expandedKeys.value = []
   try {
     const roots = await getFolderList({ parentId: null })
-    const mapped = (roots || []).map(f => ({
+    const mapped = dedupeFolders(roots || []).map(f => ({
       id: f.id,
       label: f.name,
       children: [],
@@ -918,7 +920,7 @@ const loadFolderChildren = async (node, resolve) => {
   }
   try {
     const children = await getFolderList({ parentId: data.id })
-    const mapped = (children || []).map(f => ({
+    const mapped = dedupeFolders(children || []).map(f => ({
       id: f.id,
       label: f.name,
       children: [],
@@ -1022,6 +1024,17 @@ watch(moveCopyDialogVisible, (val) => {
     moveCopyTargetFolderId.value = currentFolderId.value
   }
 })
+
+const dedupeFolders = (arr) => {
+  const map = new Map()
+  ;(arr || []).forEach(f => {
+    if (!f || !f.id) return
+    if (!map.has(f.id)) {
+      map.set(f.id, f)
+    }
+  })
+  return Array.from(map.values())
+}
 </script>
 
 <style scoped>
