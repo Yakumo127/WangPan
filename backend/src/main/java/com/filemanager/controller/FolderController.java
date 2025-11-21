@@ -1,5 +1,6 @@
 package com.filemanager.controller;
 
+import com.filemanager.dto.FolderSimpleDto;
 import com.filemanager.entity.Folder;
 import com.filemanager.service.FolderService;
 import com.filemanager.service.UserService;
@@ -11,6 +12,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/folders")
@@ -32,13 +34,11 @@ public class FolderController {
                 Long.parseLong(request.get("parentId").toString()) : null;
             
             Folder folder = folderService.createFolder(name, parentId, userId);
-            
+            FolderSimpleDto dto = toDto(folder);
+
             return Map.of(
                 "message", "文件夹创建成功",
-                "folderId", folder.getId(),
-                "name", folder.getName(),
-                "parentId", folder.getParent() != null ? folder.getParent().getId() : null,
-                "createTime", folder.getCreateTime()
+                "folder", dto
             );
         } catch (Exception e) {
             return Map.of("message", e.getMessage());
@@ -46,7 +46,7 @@ public class FolderController {
     }
     
     @GetMapping("/list")
-    public ResponseEntity<List<Folder>> getUserFolders(
+    public ResponseEntity<List<FolderSimpleDto>> getUserFolders(
             @RequestParam(value = "parentId", required = false) Long parentId) {
         try {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
@@ -54,7 +54,8 @@ public class FolderController {
             Long userId = userService.getUserIdByUsername(username);
             
             List<Folder> folders = folderService.getUserFolders(userId, parentId);
-            return ResponseEntity.ok(folders);
+            List<FolderSimpleDto> dtoList = folders.stream().map(this::toDto).collect(Collectors.toList());
+            return ResponseEntity.ok(dtoList);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
         }
@@ -157,5 +158,11 @@ public class FolderController {
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
         }
+    }
+
+    private FolderSimpleDto toDto(Folder folder) {
+        if (folder == null) return null;
+        Long parentId = folder.getParent() != null ? folder.getParent().getId() : null;
+        return new FolderSimpleDto(folder.getId(), folder.getName(), parentId, folder.getCreateTime());
     }
 }
