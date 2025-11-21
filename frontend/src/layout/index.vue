@@ -72,9 +72,8 @@
           </el-button>
           
           <el-breadcrumb separator="/">
-            <el-breadcrumb-item :to="{ path: '/' }">首页</el-breadcrumb-item>
-            <el-breadcrumb-item v-for="item in breadcrumbs" :key="item.path">
-              {{ item.title }}
+            <el-breadcrumb-item v-if="currentBreadcrumbTitle">
+              {{ currentBreadcrumbTitle }}
             </el-breadcrumb-item>
           </el-breadcrumb>
         </div>
@@ -165,13 +164,11 @@ const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0
 // 当前激活的菜单项
 const activeMenu = computed(() => route.path)
 
-// 面包屑导航
-const breadcrumbs = computed(() => {
+// 当前页面标题（面包屑）
+const currentBreadcrumbTitle = computed(() => {
   const matched = route.matched.filter(item => item.meta && item.meta.title)
-  return matched.map(item => ({
-    path: item.path,
-    title: item.meta.title
-  }))
+  const last = matched[matched.length - 1]
+  return last?.meta?.title || ''
 })
 
 // 存储空间信息
