@@ -105,13 +105,38 @@ public class FolderController {
             String username = auth.getName();
             Long userId = userService.getUserIdByUsername(username);
             
-            Long targetParentId = request.get("targetParentId") != null ? 
+            Long targetParentId = request.get("targetParentId") != null ?
                 Long.parseLong(request.get("targetParentId").toString()) : null;
+            String newName = request.get("newName") != null ? request.get("newName").toString() : null;
             
-            Folder folder = folderService.moveFolder(folderId, userId, targetParentId);
+            Folder folder = folderService.moveFolder(folderId, userId, targetParentId, newName);
             
             return Map.of(
                 "message", "文件夹移动成功",
+                "folderId", folder.getId(),
+                "parentId", folder.getParent() != null ? folder.getParent().getId() : null
+            );
+        } catch (Exception e) {
+            return Map.of("message", e.getMessage());
+        }
+    }
+
+    @PostMapping("/{folderId}/copy")
+    public Map<String, Object> copyFolder(
+            @PathVariable Long folderId,
+            @RequestBody FolderCopyRequest request) {
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            String username = auth.getName();
+            Long userId = userService.getUserIdByUsername(username);
+
+            Long targetParentId = request.getTargetParentId();
+            String newName = request.getNewName();
+
+            Folder folder = folderService.copyFolder(folderId, userId, targetParentId, newName);
+
+            return Map.of(
+                "message", "文件夹复制成功",
                 "folderId", folder.getId(),
                 "parentId", folder.getParent() != null ? folder.getParent().getId() : null
             );

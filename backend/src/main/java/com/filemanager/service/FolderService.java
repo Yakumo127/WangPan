@@ -1,8 +1,11 @@
 package com.filemanager.service;
 
 import com.filemanager.entity.Folder;
+import com.filemanager.entity.File;
 import com.filemanager.entity.User;
 import com.filemanager.repository.FolderRepository;
+import com.filemanager.repository.FileRepository;
+import org.springframework.context.annotation.Lazy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,6 +19,8 @@ import java.util.List;
 public class FolderService {
     
     private final FolderRepository folderRepository;
+    private final FileRepository fileRepository;
+    private final @Lazy FileService fileService;
     
     public Folder createFolder(String name, Long parentId, Long userId) {
         // 检查文件夹名称是否已存在
@@ -80,21 +85,32 @@ public class FolderService {
         return folderRepository.save(folder);
     }
     
-    public Folder moveFolder(Long folderId, Long userId, Long targetParentId) {
+    public Folder moveFolder(Long folderId, Long userId, Long targetParentId, String newName) {
         Folder folder = getFolder(folderId, userId);
-        
+
         // 检查目标父文件夹
         Folder targetParent = null;
         if (targetParentId != null) {
-            targetParent = folderRepository.findById(targetParentId)
-                    .orElseThrow(() -> new RuntimeException("目标文件夹不存在"));
-            
+            targetParent = folderRepository.findByIdAndUserIdAndDeletedFalse(targetParentId, userId);
+            if (targetParent == null) {
+                throw new RuntimeException("目标文件夹不存在");
+            }
+
             // 检查不能移动到自己的子文件夹
             if (isDescendant(folderId, targetParentId)) {
                 throw new RuntimeException("不能移动到自己的子文件夹");
             }
         }
-        
+
+        String targetName = (newName == null || newName.isBlank()) ? folder.getName() : newName;
+        Long currentParentId = folder.getParent() != null ? folder.getParent().getId() : null;
+        boolean samePlace = (targetParentId == null ? currentParentId == null : targetParentId.equals(currentParentId))
+                && targetName.equals(folder.getName());
+        if (!samePlace && folderRepository.existsByNameAndUserIdAndParentIdAndDeletedFalseExceptId(targetName, userId, targetParentId, folderId)) {
+            throw new RuntimeException("目标目录已存在同名文件夹");
+        }
+
+        folder.setName(targetName);
         folder.setParent(targetParent);
         folder.setUpdateTime(LocalDateTime.now());
         return folderRepository.save(folder);
@@ -107,7 +123,63 @@ public class FolderService {
     }
     
     private boolean isDescendant(Long folderId, Long ancestorId) {
-        // 简化版本，只检查是否是同一个文件夹
-        return folderId.equals(ancestorId);
+        if (folderId.equals(ancestorId)) return true;
+        Folder ancestor = folderRepository.findFolderById(ancestorId);
+        while (ancestor != null && ancestor.getParent() != null) {
+            if (ancestor.getParent().getId().equals(folderId)) {
+                return true;
+            }
+            ancestor = ancestor.getParent();
+        }
+        return false;
+    }
+
+    public Folder copyFolder(Long folderId, Long userId, Long targetParentId, String newName) {
+        Folder source = getFolder(folderId, userId);
+
+        if (targetParentId != null && isDescendant(folderId, targetParentId)) {
+            throw new RuntimeException("不能复制到自己的子文件夹");
+        }
+
+        Folder targetParent = null;
+        if (targetParentId != null) {
+            targetParent = folderRepository.findByIdAndUserIdAndDeletedFalse(targetParentId, userId);
+            if (targetParent == null) {
+                throw new RuntimeException("目标文件夹不存在");
+            }
+        }
+
+        String targetName = (newName == null || newName.isBlank()) ? source.getName() : newName;
+        if (folderRepository.existsByNameAndUserIdAndParentIdAndDeletedFalse(targetName, userId, targetParentId)) {
+            throw new RuntimeException("目标目录已存在同名文件夹");
+        }
+
+        Folder copied = new Folder();
+        copied.setName(targetName);
+        copied.setParent(targetParent);
+        copied.setUser(source.getUser());
+        copied.setDeleted(false);
+        copied.setIsRoot(false);
+        copied.setCreateTime(LocalDateTime.now());
+        copied.setUpdateTime(LocalDateTime.now());
+        Folder saved = folderRepository.save(copied);
+
+        // 复制子文件
+        List<File> files = fileRepository.findByUserIdAndFolderIdAndDeletedFalse(source.getUserId(), source.getId());
+        if (files != null) {
+            for (File f : files) {
+                fileService.copyFile(f.getId(), userId, saved.getId(), f.getOriginalFilename());
+            }
+        }
+
+        // 递归复制子文件夹
+        List<Folder> children = folderRepository.findByParentIdAndDeletedFalseOrderByCreateTimeDesc(source.getId());
+        if (children != null) {
+            for (Folder child : children) {
+                copyFolder(child.getId(), userId, saved.getId(), child.getName());
+            }
+        }
+
+        return saved;
     }
 }

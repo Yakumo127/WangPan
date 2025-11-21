@@ -119,19 +119,19 @@ export function renameFile(id, name) {
   })
 }
 
-export function moveFile(id, folderId) {
+export function moveFile(id, folderId, newName) {
   return request({
     url: `/files/${id}/move`,
     method: "post",
-    data: { folderId }
+    data: { folderId, newName }
   })
 }
 
-export function copyFile(id, folderId) {
+export function copyFile(id, folderId, newName) {
   return request({
     url: `/files/${id}/copy`,
     method: "post",
-    data: { folderId }
+    data: { folderId, newName }
   })
 }
 

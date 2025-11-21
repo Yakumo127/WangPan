@@ -138,6 +138,17 @@
                   <el-icon><Delete /></el-icon>
                 </el-button>
               </el-tooltip>
+              <el-dropdown trigger="click" placement="bottom">
+                <el-button size="small" class="op-btn op-btn-plain" plain>
+                  <el-icon class="dropdown-icon"><ArrowDown /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item @click="openMoveCopyDialog('move', row.raw, 'folder')">移动</el-dropdown-item>
+                    <el-dropdown-item @click="openMoveCopyDialog('copy', row.raw, 'folder')">复制</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </div>
             <div class="op-group" v-else>
               <el-tooltip content="下载" placement="top">
@@ -162,6 +173,8 @@
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item @click="previewFileEntry(row.raw)">预览</el-dropdown-item>
+                    <el-dropdown-item @click="openMoveCopyDialog('move', row.raw, 'file')">移动</el-dropdown-item>
+                    <el-dropdown-item @click="openMoveCopyDialog('copy', row.raw, 'file')">复制</el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
@@ -186,6 +199,52 @@
           :style="{ transform: `scale(${imageScale})` }"
         />
       </div>
+    </el-dialog>
+
+    <el-dialog
+      v-model="moveCopyDialogVisible"
+      :title="moveCopyType === 'copy' ? `复制 ${moveCopyItem?.data?.originalFilename || moveCopyItem?.data?.name || ''} 到` : `移动 ${moveCopyItem?.data?.originalFilename || moveCopyItem?.data?.name || ''} 到`"
+      width="520px"
+      class="move-copy-dialog"
+      @close="closeMoveCopyDialog"
+    >
+      <template #header="{ close }">
+        <div class="move-copy-header">
+          <div class="move-copy-title">
+            {{ moveCopyType === 'copy' ? `复制 ${moveCopyItem?.data?.originalFilename || moveCopyItem?.data?.name || ''} 到` : `移动 ${moveCopyItem?.data?.originalFilename || moveCopyItem?.data?.name || ''} 到` }}
+          </div>
+          <el-button text @click="() => { closeMoveCopyDialog(); close(); }">
+            <el-icon><Close /></el-icon>
+          </el-button>
+        </div>
+      </template>
+      <div class="move-copy-body">
+        <el-tree
+          v-loading="folderTreeLoading"
+          :data="folderTreeData"
+          node-key="id"
+          highlight-current
+          :expand-on-click-node="false"
+          lazy
+          :load="loadFolderChildren"
+          :default-expanded-keys="expandedKeys"
+          @node-click="onFolderTreeNodeClick"
+        >
+          <template #default="{ data }">
+            <span :class="['folder-node', { active: moveCopyTargetFolderId === data.id }]">{{ data.label }}</span>
+          </template>
+        </el-tree>
+        <el-form label-width="100px" class="move-copy-form">
+          <el-form-item label="新名称">
+            <el-input v-model="moveCopyTargetName" placeholder="不填则沿用原名" />
+          </el-form-item>
+        </el-form>
+        <div v-if="moveCopyError" class="move-copy-error">{{ moveCopyError }}</div>
+      </div>
+      <template #footer>
+        <el-button @click="closeMoveCopyDialog">取消</el-button>
+        <el-button type="primary" :loading="moveCopyLoading" @click="handleMoveCopySubmit">提交</el-button>
+      </template>
     </el-dialog>
 
     <!-- 新建文件夹对话框 -->
@@ -304,10 +363,10 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Folder, FolderOpened, Upload, Search, Document, Download, Delete, Edit, View, ArrowDown } from '@element-plus/icons-vue'
+import { Folder, FolderOpened, Upload, Search, Document, Download, Delete, Edit, View, ArrowDown, Close } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
-import { getFileList, deleteFile as deleteFileApi, renameFile as renameFileApi, getDownloadUrl, previewFile as previewFileApi } from '@/api/file'
-import { getFolderList, createFolder, deleteFolder as deleteFolderApi, renameFolder as renameFolderApi, getFolderPath } from '@/api/folder'
+import { getFileList, deleteFile as deleteFileApi, renameFile as renameFileApi, getDownloadUrl, previewFile as previewFileApi, moveFile as moveFileApi, copyFile as copyFileApi } from '@/api/file'
+import { getFolderList, createFolder, deleteFolder as deleteFolderApi, renameFolder as renameFolderApi, getFolderPath, moveFolder as moveFolderApi, copyFolder as copyFolderApi } from '@/api/folder'
 import { useUploadQueue } from '@/composables/useUploadQueue'
 
 const router = useRouter()
@@ -333,6 +392,16 @@ const resumeTaskId = ref(null)
 const imagePreviewVisible = ref(false)
 const imagePreviewUrl = ref('')
 const imageScale = ref(1)
+const moveCopyDialogVisible = ref(false)
+const moveCopyTargetFolderId = ref(null)
+const moveCopyTargetName = ref('')
+const moveCopyLoading = ref(false)
+const moveCopyError = ref('')
+const moveCopyType = ref('copy') // 'copy' | 'move'
+const moveCopyItem = ref(null) // { type: 'file' | 'folder', data: raw }
+const folderTreeData = ref([])
+const folderTreeLoading = ref(false)
+const expandedKeys = ref([])
 
 const breadcrumbs = ref([
   { id: null, name: '根目录' }
@@ -821,6 +890,118 @@ const onSelectFileForTask = (taskId) => {
   }
 }
 
+const loadFolderTreeRoot = async () => {
+  folderTreeLoading.value = true
+  try {
+    const roots = await getFolderList({ parentId: null })
+    const mapped = (roots || []).map(f => ({
+      id: f.id,
+      label: f.name,
+      children: [],
+      hasChildren: true
+    }))
+    folderTreeData.value = mapped
+    expandedKeys.value = mapped.map(f => f.id)
+  } catch (e) {
+    console.error('加载根目录失败', e)
+    ElMessage.error('加载目录失败')
+  } finally {
+    folderTreeLoading.value = false
+  }
+}
+
+const loadFolderChildren = async (node, resolve) => {
+  const data = node.data
+  if (!data) {
+    resolve([])
+    return
+  }
+  try {
+    const children = await getFolderList({ parentId: data.id })
+    const mapped = (children || []).map(f => ({
+      id: f.id,
+      label: f.name,
+      children: [],
+      hasChildren: true
+    }))
+    resolve(mapped)
+  } catch (e) {
+    console.error('加载子目录失败', e)
+    resolve([])
+  }
+}
+
+const openMoveCopyDialog = (type, item, itemType) => {
+  moveCopyType.value = type
+  moveCopyItem.value = { type: itemType, data: item }
+  moveCopyTargetFolderId.value = currentFolderId.value
+  moveCopyTargetName.value = item.originalFilename || item.name || ''
+  moveCopyError.value = ''
+  moveCopyDialogVisible.value = true
+  loadFolderTreeRoot()
+}
+
+const closeMoveCopyDialog = () => {
+  moveCopyDialogVisible.value = false
+  moveCopyItem.value = null
+  moveCopyError.value = ''
+}
+
+const onFolderTreeNodeClick = (node) => {
+  moveCopyTargetFolderId.value = node.id
+}
+
+const handleMoveCopySubmit = async () => {
+  if (!moveCopyItem.value) return
+  moveCopyLoading.value = true
+  moveCopyError.value = ''
+  const isFile = moveCopyItem.value.type === 'file'
+  const raw = moveCopyItem.value.data
+  const targetName = moveCopyTargetName.value ? moveCopyTargetName.value.trim() : ''
+  try {
+    if (moveCopyType.value === 'copy') {
+      if (isFile) {
+        await copyFileApi(raw.id, moveCopyTargetFolderId.value || null, targetName)
+      } else {
+        await copyFolderApi(raw.id, moveCopyTargetFolderId.value || null, targetName)
+      }
+      ElMessage.success('复制成功')
+    } else {
+      if (isFile) {
+        await moveFileApi(raw.id, moveCopyTargetFolderId.value || null, targetName)
+      } else {
+        await moveFolderApi(raw.id, moveCopyTargetFolderId.value || null, targetName)
+      }
+      ElMessage.success('移动成功')
+    }
+    closeMoveCopyDialog()
+    refreshAll()
+  } catch (e) {
+    const msg = e?.response?.data?.message || e?.message || '操作失败'
+    moveCopyError.value = msg
+    if (msg.includes('同名')) {
+      ElMessageBox.prompt(
+        '目标目录已存在同名，是否输入新名称？',
+        '重命名后重试',
+        {
+          confirmButtonText: '确定',
+          cancelButtonText: '取消',
+          inputValue: moveCopyTargetName.value || '',
+          inputPattern: /.+/,
+          inputErrorMessage: '名称不能为空'
+        }
+      ).then(({ value }) => {
+        moveCopyTargetName.value = value
+        handleMoveCopySubmit()
+      }).catch(() => {})
+    } else {
+      ElMessage.error(msg)
+    }
+  } finally {
+    moveCopyLoading.value = false
+  }
+}
+
 onMounted(() => {
   loadColumnWidths()
   refreshAll()
@@ -832,6 +1013,14 @@ onMounted(() => {
 
 watch(entries, () => {
   clearSelection()
+})
+
+watch(moveCopyDialogVisible, (val) => {
+  if (!val) {
+    moveCopyError.value = ''
+    moveCopyTargetName.value = ''
+    moveCopyTargetFolderId.value = currentFolderId.value
+  }
 })
 </script>
 
@@ -976,6 +1165,46 @@ watch(entries, () => {
 .image-preview-dialog :deep(.el-dialog__title) {
   width: 100%;
   text-align: center;
+}
+
+.move-copy-dialog :deep(.el-dialog__header) {
+  padding: 12px 16px 8px;
+}
+
+.move-copy-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.move-copy-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.move-copy-body {
+  max-height: 480px;
+  overflow: auto;
+}
+
+.move-copy-form {
+  margin-top: 12px;
+}
+
+.move-copy-error {
+  color: #f56c6c;
+  margin-top: 8px;
+}
+
+.folder-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.folder-node.active {
+  color: #409eff;
+  font-weight: 600;
 }
 
 .image-preview-wrapper {

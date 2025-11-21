@@ -21,6 +21,9 @@ public interface FileRepository extends JpaRepository<File, Long> {
     @Query("SELECT f FROM File f WHERE f.user.id = :userId AND f.folder.id = :folderId AND f.deleted = false ORDER BY f.createTime DESC")
     List<File> findByUserIdAndFolderIdAndDeletedFalseOrderByCreateTimeDesc(@Param("userId") Long userId, @Param("folderId") Long folderId);
 
+    @Query("SELECT f FROM File f WHERE f.user.id = :userId AND f.folder.id = :folderId AND f.deleted = false")
+    List<File> findByUserIdAndFolderIdAndDeletedFalse(@Param("userId") Long userId, @Param("folderId") Long folderId);
+
     @Query("SELECT f FROM File f WHERE f.user.id = :userId AND f.deleted = false AND f.originalFilename LIKE %:keyword% ORDER BY f.createTime DESC")
     List<File> findByUserIdAndOriginalFilenameContainingAndDeletedFalseOrderByCreateTimeDesc(@Param("userId") Long userId, @Param("keyword") String keyword);
 
@@ -82,4 +85,15 @@ public interface FileRepository extends JpaRepository<File, Long> {
 
     // 迁移分页：按ID游标推进
     org.springframework.data.domain.Page<File> findByDeletedFalseAndIdGreaterThanOrderByIdAsc(Long lastId, org.springframework.data.domain.Pageable pageable);
+
+    @Query("SELECT COUNT(f) > 0 FROM File f WHERE f.user.id = :userId AND f.deleted = false AND f.folder is null AND f.originalFilename = :name AND (:excludeId < 0 OR f.id <> :excludeId)")
+    boolean existsByUserIdAndFolderIsNullAndDeletedFalseAndOriginalFilename(@Param("userId") Long userId,
+                                                                            @Param("name") String name,
+                                                                            @Param("excludeId") Long excludeId);
+
+    @Query("SELECT COUNT(f) > 0 FROM File f WHERE f.user.id = :userId AND f.deleted = false AND f.folder.id = :folderId AND f.originalFilename = :name AND (:excludeId < 0 OR f.id <> :excludeId)")
+    boolean existsByUserIdAndFolderIdAndDeletedFalseAndOriginalFilename(@Param("userId") Long userId,
+                                                                         @Param("folderId") Long folderId,
+                                                                         @Param("name") String name,
+                                                                         @Param("excludeId") Long excludeId);
 }

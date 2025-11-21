@@ -73,6 +73,14 @@ public class FileService {
         return quotaMode != null && quotaMode.trim().equalsIgnoreCase("all-history");
     }
 
+    private boolean existsFileWithName(Long userId, Folder targetFolder, String name, Long excludeFileId) {
+        if (targetFolder == null) {
+            return fileRepository.existsByUserIdAndFolderIsNullAndDeletedFalseAndOriginalFilename(userId, name, excludeFileId == null ? -1L : excludeFileId);
+        } else {
+            return fileRepository.existsByUserIdAndFolderIdAndDeletedFalseAndOriginalFilename(userId, targetFolder.getId(), name, excludeFileId == null ? -1L : excludeFileId);
+        }
+    }
+
     // 根据配额模式调整：current=按差值；all-history=按新版本完整大小
     public void adjustQuotaForNewVersion(Long userId, long oldActiveSize, long newSize) {
         long delta = isAllHistoryQuota() ? newSize : (newSize - oldActiveSize);
@@ -721,7 +729,7 @@ public class FileService {
             resourceName = "#result?.originalFilename",
             description = "'移动文件'"
     )
-    public File moveFile(Long fileId, Long userId, Long targetFolderId) {
+    public File moveFile(Long fileId, Long userId, Long targetFolderId, String newName) {
         File file = getFile(fileId, userId);
 
         Folder targetFolder = null;
@@ -732,6 +740,15 @@ public class FileService {
             }
         }
 
+        // 重名校验
+        if (newName == null || newName.isBlank()) {
+            newName = file.getOriginalFilename();
+        }
+        if (existsFileWithName(userId, targetFolder, newName, file.getId())) {
+            throw new RuntimeException("目标目录已存在同名文件");
+        }
+
+        file.setOriginalFilename(newName);
         file.setFolder(targetFolder);
         file.setUpdateTime(LocalDateTime.now());
         return fileRepository.save(file);
@@ -745,7 +762,7 @@ public class FileService {
             resourceName = "#result?.originalFilename",
             description = "'复制文件'"
     )
-    public File copyFile(Long fileId, Long userId, Long targetFolderId) {
+    public File copyFile(Long fileId, Long userId, Long targetFolderId, String newName) {
         File originalFile = getFile(fileId, userId);
         // 配额校验：复制占用同等大小
         User userEntity = userRepository.findById(userId)
@@ -784,7 +801,11 @@ public class FileService {
         File newFile = new File();
         // 一致性：filename 统一使用随机名（与物理 Blob 路径无耦合）
         newFile.setFilename(UUID.randomUUID().toString() + getFileExtension(originalFile.getOriginalFilename()));
-        newFile.setOriginalFilename(originalFile.getOriginalFilename());
+        String targetName = (newName == null || newName.isBlank()) ? originalFile.getOriginalFilename() : newName;
+        if (existsFileWithName(userId, targetFolder, targetName, null)) {
+            throw new RuntimeException("目标目录已存在同名文件");
+        }
+        newFile.setOriginalFilename(targetName);
         newFile.setContentType(originalFile.getContentType());
         newFile.setSize(originalFile.getSize());
         newFile.setFilePath(blob.getPath());

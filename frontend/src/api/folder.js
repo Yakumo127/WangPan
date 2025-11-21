@@ -39,6 +39,14 @@ export function moveFolder(id, targetParentId) {
   })
 }
 
+export function copyFolder(id, targetParentId, newName) {
+  return request({
+    url: `/folders/${id}/copy`,
+    method: 'post',
+    data: { targetParentId, newName }
+  })
+}
+
 export function getFolderPath(id) {
   return request({
     url: `/folders/${id}/path`,

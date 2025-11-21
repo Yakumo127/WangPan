@@ -1405,7 +1405,9 @@ public class FileController {
             Long targetFolderId = request.get("folderId") != null ? 
                 Long.parseLong(request.get("folderId").toString()) : null;
             
-            File movedFile = fileService.moveFile(fileId, userId, targetFolderId);
+            String newName = body.get("newName") != null ? body.get("newName").toString() : null;
+
+            File movedFile = fileService.moveFile(fileId, userId, targetFolderId, newName);
             
             return ResponseEntity.ok(Map.of(
                 "message", "文件移动成功",
@@ -1425,12 +1427,13 @@ public class FileController {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             String username = auth.getName();
             Long userId = userService.getUserIdByUsername(username);
-            
-            Long targetFolderId = request.get("folderId") != null ? 
+
+            Long targetFolderId = request.get("folderId") != null ?
                 Long.parseLong(request.get("folderId").toString()) : null;
-            
-            File copiedFile = fileService.copyFile(fileId, userId, targetFolderId);
-            
+            String newName = request.get("newName") != null ? request.get("newName").toString() : null;
+
+            File copiedFile = fileService.copyFile(fileId, userId, targetFolderId, newName);
+
             return ResponseEntity.ok(Map.of(
                 "message", "文件复制成功",
                 "fileId", copiedFile.getId(),

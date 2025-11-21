@@ -37,4 +37,12 @@ public interface FolderRepository extends JpaRepository<Folder, Long> {
     // 简化的路径查询方法
     @Query("SELECT f FROM Folder f WHERE f.id = :folderId AND f.deleted = false")
     Folder findPathToRoot(@Param("folderId") Long folderId);
+
+    @Query("SELECT COUNT(f) > 0 FROM Folder f WHERE f.name = :name AND f.user.id = :userId AND f.deleted = false " +
+           "AND ((:parentId IS NULL AND f.parent IS NULL) OR (f.parent.id = :parentId)) " +
+           "AND (:excludeId IS NULL OR f.id <> :excludeId)")
+    boolean existsByNameAndUserIdAndParentIdAndDeletedFalseExceptId(@Param("name") String name,
+                                                                    @Param("userId") Long userId,
+                                                                    @Param("parentId") Long parentId,
+                                                                    @Param("excludeId") Long excludeId);
 }
