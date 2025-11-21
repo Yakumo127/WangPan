@@ -174,7 +174,7 @@
     <el-dialog
       v-model="imagePreviewVisible"
       title="图片预览"
-      width="70%"
+      width="60%"
       class="image-preview-dialog"
       @closed="onImagePreviewClosed"
     >
@@ -971,15 +971,15 @@ watch(entries, () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 80vh;
+  height: 70vh;
   overflow: auto;
 }
 
 .image-preview-img {
   max-width: 100%;
-  max-height: 80vh;
-  min-width: 80vh;
-  min-height: 70vh;
+  max-height: 70vh;
+  min-width: 60vh;
+  min-height: 55vh;
   display: block;
   margin: 0 auto;
   object-fit: contain;
