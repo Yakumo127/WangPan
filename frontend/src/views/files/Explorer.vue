@@ -405,6 +405,39 @@ const expandedKeys = ref([])
 const folderCache = ref(new Map())
 const folderLoading = ref(new Map()) // parentId -> Promise
 
+const getFolderCacheKey = (parentId) => (parentId === null || parentId === undefined ? 'root' : parentId)
+
+const fetchFolderList = async (parentId, options = {}) => {
+  const { force = false, cacheResult = true } = options
+  const key = getFolderCacheKey(parentId)
+  if (!force && folderCache.value.has(key)) {
+    return folderCache.value.get(key)
+  }
+  if (folderLoading.value.has(key)) {
+    return folderLoading.value.get(key)
+  }
+  const promise = getFolderList({ parentId: parentId ?? null })
+    .then((res) => {
+      const list = Array.isArray(res) ? res : []
+      if (cacheResult) {
+        folderCache.value.set(key, list)
+      }
+      folderLoading.value.delete(key)
+      return list
+    })
+    .catch((err) => {
+      folderLoading.value.delete(key)
+      throw err
+    })
+  folderLoading.value.set(key, promise)
+  return promise
+}
+
+const invalidateFolderCache = (parentId) => {
+  const key = getFolderCacheKey(parentId)
+  folderCache.value.delete(key)
+}
+
 const breadcrumbs = ref([
   { id: null, name: '根目录' }
 ])
@@ -609,12 +642,13 @@ const onImagePreviewClosed = () => {
 
 const loadEntries = async () => {
   loading.value = true
+  const parentId = currentFolderId.value || null
   try {
     const [folders, files] = await Promise.all([
-      getFolderList({ parentId: currentFolderId.value || null }),
-      getFileList({ folderId: currentFolderId.value || null })
+      fetchFolderList(parentId, { force: true }),
+      getFileList({ folderId: parentId })
     ])
-    folderList.value = folders || []
+    folderList.value = dedupeFolders(folders || [])
     fileList.value = files || []
   } catch (e) {
     console.error('加载文件/文件夹列表失败:', e)
@@ -707,6 +741,7 @@ const confirmCreateFolder = async () => {
     })
     ElMessage.success('文件夹创建成功')
     newFolderDialogVisible.value = false
+    invalidateFolderCache(currentFolderId.value || null)
     await loadEntries()
   } catch (e) {
     console.error('创建文件夹失败:', e)
@@ -729,6 +764,7 @@ const renameFolderEntry = async (folder) => {
     )
     await renameFolderApi(folder.id, value)
     ElMessage.success('文件夹重命名成功')
+    invalidateFolderCache(currentFolderId.value || null)
     await loadEntries()
   } catch (e) {
     if (e !== 'cancel') {
@@ -751,6 +787,7 @@ const deleteFolderEntry = async (folder) => {
     )
     await deleteFolderApi(folder.id)
     ElMessage.success('文件夹删除成功')
+    invalidateFolderCache(currentFolderId.value || null)
     await loadEntries()
   } catch (e) {
     if (e !== 'cancel') {
@@ -896,15 +933,8 @@ const loadFolderTreeRoot = async () => {
   folderTreeLoading.value = true
   folderTreeData.value = []
   expandedKeys.value = []
-  folderCache.value = new Map()
-  folderLoading.value = new Map()
   try {
-    const cached = folderCache.value.get('root')
-    let roots = cached
-    if (!roots) {
-      roots = await getFolderList({ parentId: null })
-      folderCache.value.set('root', roots || [])
-    }
+    const roots = await fetchFolderList(null)
     const mapped = dedupeFolders(roots || []).map(f => ({
       id: f.id,
       label: f.name,
@@ -921,43 +951,13 @@ const loadFolderTreeRoot = async () => {
 }
 
 const loadFolderChildren = async (node, resolve) => {
-  const data = node.data
-  if (!data) {
+  const data = node?.data
+  if (!data || !data.id) {
     resolve([])
     return
   }
   try {
-    const parentKey = data.id
-    if (folderCache.value.has(parentKey)) {
-      const cached = folderCache.value.get(parentKey) || []
-      const mappedCached = dedupeFolders(cached).map(f => ({
-        id: f.id,
-        label: f.name,
-        children: [],
-        hasChildren: true
-      }))
-      resolve(mappedCached)
-      return
-    }
-    // 防止同一 parentId 并发重复请求
-    if (folderLoading.value.has(parentKey)) {
-      const p = folderLoading.value.get(parentKey)
-      await p
-      const cachedAfter = folderCache.value.get(parentKey) || []
-      const mappedCached = dedupeFolders(cachedAfter).map(f => ({
-        id: f.id,
-        label: f.name,
-        children: [],
-        hasChildren: true
-      }))
-      resolve(mappedCached)
-      return
-    }
-    const promise = getFolderList({ parentId: parentKey })
-    folderLoading.value.set(parentKey, promise)
-    const children = await promise
-    folderCache.value.set(parentKey, children || [])
-    folderLoading.value.delete(parentKey)
+    const children = await fetchFolderList(data.id)
     const mapped = dedupeFolders(children || []).map(f => ({
       id: f.id,
       label: f.name,
@@ -1014,6 +1014,13 @@ const handleMoveCopySubmit = async () => {
       }
       ElMessage.success('移动成功')
     }
+    const affectedParents = new Set()
+    affectedParents.add(currentFolderId.value || null)
+    affectedParents.add(moveCopyTargetFolderId.value || null)
+    if (!isFile) {
+      affectedParents.add(raw.parentId ?? null)
+    }
+    affectedParents.forEach(pid => invalidateFolderCache(pid ?? null))
     closeMoveCopyDialog()
     refreshAll()
   } catch (e) {
