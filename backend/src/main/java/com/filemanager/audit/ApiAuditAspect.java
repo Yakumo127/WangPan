@@ -14,10 +14,12 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.beans.factory.annotation.Value;
+import lombok.extern.slf4j.Slf4j;
 
 @Aspect
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class ApiAuditAspect {
 
     private final AuditLogService auditLogService;
@@ -56,16 +58,17 @@ public class ApiAuditAspect {
             long cost = start == null ? 0L : (System.currentTimeMillis() - start);
             boolean isAnonymous = (auth == null || auth.getName() == null || "anonymousUser".equalsIgnoreCase(auth.getName()));
             if (isAnonymous) {
-                try { auditLogService.logSystemFailure(action, "API", null, path, desc, ex.getMessage(), cost); } catch (Exception ignore) {}
+                try { auditLogService.logSystemFailure(action, "API", null, path, desc, ex.getMessage(), cost); } catch (Exception e) { log.warn("匿名 API 审计失败 path={} err={}", path, e.getMessage(), e); }
             } else {
                 Long userId = userRepository.findByUsername(auth.getName()).map(u -> u.getId()).orElse(null);
                 if (userId != null) {
-                    try { auditLogService.logFailure(userId, action, "API", null, path, desc, ex.getMessage(), cost); } catch (Exception ignore) {}
+                    try { auditLogService.logFailure(userId, action, "API", null, path, desc, ex.getMessage(), cost); } catch (Exception e) { log.warn("用户 API 审计失败 path={} user={} err={}", path, auth.getName(), e.getMessage(), e); }
                 } else {
-                    try { auditLogService.logSystemFailure(action, "API", null, path, desc, ex.getMessage(), cost); } catch (Exception ignore) {}
+                    try { auditLogService.logSystemFailure(action, "API", null, path, desc, ex.getMessage(), cost); } catch (Exception e) { log.warn("系统级 API 审计失败 path={} err={}", path, e.getMessage(), e); }
                 }
             }
-        } catch (Exception ignore) {
+        } catch (Exception e) {
+            log.warn("API 异常审计失败 path={} err={}", (requestInfoProvider.getCurrentRequest() == null ? "UNKNOWN" : requestInfoProvider.getCurrentRequest().getRequestURI()), e.getMessage(), e);
         }
     }
 
@@ -92,6 +95,8 @@ public class ApiAuditAspect {
             Long start = (Long) req.getAttribute(ATTR_START);
             long cost = start == null ? 0L : (System.currentTimeMillis() - start);
             auditLogService.logSuccess(userId, action, "API", null, path, desc, cost);
-        } catch (Exception ignore) {}
+        } catch (Exception e) {
+            log.warn("API 成功审计兜底失败 path={} err={}", (requestInfoProvider.getCurrentRequest() == null ? "UNKNOWN" : requestInfoProvider.getCurrentRequest().getRequestURI()), e.getMessage(), e);
+        }
     }
 }

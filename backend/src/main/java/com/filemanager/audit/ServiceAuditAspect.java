@@ -14,12 +14,14 @@ import org.springframework.core.DefaultParameterNameDiscoverer;
 import org.springframework.context.ApplicationContext;
 import org.springframework.expression.BeanResolver;
 import org.springframework.context.expression.BeanFactoryResolver;
+import lombok.extern.slf4j.Slf4j;
 
 import java.lang.reflect.Method;
 
 @Aspect
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class ServiceAuditAspect {
 
     private final AuditLogService auditLogService;
@@ -77,7 +79,22 @@ public class ServiceAuditAspect {
                     String err = thrown.getMessage();
                     auditLogService.logFailure(userId, actionType, resourceType, resourceId, resourceName, description, err, cost);
                 }
-            } catch (Exception ignore) {}
+            } catch (Exception e) {
+                log.warn("审计切面记录失败 actionType={}, method={}, err={}", audited.actionType(), method.getName(), e.getMessage(), e);
+                try {
+                    auditLogService.logSystemFailure(
+                            "AUDIT_SP_EL",
+                            "AUDIT",
+                            null,
+                            method.getName(),
+                            "审计切面失败：" + audited.actionType(),
+                            e.getMessage(),
+                            System.currentTimeMillis() - start
+                    );
+                } catch (Exception ex) {
+                    log.warn("审计失败兜底写入再次失败 actionType={}, method={}, err={}", audited.actionType(), method.getName(), ex.getMessage(), ex);
+                }
+            }
         }
     }
 

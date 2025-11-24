@@ -59,6 +59,7 @@ public class UserLog {
     // 操作类型常量
     public static final String ACTION_LOGIN = "LOGIN";
     public static final String ACTION_LOGOUT = "LOGOUT";
+    public static final String ACTION_REGISTER = "REGISTER";
     public static final String ACTION_UPLOAD = "UPLOAD";
     public static final String ACTION_UPLOAD_CHUNK = "UPLOAD_CHUNK";
     public static final String ACTION_UPLOAD_MERGE = "UPLOAD_MERGE";

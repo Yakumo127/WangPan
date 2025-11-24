@@ -57,6 +57,14 @@ public class UserService implements UserDetailsService {
                 .build();
     }
     
+    @com.filemanager.audit.AuditedOperation(
+            actionType = com.filemanager.entity.UserLog.ACTION_REGISTER,
+            resourceType = com.filemanager.entity.UserLog.RESOURCE_USER,
+            userId = "#result?.id",
+            resourceId = "#result?.id",
+            resourceName = "#result?.username",
+            description = "'注册用户'"
+    )
     public User register(UserRegisterDTO registerDTO) {
         // 验证密码
         if (!registerDTO.getPassword().equals(registerDTO.getConfirmPassword())) {
@@ -163,10 +171,26 @@ public class UserService implements UserDetailsService {
                 .orElseThrow(() -> new RuntimeException("用户不存在"));
     }
     
+    @com.filemanager.audit.AuditedOperation(
+            actionType = com.filemanager.entity.UserLog.ACTION_UPDATE_PROFILE,
+            resourceType = com.filemanager.entity.UserLog.RESOURCE_USER,
+            userId = "#user?.id",
+            resourceId = "#user?.id",
+            resourceName = "#user?.username",
+            description = "'更新个人资料'"
+    )
     public void updateUserProfile(User user) {
         userRepository.save(user);
     }
     
+    @com.filemanager.audit.AuditedOperation(
+            actionType = com.filemanager.entity.UserLog.ACTION_CHANGE_PASSWORD,
+            resourceType = com.filemanager.entity.UserLog.RESOURCE_USER,
+            userId = "@auditSpel.userIdByUsername(#username)",
+            resourceId = "@auditSpel.userIdByUsername(#username)",
+            resourceName = "#username",
+            description = "'修改密码'"
+    )
     public void changePassword(String username, String oldPassword, String newPassword) {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new RuntimeException("用户不存在"));

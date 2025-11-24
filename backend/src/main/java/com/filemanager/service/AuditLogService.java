@@ -9,15 +9,21 @@ import lombok.RequiredArgsConstructor;
 import com.filemanager.metrics.AuditMetricsService;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import lombok.extern.slf4j.Slf4j;
+
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AuditLogService {
 
     private final UserLogRepository userLogRepository;
     private final UserRepository userRepository;
     private final RequestInfoProvider requestInfoProvider;
     private final AuditMetricsService metrics;
+    private final PasswordEncoder passwordEncoder;
 
     @Async
     public void logSuccess(Long userId,
@@ -82,7 +88,10 @@ public class AuditLogService {
                       Long execMs) {
         try {
             User user = resolveUserForAudit(userId);
-            if (user == null) return;
+            if (user == null) {
+                log.warn("审计日志未写入：未找到可用的审计用户，action={}, resource={}, desc={}", actionType, resourceName, description);
+                return;
+            }
             UserLog log = new UserLog();
             log.setUser(user);
             log.setActionType(actionType);
@@ -97,18 +106,47 @@ public class AuditLogService {
             log.setUserAgent(requestInfoProvider.getUserAgent());
             userLogRepository.save(log);
             if (UserLog.STATUS_SUCCESS.equals(status)) metrics.incSuccess(); else metrics.incFailure();
-        } catch (Exception ignore) {
-            // 审计日志失败不影响主流程
+        } catch (Exception e) {
+            log.warn("审计日志写入失败 action={}, resourceType={}, resourceName={}, status={}, err={}",
+                    actionType, resourceType, resourceName, status, e.getMessage(), e);
+            // 审计日志失败不影响主流程，但需要可观测
         }
     }
 
     private User resolveUserForAudit(Long userId) {
         if (userId != null) {
-            return userRepository.findById(userId).orElse(null);
+            return userRepository.findById(userId).orElseGet(() -> {
+                log.warn("审计日志指定的用户不存在，userId={}", userId);
+                return ensureSystemUser();
+            });
         }
         // 系统级日志：尝试使用 system 用户；若不存在，降级使用 admin
+        return ensureSystemUser();
+    }
+
+    private User ensureSystemUser() {
         User sys = userRepository.findByUsername("system").orElse(null);
         if (sys != null) return sys;
-        return userRepository.findByUsername("admin").orElse(null);
+        User admin = userRepository.findByUsername("admin").orElse(null);
+        if (admin != null) return admin;
+        try {
+            User created = new User();
+            created.setUsername("system");
+            created.setPassword(passwordEncoder.encode(UUID.randomUUID().toString()));
+            created.setEmail("system@local");
+            created.setDisplayName("system");
+            created.setEnabled(true);
+            created.setLocked(false);
+            created.setLoginAttempts(0);
+            created.setRole(User.Role.ADMIN);
+            created.setQuotaUsed(0L);
+            created.setQuotaLimit(created.getQuotaLimit() == null ? 1073741824L : created.getQuotaLimit());
+            created = userRepository.save(created);
+            log.info("已自动创建 system 审计账号用于系统级审计日志");
+            return created;
+        } catch (Exception e) {
+            log.warn("自动创建 system 审计账号失败，err={}", e.getMessage(), e);
+            return null;
+        }
     }
 }
