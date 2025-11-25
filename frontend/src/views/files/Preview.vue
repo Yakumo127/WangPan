@@ -105,7 +105,7 @@ const loadPreview = async () => {
 }
 
 const goBack = () => {
-  router.push({ name: 'Files' })
+  router.push({ name: 'FilesExplorer' })
 }
 
 onMounted(() => {
