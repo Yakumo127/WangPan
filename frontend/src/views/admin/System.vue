@@ -644,6 +644,7 @@
                     plain 
                     round
                     :loading="storageLoading"
+                    @mousedown.prevent
                     @click="loadStorageSummary"
                   >
                     刷新
@@ -667,6 +668,7 @@
                     plain 
                     round
                     :loading="cleaningAllChunks"
+                    @mousedown.prevent
                     @click="confirmCleanupAllChunks"
                   >
                     清理所有
