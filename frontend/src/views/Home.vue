@@ -346,6 +346,8 @@ onMounted(() => {
 <style scoped>
 .home-container {
   padding: 20px;
+  background-color: #f8fafc; /* Brighter background */
+  min-height: 100%;
 }
 
 .stat-card {

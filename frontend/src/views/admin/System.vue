@@ -625,75 +625,118 @@
 
       <!-- 存储与空间 -->
       <el-tab-pane label="存储与空间" name="storage">
-        <el-card class="box-card">
-          <template #header>
-            <div class="card-header">
-              <span>存储概览</span>
-            </div>
-          </template>
-          <div class="storage-summary">
-            <div class="summary-item">
-              <div class="label">总文件占用</div>
-              <div class="value">{{ formatStorage(storageSummary.totalUsedBytes || 0) }}</div>
-            </div>
-            <div class="summary-item">
-              <div class="label">垃圾分片占用</div>
-              <div class="value">{{ formatStorage(storageSummary.garbageChunksBytes || 0) }}</div>
-            </div>
-            <div class="summary-actions">
-              <el-button
-                type="danger"
-                :loading="cleaningAllChunks"
-                @click="confirmCleanupAllChunks"
-              >
-                清理所有垃圾分片
-              </el-button>
-            </div>
-          </div>
-        </el-card>
+        <div class="storage-dashboard">
+          <!-- 概览卡片 -->
+          <el-row :gutter="24">
+            <el-col :span="12">
+              <div class="storage-card total-card">
+                <div class="card-icon">
+                  <el-icon><DataLine /></el-icon>
+                </div>
+                <div class="card-content">
+                  <div class="card-label">总文件占用</div>
+                  <div class="card-value">{{ formatStorage(storageSummary.totalUsedBytes || 0) }}</div>
+                  <div class="card-desc">系统内所有文件的总大小</div>
+                </div>
+              </div>
+            </el-col>
+            <el-col :span="12">
+              <div class="storage-card garbage-card">
+                <div class="card-icon">
+                  <el-icon><Delete /></el-icon>
+                </div>
+                <div class="card-content">
+                  <div class="card-label">垃圾分片占用</div>
+                  <div class="card-value">{{ formatStorage(storageSummary.garbageChunksBytes || 0) }}</div>
+                  <div class="card-desc">未完成上传产生的临时分片</div>
+                </div>
+                <div class="card-action">
+                  <el-button 
+                    type="danger" 
+                    plain 
+                    round
+                    :loading="cleaningAllChunks"
+                    @click="confirmCleanupAllChunks"
+                  >
+                    清理所有
+                  </el-button>
+                </div>
+              </div>
+            </el-col>
+          </el-row>
 
-        <el-card class="box-card" style="margin-top:16px;">
-          <template #header>
-            <div class="card-header">
-              <span>按用户垃圾分片统计</span>
+          <!-- 存储健康度 -->
+          <el-card class="box-card health-section" shadow="hover">
+            <template #header>
+              <div class="card-header">
+                <span>存储健康度</span>
+                <el-tag v-if="(storageSummary.garbageChunksBytes || 0) > 1024 * 1024 * 100" type="warning">建议清理</el-tag>
+                <el-tag v-else type="success">健康</el-tag>
+              </div>
+            </template>
+            <div class="health-body">
+              <div class="health-bar-wrapper">
+                <div class="health-info">
+                  <span>垃圾分片占比</span>
+                  <span class="percentage-text">{{ ((storageSummary.garbageChunksBytes || 0) / (Math.max(storageSummary.totalUsedBytes, 1)) * 100).toFixed(2) }}%</span>
+                </div>
+                <el-progress 
+                  :text-inside="true" 
+                  :stroke-width="20" 
+                  :percentage="Math.min(((storageSummary.garbageChunksBytes || 0) / (Math.max(storageSummary.totalUsedBytes, 1)) * 100), 100)"
+                  status="exception"
+                />
+              </div>
             </div>
-          </template>
-          <el-table :data="storageSummary.perUserGarbage || []" style="width:100%;">
-            <el-table-column prop="username" label="用户名" width="160" />
-            <el-table-column prop="displayName" label="显示名" width="180" />
-            <el-table-column label="垃圾分片数" width="120">
-              <template #default="{ row }">
-                {{ row.chunkCount || 0 }}
-              </template>
-            </el-table-column>
-            <el-table-column label="占用空间" width="160">
-              <template #default="{ row }">
-                {{ formatStorage(row.chunkBytes || 0) }}
-              </template>
-            </el-table-column>
-            <el-table-column label="最早分片时间" width="200">
-              <template #default="{ row }">
-                {{ formatDateTime(row.oldestChunkTime) || '-' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="最新分片时间" width="200">
-              <template #default="{ row }">
-                {{ formatDateTime(row.newestChunkTime) || '-' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="180">
-              <template #default="{ row }">
-                <el-button
-                  size="small"
-                  type="danger"
-                  @click="confirmCleanupUserChunks(row)"
-                >
-                  清理该用户
-                </el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-card>
+          </el-card>
+
+          <!-- 用户分片列表 -->
+          <el-card class="box-card user-chunks-section" shadow="hover">
+            <template #header>
+              <div class="card-header">
+                <span>用户残留分片统计</span>
+              </div>
+            </template>
+            <el-table :data="storageSummary.perUserGarbage || []" style="width:100%;" class="styled-table">
+              <el-table-column prop="username" label="用户名" width="160">
+                <template #default="{ row }">
+                   <div class="user-cell">
+                     <el-avatar :size="24" :src="row.avatar">{{ (row.username||'').charAt(0).toUpperCase() }}</el-avatar>
+                     <span>{{ row.username }}</span>
+                   </div>
+                </template>
+              </el-table-column>
+              <el-table-column prop="displayName" label="显示名" width="180" />
+              <el-table-column label="垃圾分片数" width="140" align="center">
+                <template #default="{ row }">
+                  <el-tag effect="plain" type="info" round>{{ row.chunkCount || 0 }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="占用空间" width="160" sortable :sort-method="(a,b) => (a.chunkBytes||0) - (b.chunkBytes||0)">
+                <template #default="{ row }">
+                  <span class="bytes-text">{{ formatStorage(row.chunkBytes || 0) }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="最新分片时间" min-width="180">
+                <template #default="{ row }">
+                  <span class="time-text">{{ formatDateTime(row.newestChunkTime) || '-' }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="140" align="center">
+                <template #default="{ row }">
+                  <el-button
+                    size="small"
+                    type="danger"
+                    plain
+                    @click="confirmCleanupUserChunks(row)"
+                  >
+                    清理
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </el-card>
+        </div>
       </el-tab-pane>
     </el-tabs>
   </div>
@@ -2000,5 +2043,135 @@ export default {
   padding: 15px;
   background: #f5f5f5;
   border-radius: 8px;
+}
+
+/* Storage Dashboard Styles */
+.storage-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.storage-card {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  transition: transform 0.2s;
+  height: 100%;
+  box-sizing: border-box;
+  position: relative;
+  overflow: hidden;
+}
+
+.storage-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
+}
+
+.total-card {
+  background: linear-gradient(135deg, #eff6ff 0%, #ffffff 100%);
+  border: 1px solid #dbeafe;
+}
+
+.garbage-card {
+  background: linear-gradient(135deg, #fef2f2 0%, #ffffff 100%);
+  border: 1px solid #fee2e2;
+}
+
+.card-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  background: white;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.total-card .card-icon { color: #3b82f6; }
+.garbage-card .card-icon { color: #ef4444; }
+
+.card-content {
+  flex: 1;
+}
+
+.card-label {
+  font-size: 14px;
+  color: #64748b;
+  margin-bottom: 4px;
+}
+
+.card-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 4px;
+  font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+.card-desc {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.card-action {
+  align-self: center;
+}
+
+.health-section .el-card__header {
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.health-body {
+  padding: 10px 0;
+}
+
+.health-info {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: #475569;
+}
+
+.percentage-text {
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.styled-table {
+  --el-table-header-bg-color: #f8fafc;
+  --el-table-row-hover-bg-color: #f1f5f9;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.styled-table th.el-table__cell {
+  background-color: #f8fafc !important;
+  font-weight: 600;
+  color: #475569;
+  height: 48px;
+}
+
+.user-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bytes-text {
+  font-family: monospace;
+  color: #334155;
+}
+
+.time-text {
+  color: #64748b;
+  font-size: 13px;
 }
 </style>

@@ -103,12 +103,16 @@
           <el-table-column label="文件信息" min-width="300" sortable>
             <template #default="{ row }">
               <div class="item-info">
-                <el-icon class="item-icon"><Document /></el-icon>
+                <div class="entry-thumb">
+                  <el-icon :size="24" :color="getFileIconConfig(row.originalFilename, false).color">
+                    <component :is="getFileIconConfig(row.originalFilename, false).name" />
+                  </el-icon>
+                </div>
                 <div class="item-details">
                   <div class="item-name">{{ row.originalFilename }}</div>
                   <div class="item-meta">
-                    <el-tag size="small" type="primary">文件</el-tag>
                     <span class="item-size">{{ formatFileSize(row.size) }}</span>
+                    <span class="separator">|</span>
                     <span class="item-user">用户: {{ row.ownerUsername || row.username || '未知' }}</span>
                   </div>
                 </div>
@@ -162,9 +166,10 @@
 <script>
 import { ref, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Delete, Refresh, Search, Document, User, Calendar, DataLine, RefreshLeft } from '@element-plus/icons-vue'
+import { Delete, Refresh, Search, Document, User, Calendar, DataLine, RefreshLeft, Picture, VideoPlay, Headset, Box, Reading, Link, Coin, Cpu, Monitor, Setting, Warning } from '@element-plus/icons-vue'
 import { getAllRecycleBinFiles, adminRestoreFile, adminScheduleDeleteFile } from '@/api/file'
 import { getRecycleSettings } from '@/api/system'
+import { getFileIconConfig } from '@/utils/file-icons'
 
 export default {
   name: 'SystemRecycle',
@@ -345,29 +350,238 @@ export default {
       formatFileSize, formatStorage, formatDateTime, formatRemaining,
       handleSelectionChange, refreshRecycleBin, searchRecycleBin,
       restoreItem, deletePermanently, batchRestore, batchDelete,
-      manualPurgeExpired
+      manualPurgeExpired, getFileIconConfig
     }
   }
 }
 </script>
 
-<style scoped>
-.system-recycle-container { padding: 20px; }
-.card-header { display: flex; justify-content: space-between; align-items: center; }
-.stats-row { margin-bottom: 20px; }
-.stat-card { text-align: center; padding: 20px; }
-.stat-icon { font-size: 32px; color: #f56c6c; margin-bottom: 10px; }
-.stat-number { font-size: 24px; font-weight: bold; color: #333; margin-bottom: 5px; }
-.stat-label { font-size: 14px; color: #666; }
-.filter-row { margin-bottom: 20px; }
-.recycle-list { margin-bottom: 20px; }
-.item-info { display: flex; align-items: center; gap: 10px; }
-.item-icon { font-size: 18px; color: #409EFF; }
-.item-details { flex: 1; }
-.item-name { font-weight: 500; margin-bottom: 4px; }
-.item-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.item-size { font-size: 12px; color: #666; }
-.item-user { font-size: 12px; color: #999; }
-.batch-actions { display: flex; gap: 10px; margin-top: 20px; padding: 15px; background: #f5f5f5; border-radius: 8px; }
+<style scoped lang="scss">
+@import '@/assets/styles/variables.scss';
+
+.system-recycle-container {
+  padding: $spacing-base;
+  height: 100%;
+  box-sizing: border-box;
+  background-color: $background-color-base;
+}
+
+.box-card {
+  border-radius: $border-radius-base;
+  border: 1px solid $border-color-light;
+  box-shadow: $box-shadow-sm;
+  
+  :deep(.el-card__header) {
+    padding: $spacing-base 20px;
+    border-bottom: 1px solid $border-color-light;
+  }
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  font-size: 16px;
+}
+
+/* Stats */
+.stats-row {
+  margin-bottom: $spacing-base;
+}
+
+.stat-card {
+  border: none;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  transition: all 0.3s ease;
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  overflow: hidden;
+  position: relative;
+  
+  &:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.025);
+  }
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 80px;
+    height: 80px;
+    background: linear-gradient(135deg, transparent 50%, rgba(var(--el-color-primary-rgb), 0.05) 50%);
+    border-radius: 0 0 0 80px;
+    pointer-events: none;
+  }
+  
+  :deep(.el-card__body) {
+    padding: 24px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+}
+
+.stat-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  background-color: rgba($primary-color, 0.08);
+  color: $primary-color;
+  transition: transform 0.3s;
+  
+  .el-icon {
+    font-size: 28px;
+  }
+}
+
+.stat-card:hover .stat-icon {
+  transform: scale(1.1) rotate(5deg);
+  background-color: rgba($primary-color, 0.15);
+}
+
+.stat-info {
+  flex: 1;
+  text-align: left;
+  z-index: 1;
+}
+
+.stat-number {
+  font-size: 28px;
+  font-weight: 700;
+  color: $text-primary;
+  line-height: 1.2;
+  letter-spacing: -0.5px;
+}
+
+.stat-label {
+  font-size: 14px;
+  color: $text-secondary;
+  margin-top: 4px;
+  font-weight: 500;
+}
+
+/* Filter */
+.filter-row {
+  margin-bottom: $spacing-base;
+  background: #fff;
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid $border-color-light;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  
+  .el-col {
+    margin-bottom: 8px;
+    
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+}
+
+.align-center {
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+
+/* List */
+.recycle-list {
+  margin-bottom: $spacing-base;
+  border-radius: 12px;
+  border: 1px solid $border-color-light;
+  overflow: hidden;
+  box-shadow: $box-shadow-sm;
+}
+
+.recycle-list :deep(.el-table) {
+  --el-table-header-bg-color: #f1f5f9;
+  --el-table-header-text-color: #475569;
+  --el-table-row-hover-bg-color: #f8fafc;
+  
+  th.el-table__cell {
+    font-weight: 600;
+    height: 52px;
+    background-color: #f1f5f9 !important;
+    color: #334155;
+  }
+  
+  .el-table__row {
+    height: 64px;
+    transition: background-color 0.2s;
+  }
+
+  .el-table__row:hover > td {
+    background-color: #f0f9ff !important;
+  }
+}
+
+.item-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.entry-thumb {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.item-details {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.item-name {
+  font-weight: 500;
+  color: $text-primary;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.item-meta {
+  font-size: 12px;
+  color: $text-secondary;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  
+  .separator {
+    color: $border-color-light;
+  }
+  
+  .item-user {
+    background: #f1f5f9;
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+}
+
+.batch-actions {
+  display: flex;
+  gap: 12px;
+  padding: 12px 20px;
+  background: #fff;
+  border: 1px solid $border-color-light;
+  border-radius: $border-radius-base;
+  align-items: center;
+  box-shadow: $box-shadow-sm;
+}
 </style>
 

@@ -102,18 +102,19 @@
             <div class="entry-info" @dblclick="onEntryDblClick(row)">
               <div class="entry-thumb">
                 <img v-if="getThumbnail(row)" :src="getThumbnail(row)" alt="thumb" />
-                <el-icon v-else class="entry-icon">
-                  <FolderOpened v-if="row.type === 'folder'" />
-                  <Document v-else />
+                <el-icon v-else class="entry-icon" :size="24" :color="getFileIconConfig(row.name, row.type === 'folder').color">
+                  <component :is="getFileIconConfig(row.name, row.type === 'folder').name" />
                 </el-icon>
               </div>
-              <span
-                class="entry-name"
-                :class="{ clickable: row.type === 'folder' || row.type === 'file' }"
-                @click.stop="onEntryClick(row)"
-              >
-                {{ row.name }}
-              </span>
+              <div class="entry-name-wrapper">
+                <span
+                  class="entry-name"
+                  :class="{ clickable: row.type === 'folder' || row.type === 'file' }"
+                  @click.stop="onEntryClick(row)"
+                >
+                  {{ row.name }}
+                </span>
+              </div>
             </div>
           </template>
         </el-table-column>
@@ -153,7 +154,7 @@
                 </el-button>
               </el-tooltip>
               <el-tooltip content="删除" placement="top">
-                <el-button size="small" class="op-btn" type="danger" @click="deleteFolderEntry(row.raw)">
+                <el-button size="small" class="op-btn" @click="deleteFolderEntry(row.raw)">
                   <el-icon><Delete /></el-icon>
                 </el-button>
               </el-tooltip>
@@ -181,7 +182,7 @@
                 </el-button>
               </el-tooltip>
               <el-tooltip content="删除" placement="top">
-                <el-button size="small" class="op-btn" type="danger" @click="deleteFileEntry(row.raw)">
+                <el-button size="small" class="op-btn" @click="deleteFileEntry(row.raw)">
                   <el-icon><Delete /></el-icon>
                 </el-button>
               </el-tooltip>
@@ -372,11 +373,12 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Folder, FolderOpened, Upload, Search, Document, Download, Delete, Edit, View, ArrowDown, Close } from '@element-plus/icons-vue'
+import { Folder, FolderOpened, Upload, Search, Document, Download, Delete, Edit, View, ArrowDown, Close, Cpu, Monitor, Setting, Warning } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import { getFileList, deleteFile as deleteFileApi, renameFile as renameFileApi, getDownloadUrl, previewFile as previewFileApi, moveFile as moveFileApi, copyFile as copyFileApi } from '@/api/file'
 import { getFolderList, createFolder, deleteFolder as deleteFolderApi, renameFolder as renameFolderApi, getFolderPath, moveFolder as moveFolderApi, copyFolder as copyFolderApi } from '@/api/folder'
 import { useUploadQueue } from '@/composables/useUploadQueue'
+import { getFileIconConfig } from '@/utils/file-icons'
 
 const router = useRouter()
 
@@ -1226,187 +1228,207 @@ const dedupeFolders = (arr) => {
 }
 </script>
 
-<style scoped>
+<style scoped lang="scss">
+@import '@/assets/styles/variables.scss';
+
 .files-explorer-container {
-  padding: 20px;
+  padding: $spacing-base;
   height: 100%;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
+  background-color: $background-color-base;
 }
 
 .toolbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
-  padding: 12px 16px;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  margin-bottom: $spacing-base;
+  padding: 12px 24px;
+  background: white;
+  border-radius: $border-radius-base;
+  box-shadow: $box-shadow-sm;
+  border: 1px solid $border-color-light;
 }
 
 .toolbar-left {
   display: flex;
-  gap: 10px;
+  gap: $spacing-sm;
 }
 
 .toolbar-right {
   display: flex;
-  gap: 10px;
+  gap: $spacing-sm;
   align-items: center;
 }
 
 .breadcrumb {
-  margin-bottom: 16px;
-  padding: 10px 16px;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  margin-bottom: $spacing-base;
+  padding: 12px 24px;
+  background: white;
+  border-radius: $border-radius-base;
+  box-shadow: $box-shadow-sm;
+  border: 1px solid $border-color-light;
+  display: flex;
+  align-items: center;
 }
 
 .breadcrumb-item-clickable {
   cursor: pointer;
+  transition: color $transition-fast;
+  
+  &:hover {
+    color: $primary-color;
+  }
 }
 
 .entries-list {
   flex: 1;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  background: white;
+  border-radius: $border-radius-base;
+  box-shadow: $box-shadow-sm;
+  border: 1px solid $border-color-light;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
-.entries-list :deep(.el-table__row) {
-  height: 40px;
-}
+/* Table Styles Refined */
+.entries-list :deep(.el-table) {
+  --el-table-header-bg-color: #f1f5f9;
+  --el-table-header-text-color: #475569;
+  --el-table-row-hover-bg-color: #f8fafc;
+  --el-table-border-color: #e2e8f0;
+  border-radius: 0 0 8px 8px;
 
-.entries-list :deep(.el-table__body-wrapper) {
-  overflow-y: auto;
-  max-height: 100%;
-}
+  th.el-table__cell {
+    font-weight: 600;
+    height: 50px;
+    background-color: #f1f5f9 !important;
+    color: #334155;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  
+  .el-table__row {
+    height: 60px;
+    transition: all 0.2s ease;
+  }
+  
+  .el-table__cell {
+    padding: 8px 0;
+  }
 
-.entries-list :deep(.el-table__cell) {
-  padding: 6px 6px;
-  line-height: 20px;
+  .el-table__row:hover > td {
+    background-color: #f0f9ff !important; /* Light Blue-50 */
+  }
 }
 
 .entry-info {
   display: flex;
   align-items: center;
-  gap: 14px;
-}
-
-.entry-icon {
-  font-size: 20px;
-  color: #909399;
-}
-
-.entry-name {
-  font-weight: 500;
-  color: #303133;
-  cursor: pointer;
-  padding-left: 2px;
+  gap: 16px;
+  padding-left: 8px;
 }
 
 .entry-thumb {
-  width: 36px;
-  height: 36px;
-  border-radius: 6px;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
   overflow: hidden;
-  background: #f5f7fa;
+  background: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  transition: transform 0.2s;
+  
+  &:hover {
+    transform: scale(1.05);
+  }
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  
+  .entry-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
 }
 
-.entry-thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+.entry-name-wrapper {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+  flex: 1;
 }
 
-:deep(.el-table__row:hover) .entry-name {
-  text-decoration: underline;
+.entry-name {
+  font-weight: 500;
+  color: #1e293b;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  transition: color 0.2s;
+  
+  &.clickable:hover {
+    color: $primary-color;
+    text-decoration: none;
+  }
 }
 
 .op-group {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
 }
 
 .op-btn {
-  padding: 6px 8px;
+  padding: 0;
+  height: 36px;
+  width: 36px;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 6px;
+  transition: all 0.2s;
+  font-size: 18px; /* Larger icon size */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  
+  &:hover {
+    background: #e0f2fe; /* Sky-100 */
+    color: $primary-color;
+    border-color: #bae6fd;
+  }
+  
+  &.el-button--danger:hover {
+    color: #ef4444;
+    background: #fee2e2;
+    border-color: #fecaca;
+  }
+  
+  &.op-btn-plain:hover {
+    background: #f1f5f9;
+    color: #475569;
+    border-color: #cbd5e1;
+  }
 }
 
-.op-btn :deep(.el-icon) {
-  font-size: 18px;
-}
-
-.op-btn-plain {
-  padding: 4px 6px;
-  border-radius: 4px;
-}
-
-.op-btn-plain :deep(.el-icon) {
-  font-size: 14px;
-}
-
+/* Dialogs */
 .image-preview-dialog :deep(.el-dialog__body) {
   padding: 0;
-}
-
-.image-preview-dialog :deep(.el-dialog__header) {
-  display: flex;
-  justify-content: center;
-  padding: 16px 16px 8px;
-}
-
-.image-preview-dialog :deep(.el-dialog__title) {
-  width: 100%;
-  text-align: center;
-}
-
-.move-copy-dialog :deep(.el-dialog__header) {
-  padding: 12px 16px 8px;
-}
-
-.move-copy-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.move-copy-title {
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.move-copy-body {
-  max-height: 480px;
-  overflow: auto;
-}
-
-.move-copy-form {
-  margin-top: 12px;
-}
-
-.move-copy-error {
-  color: #f56c6c;
-  margin-top: 8px;
-}
-
-.folder-node {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.folder-node.active {
-  color: #409eff;
-  font-weight: 600;
+  background: #000;
 }
 
 .image-preview-wrapper {
@@ -1414,16 +1436,21 @@ const dedupeFolders = (arr) => {
   align-items: center;
   justify-content: center;
   height: 70vh;
-  overflow: auto;
+  overflow: hidden;
 }
 
 .image-preview-img {
   max-width: 100%;
-  max-height: 70vh;
-  min-width: 60vh;
-  min-height: 55vh;
-  display: block;
-  margin: 0 auto;
+  max-height: 100%;
   object-fit: contain;
+  transition: transform 0.1s;
+}
+
+.move-copy-body {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid $border-color-light;
+  border-radius: $border-radius-sm;
+  padding: $spacing-sm;
 }
 </style>

@@ -95,17 +95,17 @@
         <el-table-column label="项目信息" min-width="300">
           <template #default="{ row }">
             <div class="item-info">
-              <el-icon class="item-icon">
-                <Document />
-              </el-icon>
+              <div class="entry-thumb">
+                 <el-icon :size="24" :color="getFileIconConfig(row.originalFilename, false).color">
+                  <component :is="getFileIconConfig(row.originalFilename, false).name" />
+                </el-icon>
+              </div>
               <div class="item-details">
                 <div class="item-name">{{ row.originalFilename }}</div>
                 <div class="item-meta">
-                  <el-tag size="small" type="primary">
-                    文件
-                  </el-tag>
                   <span class="item-size">{{ formatFileSize(row.size) }}</span>
-                  <span class="original-path">路径: {{ row.filePath }}</span>
+                  <span class="separator">|</span>
+                  <span class="original-path" :title="row.filePath">路径: {{ row.filePath }}</span>
                 </div>
               </div>
             </div>
@@ -167,8 +167,9 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from "vue"
 import { ElMessage, ElMessageBox } from "element-plus"
-import { Delete, Refresh, Search, Document, Folder, RefreshLeft, View, DataLine } from "@element-plus/icons-vue"
+import { Delete, Refresh, Search, Document, Folder, RefreshLeft, View, DataLine, Picture, VideoPlay, Headset, Box, Reading, Link, Coin, Cpu, Monitor, Setting, Warning } from "@element-plus/icons-vue"
 import { getRecycleBinFiles, restoreFile, permanentDeleteFile, emptyRecycleBin } from "@/api/file"
+import { getFileIconConfig } from '@/utils/file-icons'
 
 const loading = ref(false)
 const emptying = ref(false)
@@ -397,134 +398,214 @@ onMounted(() => {
 })
 </script>
 
-<style scoped>
+<style scoped lang="scss">
+@import '@/assets/styles/variables.scss';
+
 .recycle-container {
-  padding: 20px;
+  padding: $spacing-base;
   height: 100%;
   display: flex;
   flex-direction: column;
+  background-color: $background-color-base;
 }
 
 .toolbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
-  padding: 15px;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  margin-bottom: $spacing-base;
+  padding: 12px 24px;
+  background: white;
+  border-radius: $border-radius-base;
+  box-shadow: $box-shadow-sm;
+  border: 1px solid $border-color-light;
 }
 
 .toolbar-left {
   display: flex;
-  gap: 10px;
+  gap: $spacing-sm;
 }
 
 .toolbar-right {
   display: flex;
-  gap: 10px;
+  gap: $spacing-sm;
   align-items: center;
 }
 
+/* Stats Cards */
 .stats-row {
-  margin-bottom: 20px;
+  margin-bottom: $spacing-base;
 }
 
 .stat-card {
-  text-align: center;
-  padding: 20px;
+  border: none;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  transition: all 0.3s ease;
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  overflow: hidden;
+  position: relative;
+  
+  &:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.025);
+  }
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 80px;
+    height: 80px;
+    background: linear-gradient(135deg, transparent 50%, rgba(var(--el-color-primary-rgb), 0.05) 50%);
+    border-radius: 0 0 0 80px;
+    pointer-events: none;
+  }
+  
+  :deep(.el-card__body) {
+    padding: 24px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
 }
 
 .stat-icon {
-  font-size: 32px;
-  color: #f56c6c;
-  margin-bottom: 10px;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  background-color: rgba($primary-color, 0.08);
+  color: $primary-color;
+  transition: transform 0.3s;
+  
+  .el-icon {
+    font-size: 28px;
+  }
+}
+
+.stat-card:hover .stat-icon {
+  transform: scale(1.1) rotate(5deg);
+  background-color: rgba($primary-color, 0.15);
+}
+
+.stat-info {
+  flex: 1;
+  text-align: left;
+  z-index: 1;
 }
 
 .stat-number {
-  font-size: 24px;
-  font-weight: bold;
-  color: #333;
-  margin-bottom: 5px;
+  font-size: 28px;
+  font-weight: 700;
+  color: $text-primary;
+  line-height: 1.2;
+  letter-spacing: -0.5px;
 }
 
 .stat-label {
   font-size: 14px;
-  color: #666;
+  color: $text-secondary;
+  margin-top: 4px;
+  font-weight: 500;
 }
 
+/* Recycle List Table */
 .recycle-list {
   flex: 1;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  background: white;
+  border-radius: 12px;
+  box-shadow: $box-shadow-sm;
+  border: 1px solid $border-color-light;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.recycle-list :deep(.el-table) {
+  --el-table-header-bg-color: #f1f5f9;
+  --el-table-header-text-color: #475569;
+  --el-table-row-hover-bg-color: #f8fafc;
+  --el-table-border-color: #e2e8f0;
+  
+  th.el-table__cell {
+    font-weight: 600;
+    height: 52px;
+    background-color: #f1f5f9 !important;
+    color: #334155;
+  }
+  
+  .el-table__row {
+    height: 64px;
+    transition: background-color 0.2s;
+  }
+
+  .el-table__row:hover > td {
+    background-color: #f0f9ff !important;
+  }
 }
 
 .item-info {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 16px;
 }
 
-.item-icon {
-  font-size: 18px;
-  color: #409EFF;
+.entry-thumb {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
 }
 
 .item-details {
   flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .item-name {
   font-weight: 500;
+  color: $text-primary;
   margin-bottom: 4px;
+  font-size: 14px;
 }
 
 .item-meta {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
-}
-
-.item-size {
   font-size: 12px;
-  color: #666;
-}
-
-.original-path {
-  font-size: 12px;
-  color: #999;
-}
-
-.warning {
-  color: #e6a23c;
-  font-weight: bold;
+  color: $text-secondary;
+  
+  .separator {
+    color: $border-color-base;
+  }
+  
+  .original-path {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    background: #f1f5f9;
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
 }
 
 .item-details-content {
   padding: 10px 0;
-}
-
-.file-preview {
-  margin-top: 20px;
-}
-
-.preview-content {
-  margin-top: 10px;
-  padding: 20px;
-  background: #f5f5f5;
-  border-radius: 8px;
-  text-align: center;
-}
-
-:deep(.el-table) {
-  height: 100%;
-}
-
-:deep(.el-table__body-wrapper) {
-  overflow-y: auto;
 }
 </style>

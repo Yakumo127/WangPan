@@ -1,36 +1,65 @@
-// 全局变量
-$primary-color: #409EFF;
-$success-color: #67C23A;
-$warning-color: #E6A23C;
-$danger-color: #F56C6C;
-$info-color: #909399;
+// Color Palette - Enterprise Grade (Slate & Royal Blue)
+$primary-color: #2563eb; // Royal Blue
+$primary-light: #60a5fa;
+$primary-dark: #1d4ed8;
 
-// 布局
-$header-height: 60px;
-$sidebar-width: 200px;
+$success-color: #10b981; // Emerald
+$warning-color: #f59e0b; // Amber
+$danger-color: #ef4444;  // Red
+$info-color: #64748b;    // Slate 500
+
+// Neutral Colors
+$text-primary: #0f172a;   // Slate 900
+$text-regular: #334155;   // Slate 700
+$text-secondary: #64748b; // Slate 500
+$text-placeholder: #94a3b8; // Slate 400
+
+$border-color-base: #e2e8f0; // Slate 200
+$border-color-light: #f1f5f9; // Slate 100
+$background-color-base: #f8fafc; // Slate 50
+$background-color-overlay: #ffffff;
+
+// Layout
+$header-height: 64px;
+$sidebar-width: 240px; // Slightly wider for better readability
 $sidebar-collapsed-width: 64px;
 
-// 间距
-$spacing-base: 8px;
-$spacing-small: 4px;
-$spacing-large: 16px;
+// Spacing
+$spacing-xs: 4px;
+$spacing-sm: 8px;
+$spacing-base: 16px;
+$spacing-lg: 24px;
+$spacing-xl: 32px;
 
-// 字体
+// Typography
+$font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+$font-size-xs: 12px;
+$font-size-sm: 13px;
 $font-size-base: 14px;
-$font-size-small: 12px;
-$font-size-large: 16px;
+$font-size-lg: 16px;
+$font-size-xl: 20px;
+$font-weight-regular: 400;
+$font-weight-medium: 500;
+$font-weight-bold: 600;
 
-// 圆角
-$border-radius-base: 4px;
-$border-radius-small: 2px;
-$border-radius-large: 8px;
+// Borders & Radius
+$border-radius-sm: 4px;
+$border-radius-base: 8px; // Modern, softer look
+$border-radius-lg: 12px;
+$border-radius-round: 50%;
 
-// 阴影
-$box-shadow-base: 0 2px 4px rgba(0, 0, 0, 0.12), 0 0 6px rgba(0, 0, 0, 0.04);
-$box-shadow-light: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+// Shadows (Elevation)
+$box-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+$box-shadow-base: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+$box-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+$box-shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
 
-// 断点
-$breakpoint-sm: 768px;
-$breakpoint-md: 992px;
-$breakpoint-lg: 1200px;
-$breakpoint-xl: 1920px;
+// Transitions
+$transition-fast: 0.2s ease;
+$transition-base: 0.3s ease-in-out;
+
+// Breakpoints
+$breakpoint-sm: 640px;
+$breakpoint-md: 768px;
+$breakpoint-lg: 1024px;
+$breakpoint-xl: 1280px;
