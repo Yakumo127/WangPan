@@ -46,6 +46,12 @@ public interface FileRepository extends JpaRepository<File, Long> {
     // 系统回收站：仅展示对用户已隐藏（个人彻底删除/清空后）的已删除文件
     List<File> findByDeletedTrueAndOwnerHiddenTrueOrderByDeleteTimeDesc();
 
+    long countByUser_IdAndDeletedFalse(Long userId);
+
+    long countByUser_IdAndDeletedTrueAndOwnerHiddenFalse(Long userId);
+
+    org.springframework.data.domain.Page<File> findByUser_IdAndDeletedFalseOrderByCreateTimeDesc(Long userId, org.springframework.data.domain.Pageable pageable);
+
     @Query("SELECT f FROM File f JOIN f.user u WHERE f.deleted = true AND f.ownerHidden = true " +
            "AND (:scheduledOnly = false OR f.adminDeleteScheduled = true) " +
            "AND (:fromExec IS NULL OR f.adminDeleteExecuteTime >= :fromExec) " +

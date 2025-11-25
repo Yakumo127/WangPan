@@ -45,4 +45,6 @@ public interface FolderRepository extends JpaRepository<Folder, Long> {
                                                                     @Param("userId") Long userId,
                                                                     @Param("parentId") Long parentId,
                                                                     @Param("excludeId") Long excludeId);
+
+    long countByUser_IdAndDeletedFalse(Long userId);
 }

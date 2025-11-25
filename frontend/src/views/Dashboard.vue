@@ -109,7 +109,8 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/store/auth'
 import { useRouter } from 'vue-router'
 import { 
@@ -122,20 +123,35 @@ import {
   Top,
   Bottom 
 } from '@element-plus/icons-vue'
+import { getDashboardSummary } from '@/api/dashboard'
 
 const authStore = useAuthStore()
 const router = useRouter()
+
+const loading = ref(false)
+const summary = ref(null)
+const stats = ref([])
+const activities = ref([])
 
 const userDisplayName = computed(() => {
   return authStore.user?.displayName || authStore.user?.username || '用户'
 })
 
-const quotaUsed = computed(() => authStore.user?.quotaUsed || 0)
-const quotaLimit = computed(() => authStore.user?.quotaLimit || 10737418240) // Default 10GB
+const quotaUsed = computed(() => {
+  const fromSummary = summary.value?.quotaUsed
+  if (typeof fromSummary === 'number') return fromSummary
+  return authStore.user?.quotaUsed || 0
+})
+
+const quotaLimit = computed(() => {
+  const fromSummary = summary.value?.quotaLimit
+  if (typeof fromSummary === 'number' && fromSummary > 0) return fromSummary
+  return authStore.user?.quotaLimit || 10737418240 // 默认 10GB
+})
 
 const storagePercentage = computed(() => {
   if (!quotaLimit.value) return 0
-  return Math.round((quotaUsed.value / quotaLimit.value) * 100)
+  return Math.min(100, Math.round((quotaUsed.value / quotaLimit.value) * 100))
 })
 
 const storageColor = [
@@ -144,20 +160,108 @@ const storageColor = [
   { color: '#ef4444', percentage: 100 },
 ]
 
-// Mock Data for Display
-const stats = [
-  { label: '我的文件', value: '1,284', icon: 'Document', colorClass: 'bg-blue-100 text-blue-600', trend: 12 },
-  { label: '文件夹', value: '42', icon: 'Folder', colorClass: 'bg-yellow-100 text-yellow-600', trend: 5 },
-  { label: '我的分享', value: '18', icon: 'Share', colorClass: 'bg-green-100 text-green-600', trend: -2 },
-  { label: '回收站', value: '3', icon: 'Delete', colorClass: 'bg-red-100 text-red-600', trend: 0 },
-]
+const buildStats = (data) => {
+  const fileCount = safeNumber(data?.fileCount)
+  const folderCount = safeNumber(data?.folderCount)
+  const recycleCount = safeNumber(data?.recycleCount)
+  const shareCount = data?.shareCount != null ? data.shareCount : '未接入'
+  return [
+    { label: '我的文件', value: formatNumber(fileCount), icon: Document, colorClass: 'bg-blue-100 text-blue-600', trend: null },
+    { label: '文件夹', value: formatNumber(folderCount), icon: Folder, colorClass: 'bg-yellow-100 text-yellow-600', trend: null },
+    { label: '我的分享', value: typeof shareCount === 'number' ? formatNumber(shareCount) : shareCount, icon: Share, colorClass: 'bg-green-100 text-green-600', trend: null },
+    { label: '回收站', value: formatNumber(recycleCount), icon: Delete, colorClass: 'bg-red-100 text-red-600', trend: null },
+  ]
+}
 
-const activities = [
-  { user: '您', action: '上传了文件', target: '2024年度项目计划.pdf', timestamp: '刚刚', type: 'primary' },
-  { user: '您', action: '创建了文件夹', target: '财务报表', timestamp: '2小时前', type: 'success' },
-  { user: '您', action: '分享了文件', target: '会议记录.docx', timestamp: '昨天 14:30', type: 'warning' },
-  { user: '系统', action: '自动备份', target: '数据库备份', timestamp: '昨天 02:00', type: 'info' },
-]
+const buildActivities = (data) => {
+  const logs = Array.isArray(data?.recentActivities) ? data.recentActivities : []
+  if (logs.length > 0) {
+    return logs.map(mapLogToTimeline)
+  }
+  const uploads = Array.isArray(data?.recentUploads) ? data.recentUploads : []
+  return uploads.map(file => ({
+    user: userDisplayName.value,
+    action: '上传了文件',
+    target: file?.name || `文件 ${file?.id || ''}`,
+    timestamp: formatTimelineTime(file?.createTime),
+    type: 'primary'
+  }))
+}
+
+const mapLogToTimeline = (log) => ({
+  user: userDisplayName.value,
+  action: renderActionText(log?.actionType, log?.resourceType),
+  target: log?.resourceName || renderResourceName(log?.resourceType),
+  timestamp: formatTimelineTime(log?.time),
+  type: log?.status === 'FAILED' ? 'danger' : 'primary'
+})
+
+const renderActionText = (actionType, resourceType) => {
+  const a = (actionType || '').toUpperCase()
+  switch (a) {
+    case 'UPLOAD':
+    case 'UPLOAD_QUICK':
+    case 'UPLOAD_CHUNK':
+    case 'UPLOAD_MERGE':
+      return '上传了文件'
+    case 'DOWNLOAD':
+    case 'DOWNLOAD_PROBE':
+      return '下载了文件'
+    case 'DELETE':
+      return '删除了文件'
+    case 'RESTORE':
+      return '恢复了文件'
+    case 'MOVE':
+      return '移动了文件'
+    case 'COPY':
+      return '复制了文件'
+    case 'RENAME':
+      return '重命名了文件'
+    case 'CREATE_FOLDER':
+      return '创建了文件夹'
+    case 'DELETE_FOLDER':
+      return '删除了文件夹'
+    case 'PREVIEW':
+      return '预览了文件'
+    default:
+      return resourceType === 'FOLDER' ? '操作了文件夹' : '执行了操作'
+  }
+}
+
+const renderResourceName = (resourceType) => {
+  const r = (resourceType || '').toUpperCase()
+  if (r === 'FOLDER') return '文件夹'
+  if (r === 'FILE') return '文件'
+  return '资源'
+}
+
+const formatTimelineTime = (value) => {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
+const safeNumber = (n) => (typeof n === 'number' && !Number.isNaN(n) ? n : 0)
+const formatNumber = (n) => (typeof n === 'number' ? n.toLocaleString('zh-CN') : (n ?? 0))
+
+stats.value = buildStats(null)
+
+const loadDashboard = async () => {
+  loading.value = true
+  try {
+    const res = await getDashboardSummary({ activityLimit: 5, uploadLimit: 5 })
+    summary.value = res || {}
+    stats.value = buildStats(summary.value)
+    activities.value = buildActivities(summary.value)
+  } catch (error) {
+    ElMessage.error('加载仪表盘数据失败')
+    stats.value = buildStats(null)
+    activities.value = []
+  } finally {
+    loading.value = false
+  }
+}
 
 const handleUpload = () => {
   router.push('/files')
@@ -168,12 +272,16 @@ const handleNewFolder = () => {
 }
 
 const formatSize = (bytes) => {
-  if (bytes === 0) return '0 B'
+  if (!bytes) return '0 B'
   const k = 1024
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
+
+onMounted(() => {
+  loadDashboard()
+})
 </script>
 
 <style scoped lang="scss">
