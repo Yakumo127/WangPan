@@ -664,6 +664,17 @@
                 </div>
                 <div class="card-action">
                   <el-button 
+                    type="primary" 
+                    plain 
+                    round
+                    :loading="storageLoading"
+                    @mousedown.prevent
+                    @click="loadStorageSummary"
+                    style="margin-right: 8px;"
+                  >
+                    刷新
+                  </el-button>
+                  <el-button 
                     type="danger" 
                     plain 
                     round
