@@ -22,7 +22,8 @@ const BUFFER_SECONDS = 180
 export function useUploadQueue(options = {}) {
   const {
     getCurrentFolderId = () => null,
-    onTaskCompleted = () => {}
+    onTaskCompleted = () => {},
+    resolveParentId = () => null
   } = options
 
   const uploadQueue = ref([])
@@ -74,6 +75,7 @@ export function useUploadQueue(options = {}) {
           folderId: t.folderId,
           hash: t.hash,
           useChunks: t.useChunks,
+          parentId: t.parentId ?? null,
           createdAt: t.createdAt,
           lastStatus: t.status
         }))
@@ -99,6 +101,7 @@ export function useUploadQueue(options = {}) {
           name: t.name,
           size: t.size,
           folderId: t.folderId ?? null,
+          parentId: t.parentId ?? null,
           hash: t.hash || null,
           status: 'paused',
           progress: 0,
@@ -179,6 +182,16 @@ export function useUploadQueue(options = {}) {
     }
     activeUploadsCount.value += 1
     try {
+      let resolvedParentId = task.parentId ?? null
+      try {
+        const candidate = resolveParentId(task.name, task.folderId)
+        if (candidate !== undefined && candidate !== null) {
+          resolvedParentId = candidate
+        }
+      } catch (e) {
+        // ignore resolver errors，继续使用已有值
+      }
+      updateTask(task, { parentId: resolvedParentId })
       // 1. 计算哈希
       const hashingController = new AbortController()
       if (!task.controllers) {
@@ -207,7 +220,8 @@ export function useUploadQueue(options = {}) {
         const res = await checkFastUpload({
           hash,
           filename: task.name,
-          folderId: task.folderId
+          folderId: task.folderId,
+          parentId: resolvedParentId
         })
         if (res && res.exists) {
           updateTask(task, {
@@ -268,6 +282,7 @@ export function useUploadQueue(options = {}) {
       file: task.file,
       folderId: task.folderId,
       filename: task.name,
+      parentId: task.parentId ?? null,
       onUploadProgress: (evt) => {
         if (evt.total > 0) {
           const pct = Math.round((evt.loaded / evt.total) * 100)
@@ -408,7 +423,7 @@ export function useUploadQueue(options = {}) {
       total: totalChunks,
       filename: task.name,
       folderId: task.folderId,
-      parentId: null,
+      parentId: task.parentId ?? null,
       timeout: computeUploadTimeoutMs(task.size)
     })
   }

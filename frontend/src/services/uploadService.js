@@ -33,11 +33,12 @@ export async function checkFastUpload({ hash, filename, folderId, parentId }) {
 }
 
 // 直传小文件
-export function directUpload({ file, folderId, filename, onUploadProgress, signal, timeout }) {
+export function directUpload({ file, folderId, filename, parentId, onUploadProgress, signal, timeout }) {
   const formData = new FormData()
   formData.append('file', file)
   if (folderId != null) formData.append('folderId', folderId)
   if (filename) formData.append('filename', filename)
+  if (parentId != null) formData.append('parentId', parentId)
   return request({
     url: '/files/upload',
     method: 'post',

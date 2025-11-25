@@ -394,6 +394,7 @@ const columnWidths = ref({
 const currentFolderId = ref(null)
 const folderList = ref([])
 const fileList = ref([])
+const filesCache = ref(new Map())
 const searchKeyword = ref('')
 const newFolderDialogVisible = ref(false)
 const newFolderName = ref('')
@@ -418,6 +419,15 @@ const folderCache = ref(new Map())
 const folderLoading = ref(new Map()) // parentId -> Promise
 
 const getFolderCacheKey = (parentId) => (parentId === null || parentId === undefined ? 'root' : parentId)
+const getFilesCacheKey = (folderId) => (folderId === null || folderId === undefined ? 'root' : String(folderId))
+
+const findExistingFileId = (filename, folderId) => {
+  const key = getFilesCacheKey(folderId)
+  const list = filesCache.value.get(key) || (key === getFilesCacheKey(currentFolderId.value) ? fileList.value : [])
+  if (!list || !list.length) return null
+  const matched = list.find((f) => (f?.originalFilename || f?.name || f?.filename) === filename)
+  return matched ? matched.id : null
+}
 
 const fetchFolderList = async (parentId, options = {}) => {
   const { force = false, cacheResult = true } = options
@@ -497,7 +507,8 @@ const {
   onTaskCompleted: () => {
     // 单个任务完成后刷新当前目录
     loadEntries()
-  }
+  },
+  resolveParentId: (name, folderId) => findExistingFileId(name, folderId)
 })
 
 watch(hasRunningTasks, (val) => {
@@ -681,6 +692,7 @@ const loadEntries = async () => {
     ])
     folderList.value = dedupeFolders(folders || [])
     fileList.value = files || []
+    filesCache.value.set(getFilesCacheKey(parentId), files || [])
   } catch (e) {
     console.error('加载文件/文件夹列表失败:', e)
     ElMessage.error('加载文件/文件夹列表失败')

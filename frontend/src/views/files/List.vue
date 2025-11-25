@@ -279,6 +279,12 @@ const computeUploadTimeoutMs = (size) => {
   return Math.max(1, Math.ceil(seconds)) * 1000
 }
 
+const findParentIdByName = (filename, list) => {
+  if (!filename || !Array.isArray(list)) return null
+  const target = list.find((f) => (f?.originalFilename || f?.name || f?.filename) === filename)
+  return target ? target.id : null
+}
+
 const getFileExt = (file) => {
   const name = (file?.originalFilename || file?.name || '').toString()
   const idx = name.lastIndexOf('.')
@@ -430,6 +436,14 @@ const uploadFilesFunc = async () => {
   try {
     const MAX_MB = 100
     const MAX_BYTES = MAX_MB * 1024 * 1024
+    const targetFolderId = uploadForm.folderId || null
+    let existingFilesInTarget = []
+    try {
+      const fetched = await getFileList({ folderId: targetFolderId })
+      existingFilesInTarget = Array.isArray(fetched) ? fetched : []
+    } catch (e) {
+      existingFilesInTarget = []
+    }
     for (let i = 0; i < uploadFiles.value.length; i++) {
       const elFile = uploadFiles.value[i]
       const raw = elFile.raw
@@ -443,6 +457,7 @@ const uploadFilesFunc = async () => {
       }
 
       uploadProgress.value[i].status = 'uploading'
+      const parentId = findParentIdByName(elFile.name, existingFilesInTarget)
 
       // 1) 计算哈希并秒传判断（同一用户同哈希文件已存在则跳过）
       let fileHash = ''
@@ -468,12 +483,15 @@ const uploadFilesFunc = async () => {
       // 2) 大小阈值：>10MB 走分片上传，否则直传
       const CHUNK_SIZE = 10 * 1024 * 1024
       if (raw.size > CHUNK_SIZE && fileHash) {
-        await uploadInChunksWithRetryAndResume(elFile, i, fileHash, CHUNK_SIZE, uploadTimeout)
+        await uploadInChunksWithRetryAndResume(elFile, i, fileHash, CHUNK_SIZE, uploadTimeout, parentId)
       } else {
         const formData = new FormData()
         formData.append('file', raw)
         if (uploadForm.folderId) {
           formData.append('folderId', uploadForm.folderId)
+        }
+        if (parentId) {
+          formData.append('parentId', parentId)
         }
         await uploadFile(formData, (progressEvent) => {
           const loaded = progressEvent.loaded || 0
@@ -513,7 +531,7 @@ const uploadFilesFunc = async () => {
 }
 
 // 分片上传（含并发、重试、断点续传-基于本地存储，跨会话可恢复，但服务器端不校验已有分片列表）
-const uploadInChunksWithRetryAndResume = async (elFile, progressIndex, fileHash, CHUNK_SIZE, uploadTimeout) => {
+const uploadInChunksWithRetryAndResume = async (elFile, progressIndex, fileHash, CHUNK_SIZE, uploadTimeout, parentId) => {
   const raw = elFile.raw
   const totalChunks = Math.ceil(raw.size / CHUNK_SIZE)
   const CONCURRENCY = 3
@@ -651,7 +669,7 @@ const uploadInChunksWithRetryAndResume = async (elFile, progressIndex, fileHash,
   // 合并前友好提示
   ElMessage.info('分片已上传完成，开始服务端合并...')
   try {
-    await mergeChunks({ fileHash, filename: raw.name, totalChunks, folderId: uploadForm.folderId || null }, { timeout: uploadTimeout })
+    await mergeChunks({ fileHash, filename: raw.name, totalChunks, folderId: uploadForm.folderId || null, parentId: parentId || null }, { timeout: uploadTimeout })
     uploadProgress.value[progressIndex].status = 'success'
     uploadProgress.value[progressIndex].percent = 100
     // 清理断点续传记录
