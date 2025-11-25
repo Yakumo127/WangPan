@@ -201,7 +201,7 @@
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item @click="previewFileEntry(row.raw)">预览</el-dropdown-item>
-                    <el-dropdown-item @click="openVersionDialog(row.raw)">历史</el-dropdown-item>
+                    <el-dropdown-item @click="goHistoryPage(row.raw)">历史</el-dropdown-item>
                     <el-dropdown-item @click="openMoveCopyDialog('move', row.raw, 'file')">移动</el-dropdown-item>
                     <el-dropdown-item @click="openMoveCopyDialog('copy', row.raw, 'file')">复制</el-dropdown-item>
                   </el-dropdown-menu>
@@ -287,34 +287,6 @@
         <el-button @click="closeMoveCopyDialog">取消</el-button>
         <el-button type="primary" :loading="moveCopyLoading" @click="handleMoveCopySubmit">提交</el-button>
       </template>
-    </el-dialog>
-
-    <el-dialog
-      v-model="versionDialogVisible"
-      :title="versionDialogTitle"
-      width="600px"
-    >
-      <el-table
-        :data="versionList"
-        size="small"
-        v-loading="versionLoading"
-        border
-        style="width: 100%"
-      >
-        <el-table-column prop="versionNo" label="版本号" width="90" align="center" />
-        <el-table-column prop="size" label="大小" width="120">
-          <template #default="{ row }">
-            {{ formatFileSize(row.size) }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="contentType" label="类型" width="140" />
-        <el-table-column prop="comment" label="备注" />
-        <el-table-column prop="createTime" label="时间" width="170">
-          <template #default="{ row }">
-            {{ formatDateTime(row.createTime) }}
-          </template>
-        </el-table-column>
-      </el-table>
     </el-dialog>
 
     <!-- 新建文件夹对话框 -->
@@ -435,7 +407,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Folder, FolderOpened, Upload, Search, Document, Download, Delete, Edit, View, ArrowDown, Close, Cpu, Monitor, Setting, Warning } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
-import { getFileList, deleteFile as deleteFileApi, renameFile as renameFileApi, getDownloadUrl, previewFile as previewFileApi, moveFile as moveFileApi, copyFile as copyFileApi, getFileVersions } from '@/api/file'
+import { getFileList, deleteFile as deleteFileApi, renameFile as renameFileApi, getDownloadUrl, previewFile as previewFileApi, moveFile as moveFileApi, copyFile as copyFileApi } from '@/api/file'
 import { getFolderList, createFolder, deleteFolder as deleteFolderApi, renameFolder as renameFolderApi, getFolderPath, moveFolder as moveFolderApi, copyFolder as copyFolderApi } from '@/api/folder'
 import { useUploadQueue } from '@/composables/useUploadQueue'
 import { getFileIconConfig } from '@/utils/file-icons'
@@ -478,14 +450,6 @@ const folderTreeLoading = ref(false)
 const expandedKeys = ref([])
 const folderCache = ref(new Map())
 const folderLoading = ref(new Map()) // parentId -> Promise
-const versionDialogVisible = ref(false)
-const versionLoading = ref(false)
-const versionList = ref([])
-const versionTarget = ref(null)
-const versionDialogTitle = computed(() => {
-  const name = versionTarget.value?.originalFilename || versionTarget.value?.name || versionTarget.value?.filename
-  return name ? `历史版本 - ${name}` : '历史版本'
-})
 const uploadDialogVisible = ref(false)
 const uploadDialogDragover = ref(false)
 
@@ -772,26 +736,6 @@ const loadEntries = async () => {
   }
 }
 
-const openVersionDialog = async (file) => {
-  if (!file?.id) return
-  versionTarget.value = file
-  versionDialogVisible.value = true
-  await loadVersions(file.id)
-}
-
-const loadVersions = async (fileId) => {
-  versionLoading.value = true
-  try {
-    const res = await getFileVersions(fileId)
-    versionList.value = Array.isArray(res) ? res : []
-  } catch (e) {
-    versionList.value = []
-    ElMessage.error('获取历史版本失败')
-  } finally {
-    versionLoading.value = false
-  }
-}
-
 const loadBreadcrumb = async () => {
   if (!currentFolderId.value) {
     breadcrumbs.value = [{ id: null, name: '根目录' }]
@@ -1065,7 +1009,7 @@ const onDragOver = (e) => {
   e.dataTransfer.dropEffect = 'copy'
 }
 
-  const onDropFiles = (e) => {
+const onDropFiles = (e) => {
   handleDataTransfer(e?.dataTransfer, true)
 }
 
@@ -1075,6 +1019,15 @@ const onSelectFileForTask = (taskId) => {
     fileInputRef.value.value = ''
     fileInputRef.value.click()
   }
+}
+
+const goHistoryPage = (file) => {
+  if (!file?.id) return
+  router.push({
+    name: 'FileHistory',
+    params: { id: file.id },
+    query: { name: file.originalFilename || file.name || '' }
+  })
 }
 
 const handleDataTransfer = async (dataTransfer, closeDialogAfter = false) => {

@@ -104,6 +104,15 @@ export function getAdminDownloadUrl(id) {
   })
 }
 
+// 下载指定版本（返回 Blob）
+export function downloadFileVersion(fileId, versionNo) {
+  return request({
+    url: `/files/download/${fileId}/version/${versionNo}`,
+    method: "get",
+    responseType: "blob"
+  })
+}
+
 // 获取文件历史版本列表
 export function getFileVersions(fileId) {
   return request({

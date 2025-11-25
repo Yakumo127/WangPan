@@ -71,6 +71,12 @@ const routes = [
         meta: { title: '文件预览（新版）', requiresAuth: true }
       },
       {
+        path: '/file-history/:id',
+        name: 'FileHistory',
+        component: () => import('@/views/files/History.vue'),
+        meta: { title: '历史版本', requiresAuth: true }
+      },
+      {
         path: '/preview/:id',
         name: 'FilePreview',
         component: () => import('@/views/files/Preview.vue'),
