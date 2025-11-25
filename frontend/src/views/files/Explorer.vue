@@ -3,7 +3,7 @@
     <!-- 工具栏 -->
     <div class="toolbar">
       <div class="toolbar-left" v-if="!hasSelection">
-        <el-button @click="openFilePicker">
+        <el-button @click="openUploadDialog">
           <el-icon><Upload /></el-icon>
           上传文件
         </el-button>
@@ -55,6 +55,14 @@
       multiple
       style="display: none;"
       @change="onFileInputChange"
+    />
+    <input
+      ref="uploadDialogFileInputRef"
+      type="file"
+      multiple
+      webkitdirectory
+      style="display: none;"
+      @change="onUploadDialogFileChange"
     />
 
     <!-- 面包屑 -->
@@ -219,6 +227,29 @@
           class="image-preview-img"
           :style="{ transform: `scale(${imageScale})` }"
         />
+      </div>
+    </el-dialog>
+
+    <!-- 上传弹窗：拖拽/选择文件或文件夹，任务在底部队列展示 -->
+    <el-dialog v-model="uploadDialogVisible" title="上传文件" width="600px" @closed="onUploadDialogClosed">
+      <div class="upload-dialog-body">
+        <div
+          class="upload-dropzone"
+          :class="{ 'is-dragover': uploadDialogDragover }"
+          @dragover.prevent="onUploadDialogDragOver"
+          @dragleave.prevent="onUploadDialogDragLeave"
+          @drop.prevent="onUploadDialogDrop"
+        >
+          <el-icon class="drop-icon"><Upload /></el-icon>
+          <p class="drop-title">拖拽文件或文件夹到此处</p>
+          <p class="drop-sub">支持多文件/文件夹递归，拖入后自动加入上传队列</p>
+          <el-button type="primary" plain @click="openUploadDialogPicker">
+            选择文件/文件夹
+          </el-button>
+        </div>
+        <div class="upload-dialog-hint">
+          已加入的任务会出现在下方的上传队列抽屉中，可随时查看进度
+        </div>
       </div>
     </el-dialog>
 
@@ -429,6 +460,7 @@ const newFolderDialogVisible = ref(false)
 const newFolderName = ref('')
 const uploadDrawerVisible = ref(false)
 const fileInputRef = ref(null)
+const uploadDialogFileInputRef = ref(null)
 const resumeTaskId = ref(null)
 const imagePreviewVisible = ref(false)
 const imagePreviewUrl = ref('')
@@ -454,6 +486,8 @@ const versionDialogTitle = computed(() => {
   const name = versionTarget.value?.originalFilename || versionTarget.value?.name || versionTarget.value?.filename
   return name ? `历史版本 - ${name}` : '历史版本'
 })
+const uploadDialogVisible = ref(false)
+const uploadDialogDragover = ref(false)
 
 const getFolderCacheKey = (parentId) => (parentId === null || parentId === undefined ? 'root' : parentId)
 const getFilesCacheKey = (folderId) => (folderId === null || folderId === undefined ? 'root' : String(folderId))
@@ -989,7 +1023,23 @@ const searchEntries = async () => {
 }
 
 const openUploadDialog = () => {
-  uploadDrawerVisible.value = true
+  uploadDialogVisible.value = true
+}
+
+const closeUploadDialog = () => {
+  uploadDialogVisible.value = false
+  uploadDialogDragover.value = false
+}
+
+const openUploadDialogPicker = () => {
+  if (uploadDialogFileInputRef.value) {
+    uploadDialogFileInputRef.value.value = ''
+    uploadDialogFileInputRef.value.click()
+  }
+}
+
+const onUploadDialogClosed = () => {
+  uploadDialogDragover.value = false
 }
 
 const openFilePicker = () => {
@@ -1015,10 +1065,8 @@ const onDragOver = (e) => {
   e.dataTransfer.dropEffect = 'copy'
 }
 
-const onDropFiles = (e) => {
-  const files = e?.dataTransfer?.files
-  if (!files || !files.length) return
-  enqueueFiles(files, currentFolderId.value || null)
+  const onDropFiles = (e) => {
+  handleDataTransfer(e?.dataTransfer, true)
 }
 
 const onSelectFileForTask = (taskId) => {
@@ -1029,6 +1077,100 @@ const onSelectFileForTask = (taskId) => {
   }
 }
 
+const handleDataTransfer = async (dataTransfer, closeDialogAfter = false) => {
+  try {
+    const files = await extractFilesFromDataTransfer(dataTransfer)
+    if (!files.length) {
+      ElMessage.warning('未检测到可上传的文件')
+      return
+    }
+    enqueueFiles(files, currentFolderId.value || null)
+    uploadDrawerVisible.value = true
+    if (closeDialogAfter) {
+      closeUploadDialog()
+    }
+  } catch (err) {
+    console.error('处理拖拽/选择文件失败:', err)
+    ElMessage.error('处理文件失败，请重试')
+  }
+}
+
+const onUploadDialogDrop = async (e) => {
+  uploadDialogDragover.value = false
+  await handleDataTransfer(e?.dataTransfer, true)
+}
+
+const onUploadDialogDragOver = () => {
+  uploadDialogDragover.value = true
+}
+
+const onUploadDialogDragLeave = () => {
+  uploadDialogDragover.value = false
+}
+
+const onUploadDialogFileChange = async (e) => {
+  const files = e?.target?.files
+  if (!files || !files.length) return
+  enqueueFiles(files, currentFolderId.value || null)
+  uploadDrawerVisible.value = true
+  closeUploadDialog()
+}
+
+const extractFilesFromDataTransfer = async (dataTransfer) => {
+  const result = []
+  if (!dataTransfer) return result
+  const items = dataTransfer.items
+  if (items && items.length) {
+    const tasks = []
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null
+      if (entry) {
+        tasks.push(readEntryRecursive(entry, result))
+      } else {
+        const f = item.getAsFile ? item.getAsFile() : null
+        if (f) result.push(f)
+      }
+    }
+    await Promise.all(tasks)
+  } else if (dataTransfer.files && dataTransfer.files.length) {
+    for (let i = 0; i < dataTransfer.files.length; i++) {
+      result.push(dataTransfer.files[i])
+    }
+  }
+  return result
+}
+
+const readEntryRecursive = (entry, collector) => {
+  return new Promise((resolve, reject) => {
+    if (entry.isFile) {
+      entry.file(
+        (file) => {
+          collector.push(file)
+          resolve()
+        },
+        (err) => reject(err)
+      )
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader()
+      const readEntries = () => {
+        reader.readEntries(async (entries) => {
+          if (!entries.length) return resolve()
+          try {
+            await Promise.all(entries.map((ent) => readEntryRecursive(ent, collector)))
+            readEntries()
+          } catch (e) {
+            reject(e)
+          }
+        })
+      }
+      readEntries()
+    } else {
+      resolve()
+    }
+  })
+}
+
 const buildMoveCopyItem = (item, itemType) => {
   if (!item) return null
   return {
@@ -1037,7 +1179,7 @@ const buildMoveCopyItem = (item, itemType) => {
   }
 }
 
-const loadFolderTreeRoot = async () => {
+  const loadFolderTreeRoot = async () => {
   folderTreeLoading.value = true
   folderTreeData.value = []
   expandedKeys.value = []
@@ -1521,5 +1663,49 @@ const dedupeFolders = (arr) => {
   border: 1px solid $border-color-light;
   border-radius: $border-radius-sm;
   padding: $spacing-sm;
+}
+
+.upload-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.upload-dropzone {
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  padding: 28px;
+  text-align: center;
+  background: #f8fafc;
+  transition: all 0.2s ease;
+}
+
+.upload-dropzone.is-dragover {
+  border-color: #409eff;
+  background: #e8f4ff;
+}
+
+.upload-dropzone .drop-icon {
+  font-size: 40px;
+  color: #409eff;
+  margin-bottom: 8px;
+}
+
+.upload-dropzone .drop-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+  color: #1e293b;
+}
+
+.upload-dropzone .drop-sub {
+  font-size: 13px;
+  color: #64748b;
+  margin: 6px 0 14px 0;
+}
+
+.upload-dialog-hint {
+  font-size: 12px;
+  color: #94a3b8;
 }
 </style>
