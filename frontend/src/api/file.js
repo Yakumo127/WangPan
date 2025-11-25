@@ -104,6 +104,14 @@ export function getAdminDownloadUrl(id) {
   })
 }
 
+// 获取文件历史版本列表
+export function getFileVersions(fileId) {
+  return request({
+    url: `/files/${fileId}/versions`,
+    method: "get"
+  })
+}
+
 export function deleteFile(id) {
   return request({
     url: `/files/${id}`,
