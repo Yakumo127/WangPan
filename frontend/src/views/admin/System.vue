@@ -638,6 +638,17 @@
                   <div class="card-value">{{ formatStorage(storageSummary.totalUsedBytes || 0) }}</div>
                   <div class="card-desc">系统内所有文件的总大小</div>
                 </div>
+                <div class="card-action">
+                  <el-button 
+                    type="primary" 
+                    plain 
+                    round
+                    :loading="storageLoading"
+                    @click="loadStorageSummary"
+                  >
+                    刷新
+                  </el-button>
+                </div>
               </div>
             </el-col>
             <el-col :span="12">
@@ -791,6 +802,7 @@ export default {
       heapMaxBytes: 0
     })
     const storageSummary = ref({ totalUsedBytes: 0, garbageChunksBytes: 0, perUserGarbage: [] })
+    const storageLoading = ref(false)
     const cleaningAllChunks = ref(false)
     const uploadPolicy = ref({ allowAll: true, allowedSuffixes: [] })
     const invalidSuffixes = ref([])
@@ -909,11 +921,14 @@ export default {
     }
 
     const loadStorageSummary = async () => {
+      storageLoading.value = true
       try {
         const res = await getStorageSummary()
         storageSummary.value = res || { totalUsedBytes: 0, garbageChunksBytes: 0, perUserGarbage: [] }
       } catch (e) {
         ElMessage.error(e?.message || '加载存储概览失败')
+      } finally {
+        storageLoading.value = false
       }
     }
 
@@ -1855,6 +1870,7 @@ export default {
       systemConfig,
       systemInfo,
       storageSummary,
+      storageLoading,
       uploadPolicy,
       invalidSuffixes,
       canSavePolicy,
@@ -1900,6 +1916,7 @@ export default {
       formatRemaining,
       formatUptime,
       formatMemoryUsage,
+      loadStorageSummary,
       handleSelectionChange,
       refreshRecycleBin,
       searchRecycleBin,
