@@ -139,6 +139,7 @@ export function useUploadQueue(options = {}) {
         name: file.name,
         size: file.size,
         folderId: fid,
+        parentId: file.__parentId ?? null,
         hash: null,
         status: 'pending',
         progress: 0,

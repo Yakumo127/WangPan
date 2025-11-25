@@ -452,6 +452,7 @@ const folderCache = ref(new Map())
 const folderLoading = ref(new Map()) // parentId -> Promise
 const uploadDialogVisible = ref(false)
 const uploadDialogDragover = ref(false)
+const uploadDecisionMap = ref(new Map())
 
 const getFolderCacheKey = (parentId) => (parentId === null || parentId === undefined ? 'root' : parentId)
 const getFilesCacheKey = (folderId) => (folderId === null || folderId === undefined ? 'root' : String(folderId))
@@ -543,7 +544,12 @@ const {
     // 单个任务完成后刷新当前目录
     loadEntries()
   },
-  resolveParentId: (name, folderId) => findExistingFileId(name, folderId)
+  resolveParentId: (name, folderId) => {
+    const key = makeDecisionKey(name, folderId)
+    const d = uploadDecisionMap.value.get(key)
+    if (d?.mode === 'cover') return d.parentId
+    return null
+  }
 })
 
 watch(hasRunningTasks, (val) => {
@@ -1021,6 +1027,78 @@ const onSelectFileForTask = (taskId) => {
   }
 }
 
+const makeDecisionKey = (name, folderId) => `${folderId ?? 'root'}|${name}`
+
+const formatTimestamp = () => {
+  const d = new Date()
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`
+}
+
+const ensureDecisionForFile = async (file, folderId) => {
+  const key = makeDecisionKey(file.name, folderId)
+  const existingId = findExistingFileId(file.name, folderId)
+  if (!existingId) {
+    return { file, parentId: null }
+  }
+  const cached = uploadDecisionMap.value.get(key)
+  if (cached?.mode === 'cover') {
+    return { file, parentId: cached.parentId }
+  }
+  if (cached?.mode === 'rename') {
+    const renamed = renameFileWithTimestamp(file)
+    return { file: renamed, parentId: null }
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `当前目录已存在同名文件「${file.name}」，是否覆盖并创建历史版本？`,
+      '同名文件提示',
+      {
+        confirmButtonText: '覆盖（加入历史）',
+        cancelButtonText: '自动重命名上传',
+        distinguishCancelAndClose: true,
+        type: 'warning'
+      }
+    )
+    uploadDecisionMap.value.set(key, { mode: 'cover', parentId: existingId })
+    return { file, parentId: existingId }
+  } catch (e) {
+    // 取消或关闭视为自动重命名
+    const renamed = renameFileWithTimestamp(file)
+    uploadDecisionMap.value.set(key, { mode: 'rename' })
+    return { file: renamed, parentId: null }
+  }
+}
+
+const renameFileWithTimestamp = (file) => {
+  const name = file.name || ''
+  const idx = name.lastIndexOf('.')
+  const hasExt = idx > 0
+  const base = hasExt ? name.slice(0, idx) : name
+  const ext = hasExt ? name.slice(idx) : ''
+  const ts = formatTimestamp()
+  const newName = `${base}_${ts}${ext}`
+  try {
+    return new File([file], newName, { type: file.type, lastModified: file.lastModified })
+  } catch (e) {
+    // 回退：返回原文件但修改 name 属性（不推荐，但兼容）
+    try {
+      file.newName = newName
+    } catch (_) {}
+    return file
+  }
+}
+
+const processFilesWithDecision = async (fileList, folderId) => {
+  const results = []
+  for (const f of Array.from(fileList || [])) {
+    const { file, parentId } = await ensureDecisionForFile(f, folderId)
+    results.push({ file, parentId })
+  }
+  return results
+}
+
 const goHistoryPage = (file) => {
   if (!file?.id) return
   router.push({
@@ -1032,12 +1110,20 @@ const goHistoryPage = (file) => {
 
 const handleDataTransfer = async (dataTransfer, closeDialogAfter = false) => {
   try {
-    const files = await extractFilesFromDataTransfer(dataTransfer)
-    if (!files.length) {
+    const folderId = currentFolderId.value || null
+    const rawFiles = await extractFilesFromDataTransfer(dataTransfer)
+    if (!rawFiles.length) {
       ElMessage.warning('未检测到可上传的文件')
       return
     }
-    enqueueFiles(files, currentFolderId.value || null)
+    const processed = await processFilesWithDecision(rawFiles, folderId)
+    const tasks = processed.map(item => {
+      // 将 parentId 临时挂到 file 对象，供队列解析
+      const f = item.file
+      try { f.__parentId = item.parentId } catch (_) {}
+      return f
+    })
+    enqueueFiles(tasks, folderId)
     uploadDrawerVisible.value = true
     if (closeDialogAfter) {
       closeUploadDialog()
@@ -1064,9 +1150,7 @@ const onUploadDialogDragLeave = () => {
 const onUploadDialogFileChange = async (e) => {
   const files = e?.target?.files
   if (!files || !files.length) return
-  enqueueFiles(files, currentFolderId.value || null)
-  uploadDrawerVisible.value = true
-  closeUploadDialog()
+  await handleDataTransfer({ files }, true)
 }
 
 const extractFilesFromDataTransfer = async (dataTransfer) => {
