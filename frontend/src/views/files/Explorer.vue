@@ -7,6 +7,11 @@
           <el-icon><Upload /></el-icon>
           上传文件
         </el-button>
+        <el-tooltip content="打开上传队列" placement="top">
+          <el-button class="icon-btn" @click="uploadDrawerVisible = true">
+            <el-icon><UploadFilled /></el-icon>
+          </el-button>
+        </el-tooltip>
         <el-button type="primary" @click="openNewFolderDialog">
           <el-icon><Folder /></el-icon>
           新建文件夹
@@ -405,7 +410,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Folder, FolderOpened, Upload, Search, Document, Download, Delete, Edit, View, ArrowDown, Close, Cpu, Monitor, Setting, Warning } from '@element-plus/icons-vue'
+import { Folder, FolderOpened, Upload, UploadFilled, Search, Document, Download, Delete, Edit, View, ArrowDown, Close, Cpu, Monitor, Setting, Warning } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import { getFileList, deleteFile as deleteFileApi, renameFile as renameFileApi, getDownloadUrl, previewFile as previewFileApi, moveFile as moveFileApi, copyFile as copyFileApi } from '@/api/file'
 import { getFolderList, createFolder, deleteFolder as deleteFolderApi, renameFolder as renameFolderApi, getFolderPath, moveFolder as moveFolderApi, copyFolder as copyFolderApi } from '@/api/folder'
@@ -1509,6 +1514,10 @@ const dedupeFolders = (arr) => {
   display: flex;
   gap: $spacing-sm;
   align-items: center;
+}
+
+.icon-btn {
+  padding: 0 10px;
 }
 
 .breadcrumb {
