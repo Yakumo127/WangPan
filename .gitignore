@@ -4,6 +4,7 @@ backend/target/
 # 前端依赖与构建
 frontend/node_modules/
 frontend/dist/
+frontend/node_modules/.cache/
 
 # 日志与临时
 *.log
