@@ -16,6 +16,11 @@
       </div>
 
       <div v-else class="content">
+        <div v-if="shareInfo.resourceType === 'FOLDER'" class="crumbs">
+          <span v-for="(c, idx) in breadcrumbs" :key="c.id" @click="backBreadcrumb(idx)">
+            {{ c.name }}<span v-if="idx < breadcrumbs.length - 1"> / </span>
+          </span>
+        </div>
         <div v-if="shareInfo.resourceType === 'FILE'" class="single">
           <div class="name">{{ singleItem?.name }}</div>
           <el-button type="primary" @click="download(singleItem)" :disabled="!shareInfo.allowDownload">下载</el-button>
@@ -34,7 +39,8 @@
             </el-table-column>
             <el-table-column label="操作" width="140">
               <template #default="{ row }">
-                <el-button size="small" type="primary" @click="download(row)" :disabled="row.type === 'folder'">下载</el-button>
+                <el-button size="small" @click="enterFolder(row)" v-if="row.type === 'folder'">进入</el-button>
+                <el-button size="small" type="primary" @click="download(row)" :disabled="row.type === 'folder' || !shareInfo.allowDownload">下载</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -59,6 +65,7 @@ const code = ref('')
 const loading = ref(false)
 const items = ref([])
 const singleItem = ref(null)
+const breadcrumbs = ref([])
 
 const formatDateTime = (dt) => dt ? new Date(dt).toLocaleString() : ''
 const formatSize = (size) => {
@@ -93,6 +100,7 @@ const validate = async () => {
     if (shareInfo.value.resourceType === 'FILE') {
       singleItem.value = { id: shareInfo.value.resourceId, name: res.name || '文件', type: 'file', size: res.size || 0 }
     } else {
+      breadcrumbs.value = [{ id: shareInfo.value.resourceId, name: shareInfo.value.resourceName || '文件夹' }]
       await loadList()
     }
     ElMessage.success('验证成功')
@@ -101,10 +109,10 @@ const validate = async () => {
   }
 }
 
-const loadList = async () => {
+const loadList = async (folderId) => {
   if (!sessionToken.value) return
   try {
-    const res = await listShareContent(shareId, { token: sessionToken.value })
+    const res = await listShareContent(shareId, { token: sessionToken.value, folderId })
     items.value = res || []
   } catch (e) {
     ElMessage.error(e?.message || '加载列表失败')
@@ -123,6 +131,18 @@ const download = async (row) => {
   }
 }
 
+const enterFolder = async (row) => {
+  if (row.type !== 'folder') return
+  breadcrumbs.value.push({ id: row.id, name: row.name })
+  await loadList(row.id)
+}
+
+const backBreadcrumb = async (index) => {
+  breadcrumbs.value = breadcrumbs.value.slice(0, index + 1)
+  const target = breadcrumbs.value[breadcrumbs.value.length - 1]
+  await loadList(target?.id)
+}
+
 onMounted(() => {
   loadShareInfo()
 })
@@ -135,4 +155,7 @@ onMounted(() => {
 .hint { color: #888; }
 .single { display: flex; align-items: center; gap: 12px; }
 .name { font-weight: 600; }
+.crumbs { margin: 8px 0; }
+.crumbs span { cursor: pointer; color: #409EFF; margin-right: 8px; }
+.crumbs span:last-child { color: #333; cursor: default; }
 </style>

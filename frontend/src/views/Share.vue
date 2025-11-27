@@ -82,7 +82,7 @@
     <!-- 分享列表 -->
     <div class="share-list">
       <el-table
-        :data="shares"
+        :data="filteredShares"
         style="width: 100%"
         v-loading="loading"
       >
@@ -94,7 +94,7 @@
                 <Folder v-else />
               </el-icon>
               <div class="share-details">
-                <div class="share-name">{{ row.name }}</div>
+                <div class="share-name">{{ row.name || '未命名' }}</div>
                 <div class="share-meta">
                   <el-tag size="small" :type="row.type === 'file' ? 'primary' : 'success'">
                     {{ row.type === 'file' ? '文件' : '文件夹' }}
@@ -103,6 +103,15 @@
                 </div>
               </div>
             </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="权限" width="180">
+          <template #default="{ row }">
+            <el-tag size="small" v-if="row.allowPreview">预览</el-tag>
+            <el-tag size="small" v-if="row.allowDownload" type="success">下载</el-tag>
+            <el-tag size="small" v-if="row.allowUpload" type="info">上传</el-tag>
+            <el-tag size="small" v-if="row.allowReshare" type="warning">再分享</el-tag>
+            <el-tag size="small" v-if="row.allowDeleteMove" type="danger">删/移</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="分享链接" min-width="200">
@@ -281,6 +290,11 @@ const shareStats = ref({
   activeShares: 0,
   totalDownloads: 0,
   totalViews: 0
+})
+
+const filteredShares = computed(() => {
+  if (!searchKeyword.value) return shares.value
+  return shares.value.filter(s => (s.name || '').toLowerCase().includes(searchKeyword.value.toLowerCase()))
 })
 
 // 格式化文件大小
