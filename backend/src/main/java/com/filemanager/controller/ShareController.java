@@ -136,10 +136,8 @@ public class ShareController {
     public ResponseEntity<?> updateAcl(@PathVariable Long id, @RequestBody List<ShareService.ACLItem> acl) {
         Long userId = currentUserId();
         try {
-            ShareService.CreateShareRequest req = new ShareService.CreateShareRequest();
-            req.setAcl(acl);
-            Share share = shareService.updateShare(id, req, userId);
-            return ResponseEntity.ok(Map.of("id", share.getId(), "aclSize", acl == null ? 0 : acl.size()));
+            List<ShareACL> saved = shareService.replaceAcl(id, userId, acl);
+            return ResponseEntity.ok(saved);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }

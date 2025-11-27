@@ -147,6 +147,30 @@ public class ShareService {
         return shareACLRepository.findByShare(share);
     }
 
+    @Transactional
+    public List<ShareACL> replaceAcl(Long shareId, Long ownerId, List<ACLItem> items) {
+        Share share = shareRepository.findByIdAndOwner(shareId, userRepository.findById(ownerId).orElseThrow(() -> new NotFoundException("用户不存在")))
+                .orElseThrow(() -> new NotFoundException("分享不存在"));
+        shareACLRepository.deleteAll(shareACLRepository.findByShare(share));
+        if (items == null || items.isEmpty()) {
+            return List.of();
+        }
+        List<ShareACL> aclList = new ArrayList<>();
+        for (ACLItem item : items) {
+            ShareACL acl = new ShareACL();
+            acl.setShare(share);
+            acl.setPrincipalType(item.getPrincipalType());
+            acl.setPrincipalValue(item.getPrincipalValue());
+            acl.setAllowPreview(item.getAllowPreview());
+            acl.setAllowDownload(item.getAllowDownload());
+            acl.setAllowUpload(item.getAllowUpload());
+            acl.setAllowReshare(item.getAllowReshare());
+            acl.setAllowDeleteMove(item.getAllowDeleteMove());
+            aclList.add(acl);
+        }
+        return shareACLRepository.saveAll(aclList);
+    }
+
     public SharePublicView getPublicShare(Long shareId) {
         Share share = shareRepository.findActiveById(shareId).orElseThrow(() -> new NotFoundException("分享不存在或已撤销"));
         if (isExpired(share)) {

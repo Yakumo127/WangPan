@@ -18,6 +18,23 @@ export function updateShare(id, payload) {
   })
 }
 
+// 替换 ACL
+export function replaceShareAcl(id, acl) {
+  return request({
+    url: `/shares/${id}/acl`,
+    method: "put",
+    data: acl
+  })
+}
+
+// 获取 ACL
+export function getShareAcl(id) {
+  return request({
+    url: `/shares/${id}/acl`,
+    method: "get"
+  })
+}
+
 // 撤销分享
 export function revokeShare(id) {
   return request({

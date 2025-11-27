@@ -187,6 +187,40 @@
       </el-table>
     </div>
 
+    <!-- 编辑分享对话框 -->
+    <el-dialog v-model="showEditDialog" title="编辑分享" width="500px">
+      <el-form :model="editForm" label-width="100px">
+        <el-form-item label="过期时间">
+          <el-radio-group v-model="editForm.expireType">
+            <el-radio label="never">永久有效</el-radio>
+            <el-radio label="custom">自定义时间</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="editForm.expireType === 'custom'" label="选择时间">
+          <el-date-picker v-model="editForm.expireTime" type="datetime" placeholder="选择过期时间" :disabled-date="disabledDate" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="提取码">
+          <el-switch v-model="editForm.requireCode" active-text="需要提取码" inactive-text="不需要提取码" />
+        </el-form-item>
+        <el-form-item v-if="editForm.requireCode" label="提取码内容">
+          <el-input v-model="editForm.code" maxlength="8" show-word-limit placeholder="请输入提取码（4-8位）" />
+        </el-form-item>
+        <el-form-item label="权限">
+          <el-checkbox-group v-model="editPermissionSelections">
+            <el-checkbox label="preview">预览</el-checkbox>
+            <el-checkbox label="download">下载</el-checkbox>
+            <el-checkbox label="upload" :disabled="editForm.type === 'file'">上传</el-checkbox>
+            <el-checkbox label="reshare" :disabled="true">再分享(禁用)</el-checkbox>
+            <el-checkbox label="deleteMove" :disabled="true">删除/移动(禁用)</el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showEditDialog = false">取消</el-button>
+        <el-button type="primary" :loading="updating" @click="updateShareFunc">保存</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 创建分享对话框 -->
     <el-dialog v-model="showShareDialog" title="创建分享" width="600px">
       <el-form :model="shareForm" label-width="100px">
@@ -440,7 +474,17 @@ const viewShare = (share) => {
 
 // 编辑分享
 const editShare = (share) => {
-  ElMessage.info('编辑分享功能开发中...')
+  editForm.id = share.id
+  editForm.type = share.type
+  editForm.expireType = share.expireTime ? 'custom' : 'never'
+  editForm.expireTime = share.expireTime ? new Date(share.expireTime) : null
+  editForm.requireCode = false
+  editForm.code = ''
+  editPermissionSelections.value = []
+  if (share.allowPreview) editPermissionSelections.value.push('preview')
+  if (share.allowDownload) editPermissionSelections.value.push('download')
+  if (share.allowUpload && share.type === 'folder') editPermissionSelections.value.push('upload')
+  showEditDialog.value = true
 }
 
 // 删除分享
@@ -514,6 +558,38 @@ onMounted(() => {
   loadShares()
   loadAvailableItems()
 })
+
+const updateShareFunc = async () => {
+  if (!editForm.id) {
+    return
+  }
+  if (editForm.requireCode) {
+    if (!editForm.code || editForm.code.length < 4 || editForm.code.length > 8) {
+      ElMessage.warning('提取码长度需 4-8 位')
+      return
+    }
+  }
+  updating.value = true
+  try {
+    const payload = {
+      expireTime: editForm.expireType === 'custom' ? editForm.expireTime : null,
+      code: editForm.requireCode ? editForm.code : null,
+      allowPreview: editPermissionSelections.value.includes('preview'),
+      allowDownload: editPermissionSelections.value.includes('download'),
+      allowUpload: editForm.type === 'folder' && editPermissionSelections.value.includes('upload'),
+      allowReshare: false,
+      allowDeleteMove: false
+    }
+    await updateShare(editForm.id, payload)
+    ElMessage.success('保存成功')
+    showEditDialog.value = false
+    await loadShares()
+  } catch (e) {
+    ElMessage.error('保存失败')
+  } finally {
+    updating.value = false
+  }
+}
 </script>
 
 <style scoped>
