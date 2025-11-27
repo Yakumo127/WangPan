@@ -13,6 +13,8 @@ import com.filemanager.repository.UserRepository;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -135,9 +137,55 @@ public class ShareService {
         shareRepository.save(share);
     }
 
-    public List<Share> listMyShares(Long ownerId) {
+    public ShareListResult listMyShares(Long ownerId, int page, int size) {
         User owner = userRepository.findById(ownerId).orElseThrow(() -> new NotFoundException("用户不存在"));
-        return shareRepository.findByOwner(owner);
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.max(1, Math.min(size, 200));
+        var pageable = PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "createdAt"));
+        var pageData = shareRepository.findByOwner(owner, pageable);
+        List<Map<String, Object>> dto = pageData.getContent().stream().map(s -> {
+            Map<String, Object> base = new HashMap<>();
+            base.put("id", s.getId());
+            base.put("resourceId", s.getResourceId());
+            base.put("resourceType", s.getResourceType());
+            base.put("expireTime", s.getExpireTime());
+            base.put("status", s.getStatus());
+            base.put("viewCount", s.getViewCount());
+            base.put("downloadCount", s.getDownloadCount());
+            base.put("createdAt", s.getCreatedAt());
+            base.put("allowPreview", s.getAllowPreview());
+            base.put("allowDownload", s.getAllowDownload());
+            base.put("allowUpload", s.getAllowUpload());
+            base.put("allowReshare", s.getAllowReshare());
+            base.put("allowDeleteMove", s.getAllowDeleteMove());
+            base.put("shareMode", s.getShareMode());
+            try {
+                if (s.getResourceType() == Share.ResourceType.FILE) {
+                    com.filemanager.entity.File f = fileRepository.findById(s.getResourceId()).orElse(null);
+                    if (f != null) {
+                        base.put("name", f.getOriginalFilename());
+                        base.put("size", f.getSize());
+                    }
+                } else {
+                    com.filemanager.entity.Folder folder = folderRepository.findById(s.getResourceId()).orElse(null);
+                    if (folder != null) {
+                        base.put("name", folder.getName());
+                        base.put("size", 0);
+                    }
+                }
+            } catch (Exception ignore) {}
+            return base;
+        }).toList();
+        ShareListResult result = new ShareListResult();
+        result.setTotal(pageData.getTotalElements());
+        ShareStats stats = new ShareStats();
+        stats.setTotalShares(shareRepository.countByOwner(owner));
+        stats.setActiveShares(shareRepository.countByOwnerAndStatus(owner, Share.Status.ACTIVE));
+        stats.setTotalDownloads(Optional.ofNullable(shareRepository.sumDownloadCountByOwner(owner)).orElse(0L));
+        stats.setTotalViews(Optional.ofNullable(shareRepository.sumViewCountByOwner(owner)).orElse(0L));
+        result.setStats(stats);
+        result.setItems(dto);
+        return result;
     }
 
     public List<ShareACL> getAclForOwner(Long shareId, Long ownerId) {
@@ -542,6 +590,21 @@ public class ShareService {
     }
 
     // -------- DTOs --------
+    @Data
+    public static class ShareStats {
+        private long totalShares;
+        private long activeShares;
+        private long totalDownloads;
+        private long totalViews;
+    }
+
+    @Data
+    public static class ShareListResult {
+        private long total;
+        private List<Map<String, Object>> items;
+        private ShareStats stats;
+    }
+
     @Data
     public static class CreateShareRequest {
         private Share.ResourceType resourceType;

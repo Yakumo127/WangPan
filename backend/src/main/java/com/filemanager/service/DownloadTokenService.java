@@ -33,12 +33,20 @@ public class DownloadTokenService {
     @Value("${download.token.ttl-seconds:10}")
     private long ttlSeconds;
 
+    // 下载限速（字节/秒），<=0 表示不限速，默认 3MB/s
+    @Value("${download.rate-limit-bytes-per-second:3145728}")
+    private long rateLimitBytesPerSecond;
+
     public DownloadTokenService(DownloadTokenUsedRepository usedRepository) {
         this.usedRepository = usedRepository;
     }
 
     public long getTtlSeconds() {
         return ttlSeconds;
+    }
+
+    public long getRateLimitBytesPerSecond() {
+        return rateLimitBytesPerSecond;
     }
 
     /**
@@ -227,4 +235,3 @@ public class DownloadTokenService {
         }
     }
 }
-

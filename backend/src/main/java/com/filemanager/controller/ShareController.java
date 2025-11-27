@@ -95,44 +95,12 @@ public class ShareController {
     }
 
     @GetMapping("/shares")
-    public ResponseEntity<?> listMyShares() {
+    public ResponseEntity<?> listMyShares(@RequestParam(value = "page", required = false, defaultValue = "0") int page,
+                                          @RequestParam(value = "size", required = false, defaultValue = "10") int size) {
         Long userId = currentUserId();
         try {
-            List<Share> list = shareService.listMyShares(userId);
-            List<Map<String, Object>> dto = list.stream().map(s -> {
-                Map<String, Object> base = new java.util.HashMap<>();
-                base.put("id", s.getId());
-                base.put("resourceId", s.getResourceId());
-                base.put("resourceType", s.getResourceType());
-                base.put("expireTime", s.getExpireTime());
-                base.put("status", s.getStatus());
-                base.put("viewCount", s.getViewCount());
-                base.put("downloadCount", s.getDownloadCount());
-                base.put("createdAt", s.getCreatedAt());
-                base.put("allowPreview", s.getAllowPreview());
-                base.put("allowDownload", s.getAllowDownload());
-                base.put("allowUpload", s.getAllowUpload());
-                base.put("allowReshare", s.getAllowReshare());
-                base.put("allowDeleteMove", s.getAllowDeleteMove());
-                base.put("shareMode", s.getShareMode());
-                try {
-                    if (s.getResourceType() == Share.ResourceType.FILE) {
-                        com.filemanager.entity.File f = fileRepository.findById(s.getResourceId()).orElse(null);
-                        if (f != null) {
-                            base.put("name", f.getOriginalFilename());
-                            base.put("size", f.getSize());
-                        }
-                    } else {
-                        com.filemanager.entity.Folder folder = folderRepository.findById(s.getResourceId()).orElse(null);
-                        if (folder != null) {
-                            base.put("name", folder.getName());
-                            base.put("size", 0);
-                        }
-                    }
-                } catch (Exception ignore) {}
-                return base;
-            }).toList();
-            return ResponseEntity.ok(dto);
+            ShareService.ShareListResult result = shareService.listMyShares(userId, page, size);
+            return ResponseEntity.ok(result);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }
@@ -251,7 +219,35 @@ public class ShareController {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
             }
             shareService.incrementDownload(payload.share);
-            StreamingResponseBody body = outputStream -> Files.copy(path, outputStream);
+            StreamingResponseBody body = outputStream -> {
+                long rateLimit = downloadTokenService.getRateLimitBytesPerSecond();
+                if (rateLimit <= 0) {
+                    Files.copy(path, outputStream);
+                    return;
+                }
+                try (java.io.InputStream in = Files.newInputStream(path)) {
+                    byte[] buffer = new byte[64 * 1024];
+                    long bytesThisSecond = 0;
+                    long windowStart = System.nanoTime();
+                    int len;
+                    while ((len = in.read(buffer)) != -1) {
+                        outputStream.write(buffer, 0, len);
+                        bytesThisSecond += len;
+                        long elapsedNanos = System.nanoTime() - windowStart;
+                        if (bytesThisSecond >= rateLimit) {
+                            long targetNanos = 1_000_000_000L;
+                            if (elapsedNanos < targetNanos) {
+                                long sleepMs = (targetNanos - elapsedNanos) / 1_000_000L;
+                                if (sleepMs > 0) {
+                                    Thread.sleep(sleepMs);
+                                }
+                            }
+                            bytesThisSecond = 0;
+                            windowStart = System.nanoTime();
+                        }
+                    }
+                }
+            };
             String name = file.getOriginalFilename();
             String asciiName = sanitizeAsciiFilename(name);
             String encoded = org.springframework.web.util.UriUtils.encode(asciiName, java.nio.charset.StandardCharsets.UTF_8);
@@ -277,15 +273,18 @@ public class ShareController {
         long start = System.currentTimeMillis();
         try {
             Share share = shareService.getActiveShare(id);
-            ShareService.SharePublicView view = shareService.getPublicShare(id);
             if (share.getResourceType() == Share.ResourceType.FILE) {
                 com.filemanager.entity.File f = fileService.getFileByIdForAdmin(share.getResourceId());
-                return ResponseEntity.ok(List.of(Map.of(
-                        "id", f.getId(),
-                        "name", f.getOriginalFilename(),
-                        "size", f.getSize(),
-                        "type", "file"
-                )));
+                return ResponseEntity.ok(Map.of(
+                        "total", 1,
+                        "items", List.of(Map.of(
+                                "id", f.getId(),
+                                "name", f.getOriginalFilename(),
+                                "size", f.getSize(),
+                                "type", "file",
+                                "createTime", f.getCreateTime()
+                        ))
+                ));
             }
             if (sessionToken == null || sessionToken.isBlank()) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "缺少访问令牌"));
@@ -303,25 +302,50 @@ public class ShareController {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "目标目录不在分享范围内"));
             }
             Long ownerId = share.getOwner().getId();
-            List<com.filemanager.entity.Folder> folders = folderRepository.findByUserIdAndParentIdAndDeletedFalseOrderByCreateTimeDesc(ownerId, targetFolderId);
-            List<com.filemanager.entity.File> files = fileRepository.findByUserIdAndFolderIdAndDeletedFalseOrderByCreateTimeDesc(ownerId, targetFolderId);
-            List<Map<String, Object>> all = new java.util.ArrayList<>();
-            for (var fo : folders) {
-                all.add(Map.of("id", fo.getId(), "name", fo.getName(), "size", 0, "type", "folder", "createTime", fo.getCreateTime()));
+            int safePage = Math.max(page, 0);
+            int safeSize = Math.max(1, Math.min(size, 200));
+            long folderTotal = folderRepository.countByUser_IdAndParent_IdAndDeletedFalse(ownerId, targetFolderId);
+            long fileTotal = fileRepository.countByUser_IdAndFolder_IdAndDeletedFalse(ownerId, targetFolderId);
+            long total = folderTotal + fileTotal;
+            int fetchLimit = (int) Math.min((long) (safePage + 1) * safeSize, Math.min(total, (long) Integer.MAX_VALUE));
+            var folderPage = folderRepository.findByUser_IdAndParent_IdAndDeletedFalse(ownerId, targetFolderId,
+                    org.springframework.data.domain.PageRequest.of(0, Math.max(fetchLimit, safeSize), org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "createTime")));
+            var filePage = fileRepository.findByUser_IdAndFolder_IdAndDeletedFalse(ownerId, targetFolderId,
+                    org.springframework.data.domain.PageRequest.of(0, Math.max(fetchLimit, safeSize), org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "createTime")));
+            List<com.filemanager.entity.Folder> folders = folderPage.getContent();
+            List<com.filemanager.entity.File> files = filePage.getContent();
+            List<Map<String, Object>> items = new java.util.ArrayList<>();
+            int from = safePage * safeSize;
+            int to = Math.min(from + safeSize, (int) Math.min(total, (long) Integer.MAX_VALUE));
+            int idx = 0;
+            int fi = 0;
+            int fo = 0;
+            while (idx < to && (fo < folders.size() || fi < files.size())) {
+                boolean pickFolder;
+                if (fo >= folders.size()) {
+                    pickFolder = false;
+                } else if (fi >= files.size()) {
+                    pickFolder = true;
+                } else {
+                    java.time.LocalDateTime fa = folders.get(fo).getCreateTime() != null ? folders.get(fo).getCreateTime() : java.time.LocalDateTime.MIN;
+                    java.time.LocalDateTime fb = files.get(fi).getCreateTime() != null ? files.get(fi).getCreateTime() : java.time.LocalDateTime.MIN;
+                    pickFolder = fa.isAfter(fb) || fa.equals(fb);
+                }
+                if (pickFolder) {
+                    var f = folders.get(fo++);
+                    if (idx >= from) {
+                        items.add(Map.of("id", f.getId(), "name", f.getName(), "size", 0, "type", "folder", "createTime", f.getCreateTime()));
+                    }
+                } else {
+                    var f = files.get(fi++);
+                    if (idx >= from) {
+                        items.add(Map.of("id", f.getId(), "name", f.getOriginalFilename(), "size", f.getSize(), "type", "file", "createTime", f.getCreateTime()));
+                    }
+                }
+                idx++;
             }
-            for (var fi : files) {
-                all.add(Map.of("id", fi.getId(), "name", fi.getOriginalFilename(), "size", fi.getSize(), "type", "file", "createTime", fi.getCreateTime()));
-            }
-            all.sort((a, b) -> {
-                java.time.LocalDateTime ta = (java.time.LocalDateTime) a.getOrDefault("createTime", java.time.LocalDateTime.MIN);
-                java.time.LocalDateTime tb = (java.time.LocalDateTime) b.getOrDefault("createTime", java.time.LocalDateTime.MIN);
-                return tb.compareTo(ta);
-            });
-            int from = Math.max(page, 0) * Math.max(size, 1);
-            int to = Math.min(from + Math.max(size, 1), all.size());
-            List<Map<String, Object>> pageList = from >= all.size() ? List.of() : all.subList(from, to);
             auditLogService.logSystemSuccess("SHARE_LIST", "SHARE", id, null, "公开分享列表访问", System.currentTimeMillis() - start);
-            return ResponseEntity.ok(Map.of("total", all.size(), "items", pageList));
+            return ResponseEntity.ok(Map.of("total", total, "items", items));
         } catch (com.filemanager.exception.ForbiddenException fe) {
             auditLogService.logSystemFailure("SHARE_LIST", "SHARE", id, null, "公开分享列表拒绝", fe.getMessage(), System.currentTimeMillis() - start);
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", fe.getMessage()));

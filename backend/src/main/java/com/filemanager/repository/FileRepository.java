@@ -102,4 +102,8 @@ public interface FileRepository extends JpaRepository<File, Long> {
                                                                          @Param("folderId") Long folderId,
                                                                          @Param("name") String name,
                                                                          @Param("excludeId") Long excludeId);
+
+    org.springframework.data.domain.Page<File> findByUser_IdAndFolder_IdAndDeletedFalse(Long userId, Long folderId, org.springframework.data.domain.Pageable pageable);
+
+    long countByUser_IdAndFolder_IdAndDeletedFalse(Long userId, Long folderId);
 }

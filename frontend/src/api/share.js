@@ -44,10 +44,11 @@ export function revokeShare(id) {
 }
 
 // 我的分享列表
-export function listShares() {
+export function listShares(params) {
   return request({
     url: "/shares",
-    method: "get"
+    method: "get",
+    params
   })
 }
 
@@ -78,7 +79,7 @@ export function getShareDownloadUrl(id, fileId, sessionToken) {
 }
 
 // 列出分享内容（文件夹下一级）
-export function listShareContent(id, params) {
+export function listShareContent(id, params = {}) {
   return request({
     url: `/public/shares/${id}/list`,
     method: "get",

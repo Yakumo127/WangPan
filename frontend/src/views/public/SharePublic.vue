@@ -75,6 +75,9 @@ const loading = ref(false)
 const items = ref([])
 const singleItem = ref(null)
 const breadcrumbs = ref([])
+const page = ref(1)
+const pageSize = ref(10)
+const total = ref(0)
 
 const formatDateTime = (dt) => dt ? new Date(dt).toLocaleString() : ''
 const formatSize = (size) => {
@@ -108,7 +111,9 @@ const validate = async () => {
     sessionToken.value = res.sessionToken
     if (shareInfo.value.resourceType === 'FILE') {
       singleItem.value = { id: shareInfo.value.resourceId, name: res.name || '文件', type: 'file', size: res.size || 0 }
+      total.value = 1
     } else {
+      page.value = 1
       breadcrumbs.value = [{ id: shareInfo.value.resourceId, name: shareInfo.value.resourceName || '文件夹' }]
       await loadList()
     }
@@ -121,8 +126,10 @@ const validate = async () => {
 const loadList = async (folderId) => {
   if (!sessionToken.value) return
   try {
-    const res = await listShareContent(shareId, { token: sessionToken.value, folderId })
-    items.value = res || []
+    const res = await listShareContent(shareId, { token: sessionToken.value, folderId, page: page.value - 1, size: pageSize.value })
+    const payloadItems = Array.isArray(res) ? res : (res?.items || [])
+    items.value = payloadItems
+    total.value = Array.isArray(res) ? payloadItems.length : (res?.total ?? payloadItems.length)
   } catch (e) {
     ElMessage.error(e?.message || '加载列表失败')
   }

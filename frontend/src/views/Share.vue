@@ -185,6 +185,16 @@
           </template>
         </el-table-column>
       </el-table>
+      <div class="pager" v-if="pagination.total > pagination.pageSize">
+        <el-pagination
+          layout="prev, pager, next"
+          :page-size="pagination.pageSize"
+          :current-page="pagination.page"
+          :total="pagination.total"
+          background
+          @current-change="handlePageChange"
+        />
+      </div>
     </div>
 
     <!-- 编辑分享对话框 -->
@@ -382,6 +392,11 @@ const showShareDialog = ref(false)
 const showEditDialog = ref(false)
 const showAclDialog = ref(false)
 const availableItems = ref([])
+const pagination = reactive({
+  page: 1,
+  pageSize: 10,
+  total: 0
+})
 
 const shareForm = reactive({
   type: 'file',
@@ -473,8 +488,10 @@ const disabledDate = (time) => {
 const loadShares = async () => {
   loading.value = true
   try {
-    const res = await listShares()
-    shares.value = (res || []).map(item => ({
+    const res = await listShares({ page: pagination.page - 1, size: pagination.pageSize })
+    const rawItems = Array.isArray(res) ? res : (res?.items || [])
+    const total = Array.isArray(res) ? rawItems.length : (res?.total ?? rawItems.length)
+    shares.value = (rawItems || []).map(item => ({
       id: item.id,
       name: item.name || item.originalFilename || `资源#${item.resourceId}`,
       type: (item.resourceType || 'FILE').toLowerCase() === 'folder' ? 'folder' : 'file',
@@ -492,11 +509,19 @@ const loadShares = async () => {
       allowDeleteMove: item.allowDeleteMove,
       shareMode: item.shareMode || 'PUBLIC'
     }))
-    shareStats.value = {
+    pagination.total = total
+    const statsPayload = !Array.isArray(res) ? res?.stats : null
+    const computedStats = {
       totalShares: shares.value.length,
       activeShares: shares.value.filter(s => s.active).length,
       totalDownloads: shares.value.reduce((sum, s) => sum + (s.downloadCount || 0), 0),
       totalViews: shares.value.reduce((sum, s) => sum + (s.viewCount || 0), 0)
+    }
+    shareStats.value = {
+      totalShares: statsPayload?.totalShares ?? computedStats.totalShares,
+      activeShares: statsPayload?.activeShares ?? computedStats.activeShares,
+      totalDownloads: statsPayload?.totalDownloads ?? computedStats.totalDownloads,
+      totalViews: statsPayload?.totalViews ?? computedStats.totalViews
     }
   } catch (error) {
     ElMessage.error('加载分享列表失败')
@@ -531,18 +556,18 @@ const loadAvailableItems = async () => {
 
 // 刷新分享列表
 const refreshShares = () => {
+  pagination.page = 1
   loadShares()
+}
+
+const handlePageChange = async (p) => {
+  pagination.page = p
+  await loadShares()
 }
 
 // 搜索分享
 const searchShares = () => {
-  // computed filteredShares 已根据 searchKeyword 生效，这里触发重新计算
-  shareStats.value = {
-    totalShares: filteredShares.value.length,
-    activeShares: filteredShares.value.filter(s => s.active).length,
-    totalDownloads: filteredShares.value.reduce((sum, s) => sum + (s.downloadCount || 0), 0),
-    totalViews: filteredShares.value.reduce((sum, s) => sum + (s.viewCount || 0), 0)
-  }
+  pagination.page = 1
 }
 
 // 复制分享链接
@@ -913,5 +938,11 @@ const saveAcl = async () => {
 
 :deep(.el-table__body-wrapper) {
   overflow-y: auto;
+}
+
+.pager {
+  padding: 12px 16px;
+  text-align: right;
+  border-top: 1px solid #f0f0f0;
 }
 </style>
