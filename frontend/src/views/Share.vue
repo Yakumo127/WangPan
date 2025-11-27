@@ -237,6 +237,9 @@
             inactive-text="不需要提取码"
           />
         </el-form-item>
+        <el-form-item v-if="shareForm.requireCode" label="提取码内容">
+          <el-input v-model="shareForm.code" maxlength="8" show-word-limit placeholder="请输入提取码（4-8位）" />
+        </el-form-item>
       </el-form>
       
       <template #footer>
@@ -253,6 +256,8 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Share, Refresh, Search, Document, Folder, CopyDocument, Edit, Delete, View, Link, Download } from '@element-plus/icons-vue'
+import { listShares, createShare, revokeShare } from '@/api/share'
+import { getFileList } from '@/api/file'
 
 const loading = ref(false)
 const creating = ref(false)
@@ -266,7 +271,8 @@ const shareForm = reactive({
   itemId: '',
   expireType: 'never',
   expireTime: null,
-  requireCode: false
+  requireCode: false,
+  code: ''
 })
 
 const shareStats = ref({
@@ -321,35 +327,19 @@ const disabledDate = (time) => {
 const loadShares = async () => {
   loading.value = true
   try {
-    // 模拟数据，实际应该从API获取
-    shares.value = [
-      {
-        id: 1,
-        name: '项目文档.pdf',
-        type: 'file',
-        size: 2048576,
-        shareUrl: 'https://example.com/share/abc123',
-        createTime: '2024-01-15T10:30:00',
-        expireTime: '2024-02-15T10:30:00',
-        viewCount: 25,
-        downloadCount: 8,
-        active: true
-      },
-      {
-        id: 2,
-        name: '设计素材',
-        type: 'folder',
-        size: 10485760,
-        shareUrl: 'https://example.com/share/def456',
-        createTime: '2024-01-10T14:20:00',
-        expireTime: null,
-        viewCount: 15,
-        downloadCount: 3,
-        active: true
-      }
-    ]
-    
-    // 更新统计信息
+    const res = await listShares()
+    shares.value = (res || []).map(item => ({
+      id: item.id,
+      name: item.originalFilename || `资源#${item.resourceId}`,
+      type: (item.resourceType || 'FILE').toLowerCase() === 'folder' ? 'folder' : 'file',
+      size: item.size || 0,
+      shareUrl: `${window.location.origin}/s/${item.id}`,
+      createTime: item.createdAt || item.createTime,
+      expireTime: item.expireTime,
+      viewCount: item.viewCount,
+      downloadCount: item.downloadCount,
+      active: item.status === 'ACTIVE'
+    }))
     shareStats.value = {
       totalShares: shares.value.length,
       activeShares: shares.value.filter(s => s.active).length,
@@ -366,13 +356,14 @@ const loadShares = async () => {
 // 加载可选项目
 const loadAvailableItems = async () => {
   try {
-    // 模拟数据，实际应该从API获取
-    availableItems.value = [
-      { id: 1, name: '项目文档.pdf', type: 'file', size: 2048576 },
-      { id: 2, name: '设计素材', type: 'folder', size: 10485760 },
-      { id: 3, name: '会议记录.docx', type: 'file', size: 512000 },
-      { id: 4, name: '图片资源', type: 'folder', size: 5242880 }
-    ]
+    const res = await getFileList({ page: 0, size: 50 })
+    const list = res?.content || res || []
+    availableItems.value = list.map(f => ({
+      id: f.id,
+      name: f.originalFilename,
+      type: 'file',
+      size: f.size
+    }))
   } catch (error) {
     console.error('加载可选项目失败:', error)
   }
@@ -420,9 +411,7 @@ const deleteShare = async (share) => {
         type: 'warning'
       }
     )
-    
-    // 模拟删除操作
-    share.active = false
+    await revokeShare(share.id)
     ElMessage.success('分享已取消')
     await loadShares()
   } catch (error) {
@@ -441,32 +430,27 @@ const createShareFunc = async () => {
 
   creating.value = true
   try {
-    // 模拟创建分享
     const newItem = availableItems.value.find(item => item.id === shareForm.itemId)
-    const newShare = {
-      id: shares.value.length + 1,
-      name: newItem.name,
-      type: shareForm.type,
-      size: newItem.size,
-      shareUrl: `https://example.com/share/${Math.random().toString(36).substr(2, 9)}`,
-      createTime: new Date().toISOString(),
-      expireTime: shareForm.expireType === 'custom' ? shareForm.expireTime.toISOString() : null,
-      viewCount: 0,
-      downloadCount: 0,
-      active: true
+    const payload = {
+      resourceType: shareForm.type === 'folder' ? 'FOLDER' : 'FILE',
+      resourceId: shareForm.itemId,
+      expireTime: shareForm.expireType === 'custom' ? shareForm.expireTime : null,
+      code: shareForm.requireCode ? shareForm.code : null,
+      allowPreview: true,
+      allowDownload: true,
+      allowUpload: false,
+      allowReshare: false,
+      allowDeleteMove: false
     }
-    
-    shares.value.unshift(newShare)
-    
+    await createShare(payload)
     ElMessage.success('分享创建成功')
     showShareDialog.value = false
-    
     // 重置表单
     shareForm.itemId = ''
     shareForm.expireType = 'never'
     shareForm.expireTime = null
     shareForm.requireCode = false
-    
+    shareForm.code = ''
     await loadShares()
   } catch (error) {
     ElMessage.error('创建分享失败')
