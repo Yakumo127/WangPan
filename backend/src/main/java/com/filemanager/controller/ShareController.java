@@ -152,10 +152,14 @@ public class ShareController {
     @PutMapping("/shares/{id}/acl")
     public ResponseEntity<?> updateAcl(@PathVariable Long id, @RequestBody List<ShareService.ACLItem> acl) {
         Long userId = currentUserId();
+        long start = System.currentTimeMillis();
         try {
             List<ShareACL> saved = shareService.replaceAcl(id, userId, acl);
+            auditLogService.logSuccess(userId, "SHARE_ACL_UPDATE", "SHARE", id, null, "更新分享 ACL", System.currentTimeMillis() - start);
             return ResponseEntity.ok(saved);
         } catch (Exception e) {
+            auditLogService.logFailure(userId, "SHARE_ACL_UPDATE", "SHARE", id, null,
+                    "更新分享 ACL 失败", e.getMessage(), System.currentTimeMillis() - start);
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }
     }
@@ -163,13 +167,17 @@ public class ShareController {
     // ---------- 公开接口 ----------
     @GetMapping("/public/shares/{id}")
     public ResponseEntity<?> publicShare(@PathVariable Long id) {
+        long start = System.currentTimeMillis();
         try {
             ShareService.SharePublicView view = shareService.getPublicShare(id);
             shareService.incrementView(id);
+            auditLogService.logSystemSuccess("SHARE_VIEW", "SHARE", id, view.getResourceName(), "公开分享查看元数据", System.currentTimeMillis() - start);
             return ResponseEntity.ok(view);
         } catch (com.filemanager.exception.ForbiddenException fe) {
+            auditLogService.logSystemFailure("SHARE_VIEW", "SHARE", id, null, "公开分享查看失败", fe.getMessage(), System.currentTimeMillis() - start);
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", fe.getMessage()));
         } catch (Exception e) {
+            auditLogService.logSystemFailure("SHARE_VIEW", "SHARE", id, null, "公开分享查看异常", e.getMessage(), System.currentTimeMillis() - start);
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }
     }
@@ -263,7 +271,10 @@ public class ShareController {
     @GetMapping("/public/shares/{id}/list")
     public ResponseEntity<?> listShareContent(@PathVariable Long id,
                                               @RequestParam(value = "token", required = false) String sessionToken,
-                                              @RequestParam(value = "folderId", required = false) Long folderId) {
+                                              @RequestParam(value = "folderId", required = false) Long folderId,
+                                              @RequestParam(value = "page", required = false, defaultValue = "0") int page,
+                                              @RequestParam(value = "size", required = false, defaultValue = "100") int size) {
+        long start = System.currentTimeMillis();
         try {
             Share share = shareService.getActiveShare(id);
             ShareService.SharePublicView view = shareService.getPublicShare(id);
@@ -294,17 +305,28 @@ public class ShareController {
             Long ownerId = share.getOwner().getId();
             List<com.filemanager.entity.Folder> folders = folderRepository.findByUserIdAndParentIdAndDeletedFalseOrderByCreateTimeDesc(ownerId, targetFolderId);
             List<com.filemanager.entity.File> files = fileRepository.findByUserIdAndFolderIdAndDeletedFalseOrderByCreateTimeDesc(ownerId, targetFolderId);
-            List<Map<String, Object>> result = new java.util.ArrayList<>();
+            List<Map<String, Object>> all = new java.util.ArrayList<>();
             for (var fo : folders) {
-                result.add(Map.of("id", fo.getId(), "name", fo.getName(), "size", 0, "type", "folder"));
+                all.add(Map.of("id", fo.getId(), "name", fo.getName(), "size", 0, "type", "folder", "createTime", fo.getCreateTime()));
             }
             for (var fi : files) {
-                result.add(Map.of("id", fi.getId(), "name", fi.getOriginalFilename(), "size", fi.getSize(), "type", "file"));
+                all.add(Map.of("id", fi.getId(), "name", fi.getOriginalFilename(), "size", fi.getSize(), "type", "file", "createTime", fi.getCreateTime()));
             }
-            return ResponseEntity.ok(result);
+            all.sort((a, b) -> {
+                java.time.LocalDateTime ta = (java.time.LocalDateTime) a.getOrDefault("createTime", java.time.LocalDateTime.MIN);
+                java.time.LocalDateTime tb = (java.time.LocalDateTime) b.getOrDefault("createTime", java.time.LocalDateTime.MIN);
+                return tb.compareTo(ta);
+            });
+            int from = Math.max(page, 0) * Math.max(size, 1);
+            int to = Math.min(from + Math.max(size, 1), all.size());
+            List<Map<String, Object>> pageList = from >= all.size() ? List.of() : all.subList(from, to);
+            auditLogService.logSystemSuccess("SHARE_LIST", "SHARE", id, null, "公开分享列表访问", System.currentTimeMillis() - start);
+            return ResponseEntity.ok(Map.of("total", all.size(), "items", pageList));
         } catch (com.filemanager.exception.ForbiddenException fe) {
+            auditLogService.logSystemFailure("SHARE_LIST", "SHARE", id, null, "公开分享列表拒绝", fe.getMessage(), System.currentTimeMillis() - start);
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", fe.getMessage()));
         } catch (Exception e) {
+            auditLogService.logSystemFailure("SHARE_LIST", "SHARE", id, null, "公开分享列表异常", e.getMessage(), System.currentTimeMillis() - start);
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }
     }

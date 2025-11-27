@@ -520,6 +520,10 @@ public class ShareService {
             req.setAllowReshare(false);
             req.setAllowDeleteMove(false);
         }
+        // 文件分享不允许上传
+        if (req.getResourceType() == Share.ResourceType.FILE) {
+            req.setAllowUpload(false);
+        }
         // 基础权限默认开启预览+下载
         if (req.getAllowPreview() == null) req.setAllowPreview(true);
         if (req.getAllowDownload() == null) req.setAllowDownload(true);

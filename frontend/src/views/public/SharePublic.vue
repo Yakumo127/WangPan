@@ -44,6 +44,15 @@
               </template>
             </el-table-column>
           </el-table>
+          <div v-if="total > pageSize" class="pager">
+            <el-pagination
+              layout="prev, pager, next"
+              :page-size="pageSize"
+              :current-page="page"
+              :total="total"
+              @current-change="handlePageChange"
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -133,12 +142,20 @@ const download = async (row) => {
 
 const enterFolder = async (row) => {
   if (row.type !== 'folder') return
+  page.value = 1
   breadcrumbs.value.push({ id: row.id, name: row.name })
   await loadList(row.id)
 }
 
 const backBreadcrumb = async (index) => {
   breadcrumbs.value = breadcrumbs.value.slice(0, index + 1)
+  const target = breadcrumbs.value[breadcrumbs.value.length - 1]
+  page.value = 1
+  await loadList(target?.id)
+}
+
+const handlePageChange = async (p) => {
+  page.value = p
   const target = breadcrumbs.value[breadcrumbs.value.length - 1]
   await loadList(target?.id)
 }
@@ -155,6 +172,7 @@ onMounted(() => {
 .hint { color: #888; }
 .single { display: flex; align-items: center; gap: 12px; }
 .name { font-weight: 600; }
+.pager { margin-top: 12px; text-align: right; }
 .crumbs { margin: 8px 0; }
 .crumbs span { cursor: pointer; color: #409EFF; margin-right: 8px; }
 .crumbs span:last-child { color: #333; cursor: default; }
