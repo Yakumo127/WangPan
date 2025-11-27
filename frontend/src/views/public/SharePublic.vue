@@ -7,6 +7,7 @@
         <div><strong>资源：</strong>{{ shareInfo.resourceName || '未知' }}（{{ shareInfo.resourceType === 'FOLDER' ? '文件夹' : '文件' }}）</div>
         <div><strong>过期时间：</strong>{{ shareInfo.expireTime ? formatDateTime(shareInfo.expireTime) : '永久' }}</div>
         <div><strong>需要提取码：</strong>{{ shareInfo.requireCode ? '是' : '否' }}</div>
+        <div><strong>权限：</strong>{{ shareInfo.allowDownload ? '下载' : '' }} {{ shareInfo.allowPreview ? '预览' : '' }}</div>
       </div>
 
       <div v-if="shareInfo.requireCode && !sessionToken" class="code-box">
@@ -17,7 +18,7 @@
       <div v-else class="content">
         <div v-if="shareInfo.resourceType === 'FILE'" class="single">
           <div class="name">{{ singleItem?.name }}</div>
-          <el-button type="primary" @click="download(singleItem)">下载</el-button>
+          <el-button type="primary" @click="download(singleItem)" :disabled="!shareInfo.allowDownload">下载</el-button>
         </div>
         <div v-else>
           <div v-if="items.length === 0" class="hint">暂无可见文件</div>
