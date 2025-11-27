@@ -86,20 +86,3 @@ export function listShareContent(id, params = {}) {
     params
   })
 }
-
-// 获取 ACL
-export function getShareAcl(id) {
-  return request({
-    url: `/shares/${id}/acl`,
-    method: "get"
-  })
-}
-
-// 替换 ACL
-export function replaceShareAcl(id, acl) {
-  return request({
-    url: `/shares/${id}/acl`,
-    method: "put",
-    data: acl
-  })
-}
