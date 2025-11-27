@@ -220,7 +220,8 @@ public class ShareService {
     }
 
     public SharePublicView getPublicShare(Long shareId) {
-        Share share = shareRepository.findActiveById(shareId).orElseThrow(() -> new NotFoundException("分享不存在或已撤销"));
+        Share share = shareRepository.findActiveById(shareId, Share.Status.ACTIVE)
+                .orElseThrow(() -> new NotFoundException("分享不存在或已撤销"));
         if (isExpired(share)) {
             throw new ForbiddenException("分享已过期");
         }
@@ -253,7 +254,7 @@ public class ShareService {
 
     @Transactional
     public ShareSession validateAccess(Long shareId, String code, Principal principal) {
-        Share share = shareRepository.findActiveAndNotExpired(shareId, LocalDateTime.now())
+        Share share = shareRepository.findActiveAndNotExpired(shareId, Share.Status.ACTIVE, LocalDateTime.now())
                 .orElseThrow(() -> new NotFoundException("分享不存在或已失效"));
         if (share.getCodeBanUntil() != null && share.getCodeBanUntil().isAfter(LocalDateTime.now())) {
             throw new ForbiddenException("提取码已被锁定，请稍后重试");
@@ -290,7 +291,7 @@ public class ShareService {
     }
 
     public Share getActiveShare(Long shareId) {
-        return shareRepository.findActiveAndNotExpired(shareId, LocalDateTime.now())
+        return shareRepository.findActiveAndNotExpired(shareId, Share.Status.ACTIVE, LocalDateTime.now())
                 .orElseThrow(() -> new NotFoundException("分享不存在或已失效"));
     }
 
@@ -299,7 +300,7 @@ public class ShareService {
         if (!shareId.equals(session.shareId)) {
             throw new ForbiddenException("会话无效");
         }
-        Share share = shareRepository.findActiveAndNotExpired(shareId, LocalDateTime.now())
+        Share share = shareRepository.findActiveAndNotExpired(shareId, Share.Status.ACTIVE, LocalDateTime.now())
                 .orElseThrow(() -> new NotFoundException("分享不存在或已失效"));
         Permissions perms = new Permissions(session.allowPreview, session.allowDownload, session.allowUpload, session.allowReshare, session.allowDeleteMove);
         if (!perms.isAllowDownload()) {
@@ -324,7 +325,7 @@ public class ShareService {
 
     public ShareDownloadPayload parseDownloadToken(String token) {
         DecodedShareToken decoded = parseShareDownloadToken(token);
-        Share share = shareRepository.findActiveAndNotExpired(decoded.shareId, LocalDateTime.now())
+        Share share = shareRepository.findActiveAndNotExpired(decoded.shareId, Share.Status.ACTIVE, LocalDateTime.now())
                 .orElseThrow(() -> new NotFoundException("分享不存在或已失效"));
         Permissions perms = new Permissions(decoded.allowPreview, decoded.allowDownload, decoded.allowUpload, decoded.allowReshare, decoded.allowDeleteMove);
         if (!perms.isAllowDownload()) {

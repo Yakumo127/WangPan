@@ -23,11 +23,11 @@ public interface ShareRepository extends JpaRepository<Share, Long> {
     @Query("SELECT s FROM Share s WHERE s.id = :id AND s.owner = :owner")
     Optional<Share> findByIdAndOwner(@Param("id") Long id, @Param("owner") User owner);
 
-    @Query("SELECT s FROM Share s WHERE s.id = :id AND s.status = com.filemanager.entity.Share.Status.ACTIVE")
-    Optional<Share> findActiveById(@Param("id") Long id);
+    @Query("SELECT s FROM Share s WHERE s.id = :id AND s.status = :status")
+    Optional<Share> findActiveById(@Param("id") Long id, @Param("status") Share.Status status);
 
-    @Query("SELECT s FROM Share s WHERE s.id = :id AND s.status = com.filemanager.entity.Share.Status.ACTIVE AND (s.expireTime IS NULL OR s.expireTime > :now)")
-    Optional<Share> findActiveAndNotExpired(@Param("id") Long id, @Param("now") LocalDateTime now);
+    @Query("SELECT s FROM Share s WHERE s.id = :id AND s.status = :status AND (s.expireTime IS NULL OR s.expireTime > :now)")
+    Optional<Share> findActiveAndNotExpired(@Param("id") Long id, @Param("status") Share.Status status, @Param("now") LocalDateTime now);
 
     long countByOwner(@Param("owner") User owner);
 
