@@ -2,6 +2,7 @@ package com.filemanager.controller;
 
 import com.filemanager.entity.Share;
 import com.filemanager.entity.ShareACL;
+import com.filemanager.entity.File;
 import com.filemanager.service.DownloadTokenService;
 import com.filemanager.service.FileService;
 import com.filemanager.service.ShareService;

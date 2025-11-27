@@ -30,7 +30,6 @@ public class ShareService {
     private final UserRepository userRepository;
     private final FileRepository fileRepository;
     private final com.filemanager.repository.FolderRepository folderRepository;
-    private final com.filemanager.repository.FolderRepository folderRepository;
     private final DownloadTokenService downloadTokenService;
 
     @Value("${share.token.secret:enterpriseFileManagerShareSecretKey2024}")
@@ -158,6 +157,22 @@ public class ShareService {
         view.setRequireCode(share.getCodeHash() != null);
         view.setAllowPreview(Boolean.TRUE.equals(share.getAllowPreview()));
         view.setAllowDownload(Boolean.TRUE.equals(share.getAllowDownload()));
+        // 附带资源名称/大小
+        try {
+            if (share.getResourceType() == Share.ResourceType.FILE) {
+                File f = fileRepository.findById(share.getResourceId()).orElse(null);
+                if (f != null) {
+                    view.setResourceName(f.getOriginalFilename());
+                    view.setResourceSize(f.getSize());
+                }
+            } else {
+                com.filemanager.entity.Folder folder = folderRepository.findById(share.getResourceId()).orElse(null);
+                if (folder != null) {
+                    view.setResourceName(folder.getName());
+                    view.setResourceSize(0L);
+                }
+            }
+        } catch (Exception ignore) {}
         return view;
     }
 
@@ -505,6 +520,8 @@ public class ShareService {
         private boolean requireCode;
         private boolean allowPreview;
         private boolean allowDownload;
+        private String resourceName;
+        private Long resourceSize;
     }
 
     @Data
@@ -571,15 +588,15 @@ public class ShareService {
         return false;
     }
 
-    private static class DecodedSession {
-        Long shareId;
-        ShareACL.PrincipalType principalType;
-        String principalValue;
-        boolean allowPreview;
-        boolean allowDownload;
-        boolean allowUpload;
-        boolean allowReshare;
-        boolean allowDeleteMove;
+    public static class DecodedSession {
+        public Long shareId;
+        public ShareACL.PrincipalType principalType;
+        public String principalValue;
+        public boolean allowPreview;
+        public boolean allowDownload;
+        public boolean allowUpload;
+        public boolean allowReshare;
+        public boolean allowDeleteMove;
     }
 
     private static class DecodedShareToken {
