@@ -249,6 +249,15 @@
         <el-form-item v-if="shareForm.requireCode" label="提取码内容">
           <el-input v-model="shareForm.code" maxlength="8" show-word-limit placeholder="请输入提取码（4-8位）" />
         </el-form-item>
+        <el-form-item label="权限">
+          <el-checkbox-group v-model="permissionSelections">
+            <el-checkbox label="preview">预览</el-checkbox>
+            <el-checkbox label="download">下载</el-checkbox>
+            <el-checkbox label="upload" :disabled="shareForm.type === 'file'">上传</el-checkbox>
+            <el-checkbox label="reshare" :disabled="true">再分享(禁用)</el-checkbox>
+            <el-checkbox label="deleteMove" :disabled="true">删除/移动(禁用)</el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
       </el-form>
       
       <template #footer>
@@ -282,7 +291,12 @@ const shareForm = reactive({
   expireType: 'never',
   expireTime: null,
   requireCode: false,
-  code: ''
+  code: '',
+  allowPreview: true,
+  allowDownload: true,
+  allowUpload: false,
+  allowReshare: false,
+  allowDeleteMove: false
 })
 
 const shareStats = ref({
@@ -291,6 +305,7 @@ const shareStats = ref({
   totalDownloads: 0,
   totalViews: 0
 })
+const permissionSelections = ref(['preview', 'download'])
 
 const filteredShares = computed(() => {
   if (!searchKeyword.value) return shares.value
@@ -399,7 +414,13 @@ const refreshShares = () => {
 
 // 搜索分享
 const searchShares = () => {
-  ElMessage.info('分享搜索功能开发中...')
+  // computed filteredShares 已根据 searchKeyword 生效，这里触发重新计算
+  shareStats.value = {
+    totalShares: filteredShares.value.length,
+    activeShares: filteredShares.value.filter(s => s.active).length,
+    totalDownloads: filteredShares.value.reduce((sum, s) => sum + (s.downloadCount || 0), 0),
+    totalViews: filteredShares.value.reduce((sum, s) => sum + (s.viewCount || 0), 0)
+  }
 }
 
 // 复制分享链接
@@ -465,9 +486,9 @@ const createShareFunc = async () => {
       resourceId: shareForm.itemId,
       expireTime: shareForm.expireType === 'custom' ? shareForm.expireTime : null,
       code: shareForm.requireCode ? shareForm.code : null,
-      allowPreview: true,
-      allowDownload: true,
-      allowUpload: false,
+      allowPreview: permissionSelections.value.includes('preview'),
+      allowDownload: permissionSelections.value.includes('download'),
+      allowUpload: permissionSelections.value.includes('upload'),
       allowReshare: false,
       allowDeleteMove: false
     }
@@ -480,6 +501,7 @@ const createShareFunc = async () => {
     shareForm.expireTime = null
     shareForm.requireCode = false
     shareForm.code = ''
+    permissionSelections.value = ['preview', 'download']
     await loadShares()
   } catch (error) {
     ElMessage.error('创建分享失败')

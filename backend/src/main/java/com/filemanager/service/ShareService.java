@@ -50,6 +50,8 @@ public class ShareService {
         if (req.getResourceType() == null || req.getResourceId() == null) {
             throw new IllegalArgumentException("缺少资源信息");
         }
+        // 公开模式兜底：禁止高风险权限位（上传/再分享/删移）
+        sanitizePermissionsForPublic(req);
         Share share = new Share();
         share.setOwner(owner);
         share.setResourceType(req.getResourceType());
@@ -87,6 +89,7 @@ public class ShareService {
     public Share updateShare(Long shareId, CreateShareRequest req, Long ownerId) {
         Share share = shareRepository.findByIdAndOwner(shareId, userRepository.findById(ownerId).orElseThrow(() -> new NotFoundException("用户不存在")))
                 .orElseThrow(() -> new NotFoundException("分享不存在"));
+        sanitizePermissionsForPublic(req);
         if (req.getExpireTime() != null) {
             share.setExpireTime(req.getExpireTime());
         }
@@ -477,6 +480,26 @@ public class ShareService {
     private String escape(String s) {
         if (s == null) return "";
         return s.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    /**
+     * 公开模式兜底：禁止高风险权限位
+     */
+    private void sanitizePermissionsForPublic(CreateShareRequest req) {
+        if (req == null) return;
+        // 对外分享默认视为公开链接（未区分受控开关），先兜底关闭高风险位
+        if (req.getAllowUpload() == null || req.getAllowUpload()) {
+            req.setAllowUpload(false);
+        }
+        if (req.getAllowReshare() == null || req.getAllowReshare()) {
+            req.setAllowReshare(false);
+        }
+        if (req.getAllowDeleteMove() == null || req.getAllowDeleteMove()) {
+            req.setAllowDeleteMove(false);
+        }
+        // 基础权限默认开启预览+下载
+        if (req.getAllowPreview() == null) req.setAllowPreview(true);
+        if (req.getAllowDownload() == null) req.setAllowDownload(true);
     }
 
     // -------- DTOs --------
