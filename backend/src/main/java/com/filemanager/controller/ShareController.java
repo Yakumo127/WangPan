@@ -30,6 +30,8 @@ public class ShareController {
     private final UserService userService;
     private final FileService fileService;
     private final DownloadTokenService downloadTokenService;
+    private final com.filemanager.repository.FileRepository fileRepository;
+    private final com.filemanager.repository.FolderRepository folderRepository;
 
     // ---------- 受保护接口 ----------
     @PostMapping("/shares")
@@ -80,7 +82,39 @@ public class ShareController {
         Long userId = currentUserId();
         try {
             List<Share> list = shareService.listMyShares(userId);
-            return ResponseEntity.ok(list);
+            List<Map<String, Object>> dto = list.stream().map(s -> {
+                Map<String, Object> base = new java.util.HashMap<>();
+                base.put("id", s.getId());
+                base.put("resourceId", s.getResourceId());
+                base.put("resourceType", s.getResourceType());
+                base.put("expireTime", s.getExpireTime());
+                base.put("status", s.getStatus());
+                base.put("viewCount", s.getViewCount());
+                base.put("downloadCount", s.getDownloadCount());
+                base.put("createdAt", s.getCreatedAt());
+                base.put("allowPreview", s.getAllowPreview());
+                base.put("allowDownload", s.getAllowDownload());
+                base.put("allowUpload", s.getAllowUpload());
+                base.put("allowReshare", s.getAllowReshare());
+                base.put("allowDeleteMove", s.getAllowDeleteMove());
+                try {
+                    if (s.getResourceType() == Share.ResourceType.FILE) {
+                        com.filemanager.entity.File f = fileRepository.findById(s.getResourceId()).orElse(null);
+                        if (f != null) {
+                            base.put("name", f.getOriginalFilename());
+                            base.put("size", f.getSize());
+                        }
+                    } else {
+                        com.filemanager.entity.Folder folder = folderRepository.findById(s.getResourceId()).orElse(null);
+                        if (folder != null) {
+                            base.put("name", folder.getName());
+                            base.put("size", 0);
+                        }
+                    }
+                } catch (Exception ignore) {}
+                return base;
+            }).toList();
+            return ResponseEntity.ok(dto);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }
@@ -202,8 +236,51 @@ public class ShareController {
 
     @GetMapping("/public/shares/{id}/list")
     public ResponseEntity<?> listShareContent(@PathVariable Long id,
-                                              @RequestParam(value = "token", required = false) String sessionToken) {
-        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).body(Map.of("message", "文件夹内容列出暂未实现"));
+                                              @RequestParam(value = "token", required = false) String sessionToken,
+                                              @RequestParam(value = "folderId", required = false) Long folderId) {
+        try {
+            Share share = shareService.getActiveShare(id);
+            ShareService.SharePublicView view = shareService.getPublicShare(id);
+            if (share.getResourceType() == Share.ResourceType.FILE) {
+                com.filemanager.entity.File f = fileService.getFileByIdForAdmin(share.getResourceId());
+                return ResponseEntity.ok(List.of(Map.of(
+                        "id", f.getId(),
+                        "name", f.getOriginalFilename(),
+                        "size", f.getSize(),
+                        "type", "file"
+                )));
+            }
+            if (sessionToken == null || sessionToken.isBlank()) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "缺少访问令牌"));
+            }
+            ShareService.DecodedSession session = shareService.parseSessionTokenInternal(sessionToken);
+            if (!id.equals(session.shareId)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "令牌无效"));
+            }
+            if (!session.allowPreview && !session.allowDownload) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "未授权访问"));
+            }
+            Long targetFolderId = folderId != null ? folderId : share.getResourceId();
+            com.filemanager.entity.Folder targetFolder = folderRepository.findById(targetFolderId).orElse(null);
+            if (targetFolder == null || !shareService.isInFolderSubtree(targetFolder, share.getResourceId())) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "目标目录不在分享范围内"));
+            }
+            Long ownerId = share.getOwner().getId();
+            List<com.filemanager.entity.Folder> folders = folderRepository.findByUserIdAndParentIdAndDeletedFalseOrderByCreateTimeDesc(ownerId, targetFolderId);
+            List<com.filemanager.entity.File> files = fileRepository.findByUserIdAndFolderIdAndDeletedFalseOrderByCreateTimeDesc(ownerId, targetFolderId);
+            List<Map<String, Object>> result = new java.util.ArrayList<>();
+            for (var fo : folders) {
+                result.add(Map.of("id", fo.getId(), "name", fo.getName(), "size", 0, "type", "folder"));
+            }
+            for (var fi : files) {
+                result.add(Map.of("id", fi.getId(), "name", fi.getOriginalFilename(), "size", fi.getSize(), "type", "file"));
+            }
+            return ResponseEntity.ok(result);
+        } catch (com.filemanager.exception.ForbiddenException fe) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", fe.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
     }
 
     private Long currentUserId() {

@@ -59,3 +59,12 @@ export function getShareDownloadUrl(id, fileId, sessionToken) {
     params: { token: sessionToken }
   })
 }
+
+// 列出分享内容（文件夹下一级）
+export function listShareContent(id, params) {
+  return request({
+    url: `/public/shares/${id}/list`,
+    method: "get",
+    params
+  })
+}

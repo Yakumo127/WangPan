@@ -89,6 +89,12 @@ const routes = [
         meta: { title: '我的分享', requiresAuth: true }
       },
       {
+        path: '/s/:id',
+        name: 'PublicShare',
+        component: () => import('@/views/public/SharePublic.vue'),
+        meta: { title: '文件分享', requiresAuth: false }
+      },
+      {
         path: '/recycle',
         name: 'Recycle',
         component: () => import('@/views/Recycle.vue'),

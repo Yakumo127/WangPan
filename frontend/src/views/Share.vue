@@ -196,14 +196,14 @@
             filterable
           >
             <el-option
-              v-for="item in availableItems"
+              v-for="item in availableItems.filter(i => i.type === shareForm.type)"
               :key="item.id"
               :label="item.name"
               :value="item.id"
             >
               <div class="option-item">
                 <el-icon>
-                  <Document v-if="shareForm.type === 'file'" />
+                  <Document v-if="item.type === 'file'" />
                   <Folder v-else />
                 </el-icon>
                 <span>{{ item.name }}</span>
@@ -258,6 +258,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Share, Refresh, Search, Document, Folder, CopyDocument, Edit, Delete, View, Link, Download } from '@element-plus/icons-vue'
 import { listShares, createShare, revokeShare } from '@/api/share'
 import { getFileList } from '@/api/file'
+import { getFolderList } from '@/api/folder'
 
 const loading = ref(false)
 const creating = ref(false)
@@ -356,14 +357,22 @@ const loadShares = async () => {
 // 加载可选项目
 const loadAvailableItems = async () => {
   try {
-    const res = await getFileList({ page: 0, size: 50 })
+    const res = await getFileList({ page: 0, size: 100 })
     const list = res?.content || res || []
-    availableItems.value = list.map(f => ({
+    const files = list.map(f => ({
       id: f.id,
       name: f.originalFilename,
       type: 'file',
       size: f.size
     }))
+    const foldersRes = await getFolderList({ parentId: null })
+    const folders = (foldersRes || []).map(f => ({
+      id: f.id,
+      name: f.name,
+      type: 'folder',
+      size: 0
+    }))
+    availableItems.value = [...files, ...folders]
   } catch (error) {
     console.error('加载可选项目失败:', error)
   }

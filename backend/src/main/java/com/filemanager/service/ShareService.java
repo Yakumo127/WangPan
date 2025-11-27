@@ -30,6 +30,7 @@ public class ShareService {
     private final UserRepository userRepository;
     private final FileRepository fileRepository;
     private final com.filemanager.repository.FolderRepository folderRepository;
+    private final com.filemanager.repository.FolderRepository folderRepository;
     private final DownloadTokenService downloadTokenService;
 
     @Value("${share.token.secret:enterpriseFileManagerShareSecretKey2024}")
@@ -196,6 +197,11 @@ public class ShareService {
 
     public DecodedSession parseSessionTokenInternal(String token) {
         return parseShareSessionToken(token);
+    }
+
+    public Share getActiveShare(Long shareId) {
+        return shareRepository.findActiveAndNotExpired(shareId, LocalDateTime.now())
+                .orElseThrow(() -> new NotFoundException("分享不存在或已失效"));
     }
 
     public String generateDownloadUrl(Long shareId, Long fileId, String sessionToken) {
@@ -555,7 +561,7 @@ public class ShareService {
         return shareDownloadTtlSeconds;
     }
 
-    private boolean isInFolderSubtree(com.filemanager.entity.Folder folder, Long rootId) {
+    public boolean isInFolderSubtree(com.filemanager.entity.Folder folder, Long rootId) {
         if (folder == null || rootId == null) return false;
         com.filemanager.entity.Folder cur = folder;
         while (cur != null) {
