@@ -427,6 +427,12 @@ const createShareFunc = async () => {
     ElMessage.warning('请选择要分享的文件或文件夹')
     return
   }
+  if (shareForm.requireCode) {
+    if (!shareForm.code || shareForm.code.length < 4 || shareForm.code.length > 8) {
+      ElMessage.warning('提取码长度需 4-8 位')
+      return
+    }
+  }
 
   creating.value = true
   try {
