@@ -29,6 +29,7 @@ public class ShareService {
     private final ShareACLRepository shareACLRepository;
     private final UserRepository userRepository;
     private final FileRepository fileRepository;
+    private final com.filemanager.repository.FolderRepository folderRepository;
     private final DownloadTokenService downloadTokenService;
 
     @Value("${share.token.secret:enterpriseFileManagerShareSecretKey2024}")
@@ -217,7 +218,7 @@ public class ShareService {
             throw new ForbiddenException("文件不在分享范围内");
         }
         if (share.getResourceType() == Share.ResourceType.FOLDER) {
-            if (file.getFolder() == null || !share.getResourceId().equals(file.getFolder().getId())) {
+            if (!isInFolderSubtree(file.getFolder(), share.getResourceId())) {
                 throw new ForbiddenException("文件不在分享文件夹下");
             }
         }
@@ -232,6 +233,18 @@ public class ShareService {
         Permissions perms = new Permissions(decoded.allowPreview, decoded.allowDownload, decoded.allowUpload, decoded.allowReshare, decoded.allowDeleteMove);
         if (!perms.isAllowDownload()) {
             throw new ForbiddenException("未授权下载");
+        }
+        File file = fileRepository.findById(decoded.fileId).orElseThrow(() -> new NotFoundException("文件不存在"));
+        if (!file.getUser().getId().equals(share.getOwner().getId())) {
+            throw new ForbiddenException("无权下载该文件");
+        }
+        if (share.getResourceType() == Share.ResourceType.FILE && !share.getResourceId().equals(decoded.fileId)) {
+            throw new ForbiddenException("文件不在分享范围内");
+        }
+        if (share.getResourceType() == Share.ResourceType.FOLDER) {
+            if (!isInFolderSubtree(file.getFolder(), share.getResourceId())) {
+                throw new ForbiddenException("文件不在分享文件夹下");
+            }
         }
         return new ShareDownloadPayload(share, decoded.fileId, perms, decoded.principalType, decoded.principalValue, token);
     }
@@ -540,6 +553,16 @@ public class ShareService {
 
     public long getShareDownloadTtlSeconds() {
         return shareDownloadTtlSeconds;
+    }
+
+    private boolean isInFolderSubtree(com.filemanager.entity.Folder folder, Long rootId) {
+        if (folder == null || rootId == null) return false;
+        com.filemanager.entity.Folder cur = folder;
+        while (cur != null) {
+            if (rootId.equals(cur.getId())) return true;
+            cur = cur.getParent();
+        }
+        return false;
     }
 
     private static class DecodedSession {
