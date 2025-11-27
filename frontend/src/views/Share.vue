@@ -377,11 +377,14 @@
 
 <script setup>
 import { ref, reactive, onMounted, computed, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Share, Refresh, Search, Document, Folder, CopyDocument, Edit, Delete, View, Link, Download } from '@element-plus/icons-vue'
 import { listShares, createShare, revokeShare, updateShare, getShareAcl, replaceShareAcl } from '@/api/share'
 import { getFileList } from '@/api/file'
 import { getFolderList } from '@/api/folder'
+
+const route = useRoute()
 
 const loading = ref(false)
 const creating = ref(false)
@@ -549,9 +552,22 @@ const loadAvailableItems = async () => {
       size: 0
     }))
     availableItems.value = [...files, ...folders]
+    applyPrefillFromRoute()
   } catch (error) {
     console.error('加载可选项目失败:', error)
   }
+}
+
+const applyPrefillFromRoute = () => {
+  const qId = route.query?.id
+  if (!qId) return
+  const typeParam = (route.query?.type || '').toString().toLowerCase()
+  const type = typeParam === 'folder' ? 'folder' : 'file'
+  shareForm.type = type
+  shareForm.itemId = Number(qId) || qId
+  shareForm.shareMode = 'PUBLIC'
+  permissionSelections.value = ['preview', 'download']
+  showShareDialog.value = true
 }
 
 // 刷新分享列表
