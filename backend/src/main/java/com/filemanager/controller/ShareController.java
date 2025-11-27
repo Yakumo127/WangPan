@@ -7,6 +7,7 @@ import com.filemanager.service.DownloadTokenService;
 import com.filemanager.service.FileService;
 import com.filemanager.service.ShareService;
 import com.filemanager.service.UserService;
+import com.filemanager.service.AuditLogService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -33,13 +34,17 @@ public class ShareController {
     private final DownloadTokenService downloadTokenService;
     private final com.filemanager.repository.FileRepository fileRepository;
     private final com.filemanager.repository.FolderRepository folderRepository;
+    private final AuditLogService auditLogService;
 
     // ---------- 受保护接口 ----------
     @PostMapping("/shares")
     public ResponseEntity<?> createShare(@RequestBody ShareService.CreateShareRequest request) {
         Long userId = currentUserId();
+        long start = System.currentTimeMillis();
         try {
             Share share = shareService.createShare(request, userId);
+            auditLogService.logSuccess(userId, "SHARE_CREATE", "SHARE", share.getId(),
+                    share.getResourceType().name(), "创建分享", System.currentTimeMillis() - start);
             return ResponseEntity.ok(Map.of(
                     "id", share.getId(),
                     "resourceId", share.getResourceId(),
@@ -48,6 +53,8 @@ public class ShareController {
                     "status", share.getStatus()
             ));
         } catch (Exception e) {
+            auditLogService.logFailure(userId, "SHARE_CREATE", "SHARE", null, null,
+                    "创建分享失败", e.getMessage(), System.currentTimeMillis() - start);
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }
     }
@@ -55,14 +62,19 @@ public class ShareController {
     @PutMapping("/shares/{id}")
     public ResponseEntity<?> updateShare(@PathVariable Long id, @RequestBody ShareService.CreateShareRequest request) {
         Long userId = currentUserId();
+        long start = System.currentTimeMillis();
         try {
             Share share = shareService.updateShare(id, request, userId);
+            auditLogService.logSuccess(userId, "SHARE_UPDATE", "SHARE", share.getId(),
+                    share.getResourceType().name(), "更新分享", System.currentTimeMillis() - start);
             return ResponseEntity.ok(Map.of(
                     "id", share.getId(),
                     "expireTime", share.getExpireTime(),
                     "status", share.getStatus()
             ));
         } catch (Exception e) {
+            auditLogService.logFailure(userId, "SHARE_UPDATE", "SHARE", id, null,
+                    "更新分享失败", e.getMessage(), System.currentTimeMillis() - start);
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }
     }
@@ -70,10 +82,14 @@ public class ShareController {
     @DeleteMapping("/shares/{id}")
     public ResponseEntity<?> revokeShare(@PathVariable Long id) {
         Long userId = currentUserId();
+        long start = System.currentTimeMillis();
         try {
             shareService.revokeShare(id, userId);
+            auditLogService.logSuccess(userId, "SHARE_REVOKE", "SHARE", id, null, "撤销分享", System.currentTimeMillis() - start);
             return ResponseEntity.ok(Map.of("message", "已取消分享"));
         } catch (Exception e) {
+            auditLogService.logFailure(userId, "SHARE_REVOKE", "SHARE", id, null,
+                    "撤销分享失败", e.getMessage(), System.currentTimeMillis() - start);
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }
     }
@@ -98,6 +114,7 @@ public class ShareController {
                 base.put("allowUpload", s.getAllowUpload());
                 base.put("allowReshare", s.getAllowReshare());
                 base.put("allowDeleteMove", s.getAllowDeleteMove());
+                base.put("shareMode", s.getShareMode());
                 try {
                     if (s.getResourceType() == Share.ResourceType.FILE) {
                         com.filemanager.entity.File f = fileRepository.findById(s.getResourceId()).orElse(null);
@@ -159,6 +176,7 @@ public class ShareController {
 
     @PostMapping("/public/shares/{id}/validate")
     public ResponseEntity<?> validateShare(@PathVariable Long id, @RequestBody Map<String, String> body) {
+        long start = System.currentTimeMillis();
         try {
             String code = body.get("code");
             ShareService.Principal p = new ShareService.Principal();
@@ -172,10 +190,13 @@ public class ShareController {
                 }
             }
             ShareService.ShareSession session = shareService.validateAccess(id, code, p);
+            auditLogService.logSystemSuccess("SHARE_VALIDATE", "SHARE", id, null, "公开分享验证通过", System.currentTimeMillis() - start);
             return ResponseEntity.ok(session);
         } catch (com.filemanager.exception.ForbiddenException fe) {
+            auditLogService.logSystemFailure("SHARE_VALIDATE", "SHARE", id, null, "公开分享验证失败", fe.getMessage(), System.currentTimeMillis() - start);
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", fe.getMessage()));
         } catch (Exception e) {
+            auditLogService.logSystemFailure("SHARE_VALIDATE", "SHARE", id, null, "公开分享验证异常", e.getMessage(), System.currentTimeMillis() - start);
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }
     }
@@ -197,11 +218,14 @@ public class ShareController {
     @GetMapping("/public/shares/direct-download")
     public ResponseEntity<StreamingResponseBody> directDownload(@RequestParam("token") String token) {
         ShareService.ShareDownloadPayload payload;
+        long start = System.currentTimeMillis();
         try {
             payload = shareService.parseDownloadToken(token);
         } catch (com.filemanager.exception.ForbiddenException fe) {
+            auditLogService.logSystemFailure("SHARE_DOWNLOAD", "SHARE", null, null, "下载拒绝", fe.getMessage(), System.currentTimeMillis() - start);
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(null);
         } catch (Exception e) {
+            auditLogService.logSystemFailure("SHARE_DOWNLOAD", "SHARE", null, null, "下载异常", e.getMessage(), System.currentTimeMillis() - start);
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
         }
         // 单次使用限制
@@ -215,6 +239,7 @@ public class ShareController {
             File file = fileService.getFileByIdForAdmin(payload.fileId);
             Path path = Path.of(file.getFilePath());
             if (!Files.exists(path) || !Files.isReadable(path)) {
+                auditLogService.logSystemFailure("SHARE_DOWNLOAD", "SHARE", payload.share.getId(), null, "文件不存在", "not found", System.currentTimeMillis() - start);
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
             }
             shareService.incrementDownload(payload.share);
@@ -223,12 +248,14 @@ public class ShareController {
             String asciiName = sanitizeAsciiFilename(name);
             String encoded = org.springframework.web.util.UriUtils.encode(asciiName, java.nio.charset.StandardCharsets.UTF_8);
             String disposition = String.format("attachment; filename=\"%s\"; filename*=UTF-8''%s", asciiName, encoded);
+            auditLogService.logSystemSuccess("SHARE_DOWNLOAD", "SHARE", payload.share.getId(), name, "公开下载成功", System.currentTimeMillis() - start);
             return ResponseEntity.ok()
                     .contentType(MediaType.APPLICATION_OCTET_STREAM)
                     .header(HttpHeaders.CONTENT_DISPOSITION, disposition)
                     .header(HttpHeaders.CACHE_CONTROL, "no-store")
                     .body(body);
         } catch (Exception e) {
+            auditLogService.logSystemFailure("SHARE_DOWNLOAD", "SHARE", payload.share.getId(), null, "下载异常", e.getMessage(), System.currentTimeMillis() - start);
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
         }
     }

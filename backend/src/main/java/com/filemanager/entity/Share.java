@@ -87,6 +87,11 @@ public class Share {
     @Column(name = "code_ban_until")
     private LocalDateTime codeBanUntil;
 
+    // 分享类型：PUBLIC（公开链接）/CONTROLLED（受控分享）
+    @Enumerated(EnumType.STRING)
+    @Column(name = "share_mode", nullable = false, length = 20)
+    private ShareMode shareMode = ShareMode.PUBLIC;
+
     @OneToMany(mappedBy = "share", cascade = CascadeType.ALL, orphanRemoval = true)
     @JsonIgnore
     private List<ShareACL> aclEntries = new ArrayList<>();
@@ -97,5 +102,9 @@ public class Share {
 
     public enum Status {
         ACTIVE, REVOKED
+    }
+
+    public enum ShareMode {
+        PUBLIC, CONTROLLED
     }
 }

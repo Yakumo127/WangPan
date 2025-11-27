@@ -50,8 +50,7 @@ public class ShareService {
         if (req.getResourceType() == null || req.getResourceId() == null) {
             throw new IllegalArgumentException("缺少资源信息");
         }
-        // 公开模式兜底：禁止高风险权限位（上传/再分享/删移）
-        sanitizePermissionsForPublic(req);
+        sanitizePermissions(req);
         Share share = new Share();
         share.setOwner(owner);
         share.setResourceType(req.getResourceType());
@@ -89,7 +88,7 @@ public class ShareService {
     public Share updateShare(Long shareId, CreateShareRequest req, Long ownerId) {
         Share share = shareRepository.findByIdAndOwner(shareId, userRepository.findById(ownerId).orElseThrow(() -> new NotFoundException("用户不存在")))
                 .orElseThrow(() -> new NotFoundException("分享不存在"));
-        sanitizePermissionsForPublic(req);
+        sanitizePermissions(req);
         if (req.getExpireTime() != null) {
             share.setExpireTime(req.getExpireTime());
         }
@@ -157,6 +156,7 @@ public class ShareService {
         }
         List<ShareACL> aclList = new ArrayList<>();
         for (ACLItem item : items) {
+            validatePrincipal(item);
             ShareACL acl = new ShareACL();
             acl.setShare(share);
             acl.setPrincipalType(item.getPrincipalType());
@@ -509,21 +509,32 @@ public class ShareService {
     /**
      * 公开模式兜底：禁止高风险权限位
      */
-    private void sanitizePermissionsForPublic(CreateShareRequest req) {
+    private void sanitizePermissions(CreateShareRequest req) {
         if (req == null) return;
-        // 对外分享默认视为公开链接（未区分受控开关），先兜底关闭高风险位
-        if (req.getAllowUpload() == null || req.getAllowUpload()) {
+        if (req.getShareMode() == null) {
+            req.setShareMode(Share.ShareMode.PUBLIC);
+        }
+        if (req.getShareMode() == Share.ShareMode.PUBLIC) {
+            // 公开模式兜底关闭高风险位
             req.setAllowUpload(false);
-        }
-        if (req.getAllowReshare() == null || req.getAllowReshare()) {
             req.setAllowReshare(false);
-        }
-        if (req.getAllowDeleteMove() == null || req.getAllowDeleteMove()) {
             req.setAllowDeleteMove(false);
         }
         // 基础权限默认开启预览+下载
         if (req.getAllowPreview() == null) req.setAllowPreview(true);
         if (req.getAllowDownload() == null) req.setAllowDownload(true);
+    }
+
+    private void validatePrincipal(ACLItem item) {
+        if (item == null || item.getPrincipalType() == null || item.getPrincipalValue() == null || item.getPrincipalValue().isBlank()) {
+            throw new IllegalArgumentException("ACL 受邀人信息不完整");
+        }
+        if (item.getPrincipalType() == ShareACL.PrincipalType.EMAIL) {
+            String v = item.getPrincipalValue();
+            if (!v.contains("@")) {
+                throw new IllegalArgumentException("邮箱格式不正确");
+            }
+        }
     }
 
     // -------- DTOs --------
@@ -538,6 +549,7 @@ public class ShareService {
         private Boolean allowUpload = false;
         private Boolean allowReshare = false;
         private Boolean allowDeleteMove = false;
+        private Share.ShareMode shareMode = Share.ShareMode.PUBLIC;
         private List<ACLItem> acl;
     }
 

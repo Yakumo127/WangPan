@@ -199,6 +199,12 @@
         <el-form-item v-if="editForm.expireType === 'custom'" label="选择时间">
           <el-date-picker v-model="editForm.expireTime" type="datetime" placeholder="选择过期时间" :disabled-date="disabledDate" style="width: 100%" />
         </el-form-item>
+        <el-form-item label="分享模式">
+          <el-radio-group v-model="editForm.shareMode">
+            <el-radio label="PUBLIC">公开</el-radio>
+            <el-radio label="CONTROLLED">受控</el-radio>
+          </el-radio-group>
+        </el-form-item>
         <el-form-item label="提取码">
           <el-switch v-model="editForm.requireCode" active-text="需要提取码" inactive-text="不需要提取码" />
         </el-form-item>
@@ -214,10 +220,51 @@
             <el-checkbox label="deleteMove" :disabled="true">删除/移动(禁用)</el-checkbox>
           </el-checkbox-group>
         </el-form-item>
+        <el-form-item label="ACL">
+          <el-button size="small" @click="openAclDialog(editForm.id)">管理受邀人权限</el-button>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showEditDialog = false">取消</el-button>
         <el-button type="primary" :loading="updating" @click="updateShareFunc">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- ACL 对话框 -->
+    <el-dialog v-model="showAclDialog" title="受邀人权限" width="600px">
+      <el-table :data="aclList" size="small" style="width: 100%; margin-bottom: 12px;">
+        <el-table-column prop="principalType" label="类型" width="100" />
+        <el-table-column prop="principalValue" label="标识" />
+        <el-table-column label="权限" width="200">
+          <template #default="{ row }">
+            <el-tag size="small" v-if="row.allowPreview">预览</el-tag>
+            <el-tag size="small" v-if="row.allowDownload" type="success">下载</el-tag>
+            <el-tag size="small" v-if="row.allowUpload" type="info">上传</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="100">
+          <template #default="{ $index }">
+            <el-button size="small" type="danger" @click="removeAcl($index)">移除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div class="acl-form">
+        <el-select v-model="newAcl.principalType" placeholder="类型" style="width: 120px">
+          <el-option label="用户" value="USER" />
+          <el-option label="邮箱" value="EMAIL" />
+          <el-option label="组" value="GROUP" />
+        </el-select>
+        <el-input v-model="newAcl.principalValue" placeholder="用户ID/邮箱/组" style="width: 200px; margin-left: 8px" />
+        <el-checkbox-group v-model="newAcl.perms" style="margin-left: 8px">
+          <el-checkbox label="preview">预览</el-checkbox>
+          <el-checkbox label="download">下载</el-checkbox>
+          <el-checkbox label="upload">上传</el-checkbox>
+        </el-checkbox-group>
+        <el-button size="small" type="primary" style="margin-left: 8px" @click="addAcl">添加</el-button>
+      </div>
+      <template #footer>
+        <el-button @click="showAclDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveAcl">保存</el-button>
       </template>
     </el-dialog>
 
@@ -229,6 +276,20 @@
             <el-radio label="file">文件</el-radio>
             <el-radio label="folder">文件夹</el-radio>
           </el-radio-group>
+        </el-form-item>
+        <el-form-item label="分享模式">
+          <el-radio-group v-model="shareForm.shareMode">
+            <el-radio label="PUBLIC">公开</el-radio>
+            <el-radio label="CONTROLLED">受控</el-radio>
+          </el-radio-group>
+          <div class="hint-small">公开模式自动禁用上传/再分享/删除移动</div>
+        </el-form-item>
+        <el-form-item label="分享模式">
+          <el-radio-group v-model="shareForm.shareMode">
+            <el-radio label="PUBLIC">公开</el-radio>
+            <el-radio label="CONTROLLED">受控</el-radio>
+          </el-radio-group>
+          <div class="hint-small">公开模式自动禁用上传/再分享/删除移动</div>
         </el-form-item>
         
         <el-form-item :label="shareForm.type === 'file' ? '选择文件' : '选择文件夹'">
@@ -287,7 +348,7 @@
           <el-checkbox-group v-model="permissionSelections">
             <el-checkbox label="preview">预览</el-checkbox>
             <el-checkbox label="download">下载</el-checkbox>
-            <el-checkbox label="upload" :disabled="shareForm.type === 'file'">上传</el-checkbox>
+            <el-checkbox label="upload" :disabled="shareForm.type === 'file' || shareForm.shareMode === 'PUBLIC'">上传</el-checkbox>
             <el-checkbox label="reshare" :disabled="true">再分享(禁用)</el-checkbox>
             <el-checkbox label="deleteMove" :disabled="true">删除/移动(禁用)</el-checkbox>
           </el-checkbox-group>
@@ -305,18 +366,21 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Share, Refresh, Search, Document, Folder, CopyDocument, Edit, Delete, View, Link, Download } from '@element-plus/icons-vue'
-import { listShares, createShare, revokeShare } from '@/api/share'
+import { listShares, createShare, revokeShare, updateShare, getShareAcl, replaceShareAcl } from '@/api/share'
 import { getFileList } from '@/api/file'
 import { getFolderList } from '@/api/folder'
 
 const loading = ref(false)
 const creating = ref(false)
+const updating = ref(false)
 const shares = ref([])
 const searchKeyword = ref('')
 const showShareDialog = ref(false)
+const showEditDialog = ref(false)
+const showAclDialog = ref(false)
 const availableItems = ref([])
 
 const shareForm = reactive({
@@ -330,7 +394,8 @@ const shareForm = reactive({
   allowDownload: true,
   allowUpload: false,
   allowReshare: false,
-  allowDeleteMove: false
+  allowDeleteMove: false,
+  shareMode: 'PUBLIC'
 })
 
 const shareStats = ref({
@@ -338,6 +403,23 @@ const shareStats = ref({
   activeShares: 0,
   totalDownloads: 0,
   totalViews: 0
+})
+const editForm = reactive({
+  id: null,
+  type: 'file',
+  expireType: 'never',
+  expireTime: null,
+  requireCode: false,
+  code: '',
+  shareMode: 'PUBLIC'
+})
+const editPermissionSelections = ref(['preview', 'download'])
+const aclDialogShareId = ref(null)
+const aclList = ref([])
+const newAcl = reactive({
+  principalType: 'USER',
+  principalValue: '',
+  perms: ['preview', 'download']
 })
 const permissionSelections = ref(['preview', 'download'])
 
@@ -394,7 +476,7 @@ const loadShares = async () => {
     const res = await listShares()
     shares.value = (res || []).map(item => ({
       id: item.id,
-      name: item.originalFilename || `资源#${item.resourceId}`,
+      name: item.name || item.originalFilename || `资源#${item.resourceId}`,
       type: (item.resourceType || 'FILE').toLowerCase() === 'folder' ? 'folder' : 'file',
       size: item.size || 0,
       shareUrl: `${window.location.origin}/s/${item.id}`,
@@ -402,7 +484,13 @@ const loadShares = async () => {
       expireTime: item.expireTime,
       viewCount: item.viewCount,
       downloadCount: item.downloadCount,
-      active: item.status === 'ACTIVE'
+      active: item.status === 'ACTIVE',
+      allowPreview: item.allowPreview,
+      allowDownload: item.allowDownload,
+      allowUpload: item.allowUpload,
+      allowReshare: item.allowReshare,
+      allowDeleteMove: item.allowDeleteMove,
+      shareMode: item.shareMode || 'PUBLIC'
     }))
     shareStats.value = {
       totalShares: shares.value.length,
@@ -478,6 +566,7 @@ const editShare = (share) => {
   editForm.type = share.type
   editForm.expireType = share.expireTime ? 'custom' : 'never'
   editForm.expireTime = share.expireTime ? new Date(share.expireTime) : null
+  editForm.shareMode = share.shareMode || 'PUBLIC'
   editForm.requireCode = false
   editForm.code = ''
   editPermissionSelections.value = []
@@ -530,6 +619,7 @@ const createShareFunc = async () => {
       resourceId: shareForm.itemId,
       expireTime: shareForm.expireType === 'custom' ? shareForm.expireTime : null,
       code: shareForm.requireCode ? shareForm.code : null,
+      shareMode: shareForm.shareMode,
       allowPreview: permissionSelections.value.includes('preview'),
       allowDownload: permissionSelections.value.includes('download'),
       allowUpload: permissionSelections.value.includes('upload'),
@@ -546,6 +636,7 @@ const createShareFunc = async () => {
     shareForm.requireCode = false
     shareForm.code = ''
     permissionSelections.value = ['preview', 'download']
+    shareForm.shareMode = 'PUBLIC'
     await loadShares()
   } catch (error) {
     ElMessage.error('创建分享失败')
@@ -557,6 +648,18 @@ const createShareFunc = async () => {
 onMounted(() => {
   loadShares()
   loadAvailableItems()
+})
+
+watch(() => shareForm.shareMode, (mode) => {
+  if (mode === 'PUBLIC') {
+    permissionSelections.value = permissionSelections.value.filter(p => p !== 'upload' && p !== 'reshare' && p !== 'deleteMove')
+  }
+})
+
+watch(() => editForm.shareMode, (mode) => {
+  if (mode === 'PUBLIC') {
+    editPermissionSelections.value = editPermissionSelections.value.filter(p => p !== 'upload' && p !== 'reshare' && p !== 'deleteMove')
+  }
 })
 
 const updateShareFunc = async () => {
@@ -574,6 +677,7 @@ const updateShareFunc = async () => {
     const payload = {
       expireTime: editForm.expireType === 'custom' ? editForm.expireTime : null,
       code: editForm.requireCode ? editForm.code : null,
+      shareMode: editForm.shareMode,
       allowPreview: editPermissionSelections.value.includes('preview'),
       allowDownload: editPermissionSelections.value.includes('download'),
       allowUpload: editForm.type === 'folder' && editPermissionSelections.value.includes('upload'),
@@ -588,6 +692,72 @@ const updateShareFunc = async () => {
     ElMessage.error('保存失败')
   } finally {
     updating.value = false
+  }
+}
+
+const openAclDialog = async (shareId) => {
+  if (!shareId) return
+  aclDialogShareId.value = shareId
+  try {
+    const res = await getShareAcl(shareId)
+    aclList.value = (res || []).map(a => ({
+      principalType: a.principalType,
+      principalValue: a.principalValue,
+      allowPreview: a.allowPreview,
+      allowDownload: a.allowDownload,
+      allowUpload: a.allowUpload
+    }))
+    showAclDialog.value = true
+  } catch (e) {
+    ElMessage.error('加载 ACL 失败')
+  }
+}
+
+const addAcl = () => {
+  if (!newAcl.principalValue || newAcl.principalValue.trim() === '') {
+    ElMessage.warning('请输入标识')
+    return
+  }
+  if (newAcl.principalType === 'EMAIL' && !newAcl.principalValue.includes('@')) {
+    ElMessage.warning('邮箱格式不正确')
+    return
+  }
+  if (!newAcl.perms.length) {
+    ElMessage.warning('请选择权限')
+    return
+  }
+  aclList.value.push({
+    principalType: newAcl.principalType,
+    principalValue: newAcl.principalValue.trim(),
+    allowPreview: newAcl.perms.includes('preview'),
+    allowDownload: newAcl.perms.includes('download'),
+    allowUpload: newAcl.perms.includes('upload')
+  })
+  newAcl.principalValue = ''
+  newAcl.perms = ['preview', 'download']
+}
+
+const removeAcl = (idx) => {
+  aclList.value.splice(idx, 1)
+}
+
+const saveAcl = async () => {
+  if (!aclDialogShareId.value) return
+  try {
+    const payload = aclList.value.map(a => ({
+      principalType: a.principalType,
+      principalValue: a.principalValue,
+      allowPreview: a.allowPreview,
+      allowDownload: a.allowDownload,
+      allowUpload: a.allowUpload,
+      allowReshare: false,
+      allowDeleteMove: false
+    }))
+    await replaceShareAcl(aclDialogShareId.value, payload)
+    ElMessage.success('ACL 已保存')
+    showAclDialog.value = false
+  } catch (e) {
+    ElMessage.error('保存 ACL 失败')
   }
 }
 </script>
@@ -721,6 +891,20 @@ const updateShareFunc = async () => {
   margin-left: auto;
   font-size: 12px;
   color: #666;
+}
+
+.hint-small {
+  font-size: 12px;
+  color: #888;
+  margin-top: 4px;
+}
+
+.acl-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
 }
 
 :deep(.el-table) {
