@@ -4,7 +4,7 @@
     <div v-if="loading" class="hint">加载中...</div>
     <div v-else>
       <div class="card">
-        <div><strong>资源类型：</strong>{{ shareInfo.resourceType === 'FOLDER' ? '文件夹' : '文件' }}</div>
+        <div><strong>资源：</strong>{{ shareInfo.resourceName || '未知' }}（{{ shareInfo.resourceType === 'FOLDER' ? '文件夹' : '文件' }}）</div>
         <div><strong>过期时间：</strong>{{ shareInfo.expireTime ? formatDateTime(shareInfo.expireTime) : '永久' }}</div>
         <div><strong>需要提取码：</strong>{{ shareInfo.requireCode ? '是' : '否' }}</div>
       </div>
@@ -20,6 +20,7 @@
           <el-button type="primary" @click="download(singleItem)">下载</el-button>
         </div>
         <div v-else>
+          <div v-if="items.length === 0" class="hint">暂无可见文件</div>
           <el-table :data="items" style="width: 100%">
             <el-table-column prop="name" label="名称" />
             <el-table-column prop="type" label="类型" width="100">
@@ -132,4 +133,5 @@ onMounted(() => {
 .code-box { margin: 12px 0; display: flex; align-items: center; }
 .hint { color: #888; }
 .single { display: flex; align-items: center; gap: 12px; }
+.name { font-weight: 600; }
 </style>
