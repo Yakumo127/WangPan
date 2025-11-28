@@ -296,17 +296,17 @@
             <el-button size="small" type="primary" @click="addAcl">添加</el-button>
           </div>
 
-          <template #footer>
-            <div class="share-acl-footer">
-              <div class="hint">公开分享仍遵循权限兜底；受控分享按上方列表授权。</div>
-              <div class="actions">
-                <el-button @click="showAclDialog = false">取消</el-button>
-                <el-button type="primary" @click="saveAcl">保存</el-button>
-              </div>
-            </div>
-          </template>
         </div>
       </div>
+      <template #footer>
+        <div class="share-acl-footer">
+          <div class="hint">公开分享仍遵循权限兜底；受控分享按上方列表授权。</div>
+          <div class="actions">
+            <el-button @click="showAclDialog = false">取消</el-button>
+            <el-button type="primary" @click="saveAcl">保存</el-button>
+          </div>
+        </div>
+      </template>
     </el-dialog>
 
     <!-- 创建分享对话框 -->
