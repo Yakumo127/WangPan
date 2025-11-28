@@ -63,6 +63,7 @@ public class ShareService {
         share.setAllowUpload(req.getAllowUpload());
         share.setAllowReshare(req.getAllowReshare());
         share.setAllowDeleteMove(req.getAllowDeleteMove());
+        share.setShareMode(req.getShareMode());
         if (req.getCode() != null && !req.getCode().isBlank()) {
             share.setCodeHash(sha256(req.getCode()));
         }
@@ -104,6 +105,7 @@ public class ShareService {
         if (req.getAllowUpload() != null) share.setAllowUpload(req.getAllowUpload());
         if (req.getAllowReshare() != null) share.setAllowReshare(req.getAllowReshare());
         if (req.getAllowDeleteMove() != null) share.setAllowDeleteMove(req.getAllowDeleteMove());
+        if (req.getShareMode() != null) share.setShareMode(req.getShareMode());
         shareRepository.save(share);
 
         if (req.getAcl() != null) {

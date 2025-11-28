@@ -555,7 +555,7 @@ const loadShares = async () => {
       name: item.name || item.originalFilename || `资源#${item.resourceId}`,
       type: (item.resourceType || 'FILE').toLowerCase() === 'folder' ? 'folder' : 'file',
       size: item.size || 0,
-      shareUrl: `${window.location.origin}/s/${item.id}`,
+      shareUrl: `${window.location.origin}/#/s/${item.id}`,
       createTime: item.createdAt || item.createTime,
       expireTime: item.expireTime,
       viewCount: item.viewCount,
@@ -719,7 +719,7 @@ const createShareFunc = async () => {
       shareMode: shareForm.shareMode,
       allowPreview: permissionSelections.value.includes('preview'),
       allowDownload: permissionSelections.value.includes('download'),
-      allowUpload: permissionSelections.value.includes('upload'),
+      allowUpload: shareForm.type === 'folder' && shareForm.shareMode !== 'PUBLIC' && permissionSelections.value.includes('upload'),
       allowReshare: false,
       allowDeleteMove: false
     }
@@ -753,9 +753,21 @@ watch(() => shareForm.shareMode, (mode) => {
   }
 })
 
+watch(() => shareForm.type, (type) => {
+  if (type === 'file') {
+    permissionSelections.value = permissionSelections.value.filter(p => p !== 'upload')
+  }
+})
+
 watch(() => editForm.shareMode, (mode) => {
   if (mode === 'PUBLIC') {
     editPermissionSelections.value = editPermissionSelections.value.filter(p => p !== 'upload' && p !== 'reshare' && p !== 'deleteMove')
+  }
+})
+
+watch(() => editForm.type, (type) => {
+  if (type === 'file') {
+    editPermissionSelections.value = editPermissionSelections.value.filter(p => p !== 'upload')
   }
 })
 
@@ -781,7 +793,7 @@ const updateShareFunc = async () => {
       shareMode: editForm.shareMode,
       allowPreview: editPermissionSelections.value.includes('preview'),
       allowDownload: editPermissionSelections.value.includes('download'),
-      allowUpload: editForm.type === 'folder' && editPermissionSelections.value.includes('upload'),
+      allowUpload: editForm.type === 'folder' && editForm.shareMode !== 'PUBLIC' && editPermissionSelections.value.includes('upload'),
       allowReshare: false,
       allowDeleteMove: false
     }
