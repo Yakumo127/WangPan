@@ -179,7 +179,7 @@
                   <el-dropdown-menu>
                     <el-dropdown-item @click="openMoveCopyDialog('move', row.raw, 'folder')">移动</el-dropdown-item>
                     <el-dropdown-item @click="openMoveCopyDialog('copy', row.raw, 'folder')">复制</el-dropdown-item>
-                    <el-dropdown-item @click="goSharePage(row)">分享</el-dropdown-item>
+                    <el-dropdown-item @click="openShareDialog(row)">分享</el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
@@ -210,7 +210,7 @@
                     <el-dropdown-item @click="goHistoryPage(row.raw)">历史</el-dropdown-item>
                     <el-dropdown-item @click="openMoveCopyDialog('move', row.raw, 'file')">移动</el-dropdown-item>
                     <el-dropdown-item @click="openMoveCopyDialog('copy', row.raw, 'file')">复制</el-dropdown-item>
-                    <el-dropdown-item @click="goSharePage(row)">分享</el-dropdown-item>
+                    <el-dropdown-item @click="openShareDialog(row)">分享</el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
@@ -313,6 +313,73 @@
       </template>
     </el-dialog>
 
+    <!-- 分享弹窗（前端示意，不调用后端） -->
+    <el-dialog
+      v-model="shareDialogVisible"
+      title="分享"
+      width="820px"
+      class="share-dialog"
+      destroy-on-close
+    >
+      <div class="share-dialog-body">
+        <div class="share-menu">
+          <div
+            v-for="item in shareMenuOptions"
+            :key="item.value"
+            :class="['share-menu-item', { active: shareActiveMenu === item.value }]"
+            @click="shareActiveMenu = item.value"
+          >
+            {{ item.label }}
+          </div>
+        </div>
+        <div class="share-content">
+          <div class="share-header">
+            <div class="share-target">
+              <span class="share-target-label">分享对象：</span>
+              <span class="share-target-name">{{ shareTargetName }}</span>
+            </div>
+            <el-input
+              v-model="shareUserSearch"
+              placeholder="搜索用户"
+              size="small"
+              clearable
+              class="share-search"
+            >
+              <template #prefix>
+                <el-icon><Search /></el-icon>
+              </template>
+            </el-input>
+            <el-button type="primary" size="small" @click="submitShare">提交</el-button>
+          </div>
+          <div class="share-user-list">
+            <div
+              v-for="user in filteredShareUsers"
+              :key="user.id"
+              class="share-user-row"
+            >
+              <div class="avatar" :style="{ backgroundColor: user.color }">
+                {{ user.name.slice(0, 1) }}
+              </div>
+              <div class="user-info">
+                <div class="user-name">{{ user.name }}</div>
+                <div class="user-meta">{{ user.desc }}</div>
+              </div>
+              <el-tag :type="getPermissionTag(user.permission)" size="small">
+                {{ getPermissionLabel(user.permission) }}
+              </el-tag>
+            </div>
+            <div v-if="!filteredShareUsers.length" class="empty-share-users">
+              未找到匹配的用户
+            </div>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="closeShareDialog">取消</el-button>
+        <el-button type="primary" @click="submitShare">提交</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 上传队列面板（悬浮窗） -->
     <transition name="slide-fade">
       <div v-if="uploadDrawerVisible" class="upload-panel-container" :class="{ 'is-minimized': isUploadPanelMinimized }">
@@ -356,7 +423,10 @@
                 <div class="item-bottom">
                   <span class="item-status" :style="{ color: getStatusColor(task.status) }">
                     {{ getStatusText(task) }}
-                    <span v-if="task.status === 'uploading'">{{ task.progress }}%</span>
+                    <span v-if="task.status === 'uploading'">
+                      {{ task.progress }}%
+                      <span class="item-speed">· {{ formatSpeed(task.speed) }}</span>
+                    </span>
                   </span>
                   <div class="item-actions">
                     <el-button 
@@ -449,6 +519,22 @@ const uploadDialogVisible = ref(false)
 const uploadDialogDragover = ref(false)
 const uploadDecisionMap = ref(new Map())
 const isUploadPanelMinimized = ref(false)
+const shareDialogVisible = ref(false)
+const shareActiveMenu = ref('user')
+const shareTarget = ref(null)
+const shareUserSearch = ref('')
+const shareMenuOptions = [
+  { value: 'link', label: '分享链接' },
+  { value: 'upload', label: '上传链接' },
+  { value: 'user', label: '分享给用户' },
+  { value: 'group', label: '分享给群组' }
+]
+const shareUsers = ref([
+  { id: 'u1', name: '张三', permission: 'rw', color: '#409EFF', desc: '研发部' },
+  { id: 'u2', name: '李四', permission: 'r', color: '#67C23A', desc: '运维组' },
+  { id: 'u3', name: '王五', permission: 'rw', color: '#E6A23C', desc: '测试部' },
+  { id: 'u4', name: '赵六', permission: 'r', color: '#909399', desc: '产品部' }
+])
 
 const getStatusColor = (status) => {
   switch (status) {
@@ -547,6 +633,18 @@ const entries = computed(() => {
 const currentFolderLabel = computed(() => {
   const last = breadcrumbs.value[breadcrumbs.value.length - 1]
   return last ? last.name : '根目录'
+})
+
+const shareTargetName = computed(() => {
+  const t = shareTarget.value
+  if (!t) return '未选择'
+  return t.originalFilename || t.name || t.filename || '未命名'
+})
+
+const filteredShareUsers = computed(() => {
+  const kw = shareUserSearch.value.trim().toLowerCase()
+  if (!kw) return shareUsers.value
+  return shareUsers.value.filter((u) => (u.name || '').toLowerCase().includes(kw))
 })
 
 // 上传队列：使用组合函数接入
@@ -680,6 +778,15 @@ const formatFileSize = (bytes) => {
   return `${parseFloat((n / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`
 }
 
+const formatSpeed = (bps) => {
+  const n = Number(bps)
+  if (!n || n < 0) return '0 B/s'
+  const k = 1024
+  const units = ['B/s', 'KB/s', 'MB/s', 'GB/s']
+  const i = Math.min(units.length - 1, Math.floor(Math.log(n) / Math.log(k)))
+  return `${parseFloat((n / Math.pow(k, i)).toFixed(2))} ${units[i]}`
+}
+
 const formatDateTime = (datetime) => {
   if (!datetime) return ''
   const d = new Date(datetime)
@@ -704,6 +811,16 @@ const formatFileType = (row) => {
 const getThumbnail = (row) => {
   if (row.type === 'folder') return ''
   return row.thumbnail || ''
+}
+
+const getPermissionLabel = (permission) => {
+  if (permission === 'rw') return '可读写'
+  return '仅预览/下载'
+}
+
+const getPermissionTag = (permission) => {
+  if (permission === 'rw') return 'success'
+  return 'info'
 }
 
 const previewImage = async (file) => {
@@ -1129,13 +1246,22 @@ const goHistoryPage = (file) => {
   })
 }
 
-const goSharePage = (entry) => {
-  if (!entry?.id) return
-  const type = entry.type === 'folder' ? 'folder' : 'file'
-  router.push({
-    name: 'Share',
-    query: { type, id: entry.id }
-  })
+const openShareDialog = (entry) => {
+  shareTarget.value = entry?.raw || entry
+  shareActiveMenu.value = 'user'
+  shareUserSearch.value = ''
+  shareDialogVisible.value = true
+}
+
+const closeShareDialog = () => {
+  shareDialogVisible.value = false
+  shareTarget.value = null
+  shareUserSearch.value = ''
+}
+
+const submitShare = () => {
+  ElMessage.success('已提交分享设置（前端示意）')
+  closeShareDialog()
 }
 
 const handleDataTransfer = async (dataTransfer, closeDialogAfter = false) => {
@@ -2017,5 +2143,122 @@ const dedupeFolders = (arr) => {
 .slide-fade-leave-to {
   transform: translateY(20px);
   opacity: 0;
+}
+
+.item-speed {
+  margin-left: 6px;
+  color: inherit;
+}
+
+.share-dialog-body {
+  display: flex;
+  gap: 16px;
+  min-height: 360px;
+}
+
+.share-menu {
+  width: 180px;
+  border-right: 1px solid $border-color-light;
+  padding: 8px 0;
+}
+
+.share-menu-item {
+  padding: 12px 16px;
+  cursor: pointer;
+  color: #606266;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.share-menu-item:hover {
+  background-color: rgba(64, 158, 255, 0.08);
+}
+
+.share-menu-item.active {
+  color: var(--el-color-primary);
+  background-color: rgba(64, 158, 255, 0.12);
+  border-left: 3px solid var(--el-color-primary);
+}
+
+.share-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.share-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.share-target {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #606266;
+}
+
+.share-target-name {
+  font-weight: 600;
+  color: #303133;
+}
+
+.share-search {
+  max-width: 240px;
+  flex: 1;
+}
+
+.share-user-list {
+  flex: 1;
+  border: 1px solid $border-color-light;
+  border-radius: 8px;
+  padding: 8px 0;
+  overflow: auto;
+}
+
+.share-user-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid $border-color-light;
+}
+
+.share-user-row:last-child {
+  border-bottom: none;
+}
+
+.avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.user-info {
+  flex: 1;
+  margin-left: 12px;
+}
+
+.user-name {
+  font-weight: 600;
+  color: #303133;
+}
+
+.user-meta {
+  color: #909399;
+  font-size: 12px;
+}
+
+.empty-share-users {
+  padding: 32px;
+  text-align: center;
+  color: #909399;
 }
 </style>

@@ -18,6 +18,7 @@ const SMALL_SIZE = 30 * 1024 * 1024
 const MID_SIZE = 300 * 1024 * 1024
 const SPEED_BYTES_PER_SEC = 2 * 1024 * 1024 // 2 MB/s
 const BUFFER_SECONDS = 180
+const SPEED_SAMPLE_MIN_INTERVAL = 200 // 毫秒采样间隔，避免进度过快抖动
 
 export function useUploadQueue(options = {}) {
   const {
@@ -116,7 +117,10 @@ export function useUploadQueue(options = {}) {
           controllers: {
             hashingController: null,
             requestControllers: new Set()
-          }
+          },
+          speed: 0,
+          lastSpeedUploaded: 0,
+          lastSpeedTimestamp: Date.now()
         }
         uploadQueue.value.push(task)
       }
@@ -154,7 +158,10 @@ export function useUploadQueue(options = {}) {
         controllers: {
           hashingController: null,
           requestControllers: new Set()
-        }
+        },
+        speed: 0,
+        lastSpeedUploaded: 0,
+        lastSpeedTimestamp: now
       }
       uploadQueue.value.push(task)
     }
@@ -165,6 +172,27 @@ export function useUploadQueue(options = {}) {
   const updateTask = (task, patch) => {
     Object.assign(task, patch, { updatedAt: Date.now() })
     persistState()
+  }
+
+  const resetSpeedTracker = (task, uploadedBytes = 0) => {
+    task.speed = 0
+    task.lastSpeedUploaded = uploadedBytes
+    task.lastSpeedTimestamp = Date.now()
+  }
+
+  const recordSpeed = (task, currentUploaded) => {
+    const now = Date.now()
+    const lastTs = task.lastSpeedTimestamp || now
+    const lastUploaded = task.lastSpeedUploaded || 0
+    const deltaTime = now - lastTs
+    let speed = task.speed || 0
+    if (deltaTime >= SPEED_SAMPLE_MIN_INTERVAL && currentUploaded >= lastUploaded) {
+      const deltaBytes = currentUploaded - lastUploaded
+      speed = deltaBytes / (deltaTime / 1000)
+    }
+    task.lastSpeedTimestamp = now
+    task.lastSpeedUploaded = currentUploaded
+    return speed
   }
 
   const schedule = () => {
@@ -181,6 +209,7 @@ export function useUploadQueue(options = {}) {
       // 任务恢复后尚未绑定文件，跳过
       return
     }
+    resetSpeedTracker(task, 0)
     activeUploadsCount.value += 1
     try {
       let resolvedParentId = task.parentId ?? null
@@ -229,7 +258,8 @@ export function useUploadQueue(options = {}) {
             status: 'completed',
             isFastUploaded: true,
             progress: 100,
-            uploadedBytes: task.size
+            uploadedBytes: task.size,
+            speed: 0
           })
           onTaskCompleted()
           return
@@ -249,7 +279,7 @@ export function useUploadQueue(options = {}) {
       // 若上传过程未抛出异常，则视为完成
       if (task.status === 'uploading' || task.status === 'merging') {
         // 防御：确保完成状态
-        updateTask(task, { status: 'completed', progress: 100, uploadedBytes: task.size })
+        updateTask(task, { status: 'completed', progress: 100, uploadedBytes: task.size, speed: 0 })
       }
       onTaskCompleted()
     } catch (e) {
@@ -260,12 +290,14 @@ export function useUploadQueue(options = {}) {
       } else if (e && e.code === 'HASH_ABORTED') {
         // 哈希阶段被中断，同样不视为失败
         updateTask(task, {
-          status: 'paused'
+          status: 'paused',
+          speed: 0
         })
       } else {
         updateTask(task, {
           status: 'failed',
-          errorMessage: e?.message || '上传失败'
+          errorMessage: e?.message || '上传失败',
+          speed: 0
         })
         ElMessage.error(`上传失败：${task.name}`)
       }
@@ -277,6 +309,7 @@ export function useUploadQueue(options = {}) {
 
   const uploadDirect = async (task) => {
     updateTask(task, { status: 'uploading', progress: 0 })
+    resetSpeedTracker(task, 0)
     const controller = new AbortController()
     task.controllers?.requestControllers.add(controller)
     await directUpload({
@@ -287,7 +320,8 @@ export function useUploadQueue(options = {}) {
       onUploadProgress: (evt) => {
         if (evt.total > 0) {
           const pct = Math.round((evt.loaded / evt.total) * 100)
-          updateTask(task, { progress: pct, uploadedBytes: evt.loaded })
+          const speed = recordSpeed(task, evt.loaded)
+          updateTask(task, { progress: pct, uploadedBytes: evt.loaded, speed })
         }
       },
       signal: controller.signal,
@@ -317,6 +351,7 @@ export function useUploadQueue(options = {}) {
       uploadedBytes: 0,
       progress: 0
     })
+    resetSpeedTracker(task, 0)
 
     // 断点续传：查询已上传分片
     try {
@@ -336,8 +371,10 @@ export function useUploadQueue(options = {}) {
         }
         updateTask(task, {
           uploadedBytes: doneBytes,
-          progress: Math.round((doneBytes / task.size) * 100)
+          progress: Math.round((doneBytes / task.size) * 100),
+          speed: 0
         })
+        resetSpeedTracker(task, doneBytes)
       }
     } catch (e) {
       // 查询失败不影响后续上传，仅记录日志
@@ -377,9 +414,11 @@ export function useUploadQueue(options = {}) {
             : CHUNK_SIZE
           return sum + cs
         }, 0)
+        const speed = recordSpeed(task, uploadedBytes)
         updateTask(task, {
           uploadedBytes,
-          progress: Math.round((uploadedBytes / task.size) * 100)
+          progress: Math.round((uploadedBytes / task.size) * 100),
+          speed
         })
       } catch (e) {
         const aborted = task.status === 'paused' || task.status === 'canceled' || controller.signal?.aborted || e?.code === 'ERR_CANCELED'
@@ -418,7 +457,7 @@ export function useUploadQueue(options = {}) {
     if ((task.chunks || []).some(c => !c.uploaded)) {
       throw new Error('仍有分片未完成，无法合并')
     }
-    updateTask(task, { status: 'merging' })
+    updateTask(task, { status: 'merging', speed: 0 })
     await mergeChunks({
       hash: task.hash,
       total: totalChunks,
@@ -433,7 +472,7 @@ export function useUploadQueue(options = {}) {
     const task = uploadQueue.value.find((t) => t.id === taskId)
     if (!task) return
     if (task.status === 'uploading' || task.status === 'hashing' || task.status === 'checking_fast') {
-      updateTask(task, { status: 'paused' })
+      updateTask(task, { status: 'paused', speed: 0 })
       // 中断当前哈希与请求
       if (task.controllers?.hashingController) {
         task.controllers.hashingController.abort()
@@ -462,7 +501,7 @@ export function useUploadQueue(options = {}) {
     if (idx === -1) return
     const task = uploadQueue.value[idx]
     if (task.status === 'completed') return
-    updateTask(task, { status: 'canceled' })
+    updateTask(task, { status: 'canceled', speed: 0 })
     if (task.controllers?.hashingController) {
       task.controllers.hashingController.abort()
       task.controllers.hashingController = null
@@ -485,8 +524,10 @@ export function useUploadQueue(options = {}) {
       status: 'pending',
       progress: 0,
       uploadedBytes: 0,
-      errorMessage: ''
+      errorMessage: '',
+      speed: 0
     })
+    resetSpeedTracker(task, 0)
     schedule()
   }
 
@@ -511,8 +552,10 @@ export function useUploadQueue(options = {}) {
       status: 'pending',
       progress: 0,
       uploadedBytes: 0,
-      errorMessage: ''
+      errorMessage: '',
+      speed: 0
     })
+    resetSpeedTracker(task, 0)
     schedule()
   }
 
@@ -526,8 +569,7 @@ export function useUploadQueue(options = {}) {
     pauseTask,
     resumeTask,
     cancelTask,
-    retryTask
-    ,
+    retryTask,
     attachFileToTask
   }
 }
