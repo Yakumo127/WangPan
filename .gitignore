@@ -1,10 +1,14 @@
 # 后端构建产物
 backend/target/
+backend/.m2/
 
 # 前端依赖与构建
 frontend/node_modules/
 frontend/dist/
 frontend/node_modules/.cache/
+
+# 脚本输出
+aa.csv
 
 # 日志与临时
 *.log
