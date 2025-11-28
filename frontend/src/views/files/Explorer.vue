@@ -179,6 +179,7 @@
                   <el-dropdown-menu>
                     <el-dropdown-item @click="openMoveCopyDialog('move', row.raw, 'folder')">移动</el-dropdown-item>
                     <el-dropdown-item @click="openMoveCopyDialog('copy', row.raw, 'folder')">复制</el-dropdown-item>
+                    <el-dropdown-item @click="goSharePage(row)">分享</el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
@@ -209,6 +210,7 @@
                     <el-dropdown-item @click="goHistoryPage(row.raw)">历史</el-dropdown-item>
                     <el-dropdown-item @click="openMoveCopyDialog('move', row.raw, 'file')">移动</el-dropdown-item>
                     <el-dropdown-item @click="openMoveCopyDialog('copy', row.raw, 'file')">复制</el-dropdown-item>
+                    <el-dropdown-item @click="goSharePage(row)">分享</el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
@@ -311,106 +313,94 @@
       </template>
     </el-dialog>
 
-    <!-- 上传队列面板（底部抽屉） -->
-    <el-drawer
-      v-model="uploadDrawerVisible"
-      title="上传任务"
-      size="30%"
-      direction="btt"
-    >
-      <div v-if="uploadQueue.length === 0" style="color:#999;">暂无上传任务</div>
-      <el-table
-        v-else
-        :data="uploadQueue"
-        style="width:100%;"
-        size="small"
-      >
-        <el-table-column prop="name" label="文件名" min-width="220" />
-        <el-table-column label="大小" width="120">
-          <template #default="{ row }">
-            {{ formatFileSize(row.size) }}
-          </template>
-        </el-table-column>
-        <el-table-column label="状态" width="140">
-          <template #default="{ row }">
-            <span v-if="row.status === 'pending'">排队中</span>
-            <span v-else-if="row.status === 'hashing'">计算哈希</span>
-            <span v-else-if="row.status === 'checking_fast'">秒传检查</span>
-            <span v-else-if="row.status === 'uploading'">上传中</span>
-            <span v-else-if="row.status === 'completed'">
-              <span v-if="row.isFastUploaded">秒传完成</span>
-              <span v-else>已完成</span>
-            </span>
-            <span v-else-if="row.status === 'failed'">失败</span>
-            <span v-else>{{ row.status }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="进度" width="160">
-          <template #default="{ row }">
-            <el-progress
-              :percentage="row.progress"
-              :status="row.status === 'failed' ? 'exception' : (row.status === 'completed' ? 'success' : undefined)"
-            />
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="220">
-          <template #default="{ row }">
-            <el-button
-              v-if="!row.file && row.status === 'paused'"
-              type="primary"
-              link
-              size="small"
-              @click="onSelectFileForTask(row.id)"
-            >
-              选择文件
-            </el-button>
-            <el-button
-              v-if="row.status === 'failed'"
-              type="primary"
-              link
-              size="small"
-              @click="retryTask(row.id)"
-            >
-              重试
-            </el-button>
-            <el-button
-              v-if="row.status === 'uploading'"
-              type="primary"
-              link
-              size="small"
-              @click="pauseTask(row.id)"
-            >
-              暂停
-            </el-button>
-            <el-button
-              v-if="row.status === 'paused'"
-              type="primary"
-              link
-              size="small"
-              @click="resumeTask(row.id)"
-            >
-              继续
-            </el-button>
-            <el-button
-              v-if="row.status !== 'completed'"
-              type="danger"
-              link
-              size="small"
-              @click="cancelTask(row.id)"
-            >
-              取消
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-drawer>
+    <!-- 上传队列面板（悬浮窗） -->
+    <transition name="slide-fade">
+      <div v-if="uploadDrawerVisible" class="upload-panel-container" :class="{ 'is-minimized': isUploadPanelMinimized }">
+        <div class="upload-panel-header" @click="isUploadPanelMinimized = !isUploadPanelMinimized">
+          <div class="header-left">
+            <span class="header-title">上传任务</span>
+            <span class="header-count" v-if="uploadQueue.length">({{ uploadQueue.length }})</span>
+          </div>
+          <div class="header-actions">
+            <el-icon class="header-icon" @click.stop="isUploadPanelMinimized = !isUploadPanelMinimized">
+              <ArrowDown v-if="!isUploadPanelMinimized" />
+              <ArrowUp v-else />
+            </el-icon>
+            <el-icon class="header-icon" @click.stop="uploadDrawerVisible = false"><Close /></el-icon>
+          </div>
+        </div>
+
+        <div class="upload-panel-body" v-show="!isUploadPanelMinimized">
+          <div v-if="uploadQueue.length === 0" class="empty-queue">
+            <el-icon class="empty-icon"><Box /></el-icon>
+            <p>暂无上传任务</p>
+          </div>
+          <ul v-else class="upload-list">
+            <li v-for="task in uploadQueue" :key="task.id" class="upload-item">
+              <div class="item-icon">
+                <el-icon :size="24" :color="getFileIconConfig(task.name).color">
+                  <component :is="getFileIconConfig(task.name).name" />
+                </el-icon>
+              </div>
+              <div class="item-content">
+                <div class="item-top">
+                  <span class="item-name" :title="task.name">{{ task.name }}</span>
+                  <span class="item-size">{{ formatFileSize(task.size) }}</span>
+                </div>
+                <div class="item-progress-bar">
+                  <div 
+                    class="progress-inner" 
+                    :style="{ width: task.progress + '%', backgroundColor: getStatusColor(task.status) }"
+                  ></div>
+                </div>
+                <div class="item-bottom">
+                  <span class="item-status" :style="{ color: getStatusColor(task.status) }">
+                    {{ getStatusText(task) }}
+                    <span v-if="task.status === 'uploading'">{{ task.progress }}%</span>
+                  </span>
+                  <div class="item-actions">
+                    <el-button 
+                      v-if="!task.file && task.status === 'paused'" 
+                      link type="primary" size="small" 
+                      @click="onSelectFileForTask(task.id)"
+                    >选文件</el-button>
+                    
+                    <el-tooltip content="重试" v-if="task.status === 'failed'">
+                      <el-icon class="action-icon refresh" @click="retryTask(task.id)"><Refresh /></el-icon>
+                    </el-tooltip>
+                    
+                    <el-tooltip content="暂停" v-if="task.status === 'uploading' || task.status === 'hashing' || task.status === 'checking_fast'">
+                      <el-icon class="action-icon" @click="pauseTask(task.id)"><VideoPause /></el-icon>
+                    </el-tooltip>
+                    
+                    <el-tooltip content="继续" v-if="task.status === 'paused'">
+                      <el-icon class="action-icon" @click="resumeTask(task.id)"><VideoPlay /></el-icon>
+                    </el-tooltip>
+                    
+                    <el-tooltip content="取消" v-if="task.status !== 'completed'">
+                      <el-icon class="action-icon delete" @click="cancelTask(task.id)"><Close /></el-icon>
+                    </el-tooltip>
+
+                    <el-icon v-if="task.status === 'completed'" class="action-icon success"><Check /></el-icon>
+                  </div>
+                </div>
+              </div>
+            </li>
+          </ul>
+        </div>
+        
+        <div class="upload-panel-footer" v-show="!isUploadPanelMinimized">
+          <el-button @click="uploadDrawerVisible = false">关闭</el-button>
+        </div>
+      </div>
+    </transition>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Folder, FolderOpened, Upload, UploadFilled, Search, Document, Download, Delete, Edit, View, ArrowDown, Close, Cpu, Monitor, Setting, Warning } from '@element-plus/icons-vue'
+import { Folder, FolderOpened, Upload, UploadFilled, Search, Document, Download, Delete, Edit, View, ArrowDown, ArrowUp, Close, Cpu, Monitor, Setting, Warning, VideoPause, VideoPlay, Refresh, Check, Box } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import { getFileList, deleteFile as deleteFileApi, renameFile as renameFileApi, getDownloadUrl, previewFile as previewFileApi, moveFile as moveFileApi, copyFile as copyFileApi } from '@/api/file'
 import { getFolderList, createFolder, deleteFolder as deleteFolderApi, renameFolder as renameFolderApi, getFolderPath, moveFolder as moveFolderApi, copyFolder as copyFolderApi } from '@/api/folder'
@@ -458,6 +448,32 @@ const folderLoading = ref(new Map()) // parentId -> Promise
 const uploadDialogVisible = ref(false)
 const uploadDialogDragover = ref(false)
 const uploadDecisionMap = ref(new Map())
+const isUploadPanelMinimized = ref(false)
+
+const getStatusColor = (status) => {
+  switch (status) {
+    case 'uploading': return '#409eff'
+    case 'hashing':
+    case 'checking_fast': return '#e6a23c'
+    case 'completed': return '#67c23a'
+    case 'failed': return '#f56c6c'
+    case 'paused': return '#909399'
+    default: return '#909399'
+  }
+}
+
+const getStatusText = (task) => {
+  switch (task.status) {
+    case 'pending': return '等待中'
+    case 'hashing': return '计算哈希...'
+    case 'checking_fast': return '秒传检查...'
+    case 'uploading': return '上传中'
+    case 'completed': return task.isFastUploaded ? '秒传成功' : '上传完成'
+    case 'failed': return '上传失败'
+    case 'paused': return '已暂停'
+    default: return task.status
+  }
+}
 
 const getFolderCacheKey = (parentId) => (parentId === null || parentId === undefined ? 'root' : parentId)
 const getFilesCacheKey = (folderId) => (folderId === null || folderId === undefined ? 'root' : String(folderId))
@@ -1113,6 +1129,15 @@ const goHistoryPage = (file) => {
   })
 }
 
+const goSharePage = (entry) => {
+  if (!entry?.id) return
+  const type = entry.type === 'folder' ? 'folder' : 'file'
+  router.push({
+    name: 'Share',
+    query: { type, id: entry.id }
+  })
+}
+
 const handleDataTransfer = async (dataTransfer, closeDialogAfter = false) => {
   try {
     const folderId = currentFolderId.value || null
@@ -1753,5 +1778,244 @@ const dedupeFolders = (arr) => {
 .upload-dialog-hint {
   font-size: 12px;
   color: #94a3b8;
+}
+
+/* Upload Panel Styles (250k Design) */
+.upload-panel-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 400px;
+  max-height: 600px;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.12), 0 4px 12px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  z-index: 2000;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(20px);
+}
+
+.upload-panel-container.is-minimized {
+  height: 56px;
+  width: 300px;
+  border-radius: 28px;
+}
+
+.upload-panel-header {
+  height: 56px;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(to right, #ffffff, #f8fafc);
+  cursor: pointer;
+  border-bottom: 1px solid #f1f5f9;
+  flex-shrink: 0;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-title {
+  font-weight: 600;
+  font-size: 16px;
+  color: #1e293b;
+}
+
+.header-count {
+  font-size: 14px;
+  color: #64748b;
+  font-weight: 500;
+  background: #f1f5f9;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.header-icon {
+  padding: 6px;
+  border-radius: 50%;
+  color: #94a3b8;
+  transition: all 0.2s;
+  
+  &:hover {
+    background: #f1f5f9;
+    color: #475569;
+  }
+}
+
+.upload-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  background: #fff;
+  min-height: 200px;
+}
+
+.empty-queue {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: #94a3b8;
+  
+  .empty-icon {
+    font-size: 48px;
+    margin-bottom: 12px;
+    opacity: 0.5;
+  }
+  
+  p {
+    font-size: 14px;
+  }
+}
+
+.upload-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.upload-item {
+  padding: 16px 20px;
+  display: flex;
+  gap: 16px;
+  border-bottom: 1px solid #f8fafc;
+  transition: background 0.2s;
+  
+  &:hover {
+    background: #fcfcfc;
+  }
+  
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.item-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.item-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.item-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.item-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #334155;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
+.item-size {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.item-progress-bar {
+  height: 4px;
+  background: #f1f5f9;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-inner {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.item-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 24px;
+}
+
+.item-status {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.item-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.action-icon {
+  font-size: 18px;
+  cursor: pointer;
+  color: #94a3b8;
+  transition: color 0.2s;
+  
+  &:hover {
+    color: #409eff;
+  }
+  
+  &.delete:hover {
+    color: #ef4444;
+  }
+  
+  &.refresh:hover {
+    color: #e6a23c;
+  }
+
+  &.success {
+    color: #67c23a;
+    cursor: default;
+  }
+}
+
+.upload-panel-footer {
+  padding: 12px 20px;
+  border-top: 1px solid #f1f5f9;
+  display: flex;
+  justify-content: flex-end;
+  background: #fff;
+  flex-shrink: 0;
+}
+
+/* Animations */
+.slide-fade-enter-active,
+.slide-fade-leave-active {
+  transition: all 0.3s cubic-bezier(1, 0.5, 0.8, 1);
+}
+
+.slide-fade-enter-from,
+.slide-fade-leave-to {
+  transform: translateY(20px);
+  opacity: 0;
 }
 </style>

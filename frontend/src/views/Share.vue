@@ -82,7 +82,7 @@
     <!-- 分享列表 -->
     <div class="share-list">
       <el-table
-        :data="shares"
+        :data="filteredShares"
         style="width: 100%"
         v-loading="loading"
       >
@@ -94,7 +94,7 @@
                 <Folder v-else />
               </el-icon>
               <div class="share-details">
-                <div class="share-name">{{ row.name }}</div>
+                <div class="share-name">{{ row.name || '未命名' }}</div>
                 <div class="share-meta">
                   <el-tag size="small" :type="row.type === 'file' ? 'primary' : 'success'">
                     {{ row.type === 'file' ? '文件' : '文件夹' }}
@@ -103,6 +103,15 @@
                 </div>
               </div>
             </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="权限" width="180">
+          <template #default="{ row }">
+            <el-tag size="small" v-if="row.allowPreview">预览</el-tag>
+            <el-tag size="small" v-if="row.allowDownload" type="success">下载</el-tag>
+            <el-tag size="small" v-if="row.allowUpload" type="info">上传</el-tag>
+            <el-tag size="small" v-if="row.allowReshare" type="warning">再分享</el-tag>
+            <el-tag size="small" v-if="row.allowDeleteMove" type="danger">删/移</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="分享链接" min-width="200">
@@ -176,97 +185,333 @@
           </template>
         </el-table-column>
       </el-table>
+      <div class="pager" v-if="pagination.total > pagination.pageSize">
+        <el-pagination
+          layout="prev, pager, next"
+          :page-size="pagination.pageSize"
+          :current-page="pagination.page"
+          :total="pagination.total"
+          background
+          @current-change="handlePageChange"
+        />
+      </div>
     </div>
 
-    <!-- 创建分享对话框 -->
-    <el-dialog v-model="showShareDialog" title="创建分享" width="600px">
-      <el-form :model="shareForm" label-width="100px">
-        <el-form-item label="选择类型">
-          <el-radio-group v-model="shareForm.type">
-            <el-radio label="file">文件</el-radio>
-            <el-radio label="folder">文件夹</el-radio>
-          </el-radio-group>
-        </el-form-item>
-        
-        <el-form-item :label="shareForm.type === 'file' ? '选择文件' : '选择文件夹'">
-          <el-select
-            v-model="shareForm.itemId"
-            :placeholder="`请选择${shareForm.type === 'file' ? '文件' : '文件夹'}`"
-            style="width: 100%"
-            filterable
-          >
-            <el-option
-              v-for="item in availableItems"
-              :key="item.id"
-              :label="item.name"
-              :value="item.id"
-            >
-              <div class="option-item">
-                <el-icon>
-                  <Document v-if="shareForm.type === 'file'" />
-                  <Folder v-else />
-                </el-icon>
-                <span>{{ item.name }}</span>
-                <span class="item-size">{{ formatFileSize(item.size) }}</span>
-              </div>
-            </el-option>
-          </el-select>
-        </el-form-item>
-        
+    <!-- 编辑分享对话框 -->
+    <el-dialog v-model="showEditDialog" title="编辑分享" width="500px">
+      <el-form :model="editForm" label-width="100px">
         <el-form-item label="过期时间">
-          <el-radio-group v-model="shareForm.expireType">
+          <el-radio-group v-model="editForm.expireType">
             <el-radio label="never">永久有效</el-radio>
             <el-radio label="custom">自定义时间</el-radio>
           </el-radio-group>
         </el-form-item>
-        
-        <el-form-item v-if="shareForm.expireType === 'custom'" label="选择时间">
-          <el-date-picker
-            v-model="shareForm.expireTime"
-            type="datetime"
-            placeholder="选择过期时间"
-            :disabled-date="disabledDate"
-            style="width: 100%"
-          />
+        <el-form-item v-if="editForm.expireType === 'custom'" label="选择时间">
+          <el-date-picker v-model="editForm.expireTime" type="datetime" placeholder="选择过期时间" :disabled-date="disabledDate" style="width: 100%" />
         </el-form-item>
-        
+        <el-form-item label="分享模式">
+          <el-radio-group v-model="editForm.shareMode">
+            <el-radio label="PUBLIC">公开</el-radio>
+            <el-radio label="CONTROLLED">受控</el-radio>
+          </el-radio-group>
+        </el-form-item>
         <el-form-item label="提取码">
-          <el-switch
-            v-model="shareForm.requireCode"
-            active-text="需要提取码"
-            inactive-text="不需要提取码"
-          />
+          <el-switch v-model="editForm.requireCode" active-text="需要提取码" inactive-text="不需要提取码" />
+        </el-form-item>
+        <el-form-item v-if="editForm.requireCode" label="提取码内容">
+          <el-input v-model="editForm.code" maxlength="8" show-word-limit placeholder="请输入提取码（4-8位）" />
+        </el-form-item>
+        <el-form-item label="权限">
+          <el-checkbox-group v-model="editPermissionSelections">
+            <el-checkbox label="preview">预览</el-checkbox>
+            <el-checkbox label="download">下载</el-checkbox>
+            <el-checkbox label="upload" :disabled="editForm.type === 'file'">上传</el-checkbox>
+            <el-checkbox label="reshare" :disabled="true">再分享(禁用)</el-checkbox>
+            <el-checkbox label="deleteMove" :disabled="true">删除/移动(禁用)</el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
+        <el-form-item label="ACL">
+          <el-button size="small" @click="openAclDialog(editForm.id)">管理受邀人权限</el-button>
         </el-form-item>
       </el-form>
-      
       <template #footer>
-        <el-button @click="showShareDialog = false">取消</el-button>
-        <el-button type="primary" @click="createShareFunc" :loading="creating">
-          创建分享
-        </el-button>
+        <el-button @click="showEditDialog = false">取消</el-button>
+        <el-button type="primary" :loading="updating" @click="updateShareFunc">保存</el-button>
       </template>
+    </el-dialog>
+
+    <!-- ACL 对话框 -->
+    <el-dialog v-model="showAclDialog" title="分享权限" width="780px" class="share-acl-dialog">
+      <div class="share-acl-layout">
+        <aside class="share-acl-nav">
+          <div class="nav-item">分享链接</div>
+          <div class="nav-item">上传链接</div>
+          <div class="nav-item active">分享给用户</div>
+        </aside>
+        <div class="share-acl-main">
+          <div class="share-acl-toolbar">
+            <el-input
+              v-model="aclSearch"
+              size="small"
+              placeholder="搜索用户"
+              clearable
+            >
+              <template #prefix>
+                <el-icon><Search /></el-icon>
+              </template>
+            </el-input>
+          </div>
+
+          <div class="share-acl-list" v-if="filteredAclList.length">
+            <div
+              class="share-acl-row"
+              v-for="(row, idx) in filteredAclList"
+              :key="`${row.principalValue}-${idx}`"
+            >
+              <el-avatar size="small" class="share-acl-avatar">
+                {{ (row.principalValue || 'U').charAt(0).toUpperCase() }}
+              </el-avatar>
+              <div class="share-acl-user">
+                <div class="name">{{ row.principalValue || '未命名' }}</div>
+                <div class="meta">{{ formatPrincipalType(row.principalType) }}</div>
+              </div>
+              <el-tag size="small" :type="getAclTagType(row)">{{ getAclPermissionLabel(row) }}</el-tag>
+              <el-button text type="danger" size="small" @click="removeAcl(row)">移除</el-button>
+            </div>
+          </div>
+          <div class="share-acl-empty" v-else>暂无分享用户</div>
+
+          <div class="share-acl-divider"></div>
+
+          <div class="share-acl-form">
+            <el-select v-model="newAcl.principalType" placeholder="选择类型" style="width: 140px">
+              <el-option label="用户" value="USER" />
+              <el-option label="邮箱" value="EMAIL" />
+            </el-select>
+            <el-input v-model="newAcl.principalValue" placeholder="用户ID/邮箱" style="width: 240px" />
+            <el-radio-group v-model="newAclPerm" class="share-acl-perm">
+              <el-radio-button label="read">只读</el-radio-button>
+              <el-radio-button label="readwrite">可读写</el-radio-button>
+            </el-radio-group>
+            <el-button size="small" type="primary" @click="addAcl">添加</el-button>
+          </div>
+
+        </div>
+      </div>
+      <template #footer>
+        <div class="share-acl-footer">
+          <div class="hint">公开分享仍遵循权限兜底；受控分享按上方列表授权。</div>
+          <div class="actions">
+            <el-button @click="showAclDialog = false">取消</el-button>
+            <el-button type="primary" @click="saveAcl">保存</el-button>
+          </div>
+        </div>
+      </template>
+    </el-dialog>
+
+    <!-- 创建分享对话框（新版布局） -->
+    <el-dialog
+      v-model="showShareDialog"
+      title="创建分享"
+      width="860px"
+      class="share-create-dialog"
+      @open="resetCreateForm"
+    >
+      <div class="share-create-body">
+        <aside class="share-create-nav">
+          <div class="nav-item">分享链接</div>
+          <div class="nav-item">上传链接</div>
+          <div class="nav-item active">分享给用户</div>
+        </aside>
+        <div class="share-create-main">
+          <div class="share-create-header">
+            <div>
+              <div class="title">创建分享</div>
+              <div class="desc">选择资源、权限与受邀人，提交后生成分享链接</div>
+            </div>
+            <el-button type="primary" @click="createShareFunc" :loading="creating">提交</el-button>
+          </div>
+
+          <div class="share-create-form">
+            <div class="form-row">
+              <div class="form-block">
+                <div class="block-label">分享资源</div>
+                <el-radio-group v-model="shareForm.type">
+                  <el-radio label="file">文件</el-radio>
+                  <el-radio label="folder">文件夹</el-radio>
+                </el-radio-group>
+                <el-select
+                  v-model="shareForm.itemId"
+                  :placeholder="`请选择${shareForm.type === 'file' ? '文件' : '文件夹'}`"
+                  style="width: 100%; margin-top: 8px;"
+                  filterable
+                >
+                  <el-option
+                    v-for="item in availableItems.filter(i => i.type === shareForm.type)"
+                    :key="item.id"
+                    :label="item.name"
+                    :value="item.id"
+                  >
+                    <div class="option-item">
+                      <el-icon>
+                        <Document v-if="item.type === 'file'" />
+                        <Folder v-else />
+                      </el-icon>
+                      <span>{{ item.name }}</span>
+                      <span class="item-size">{{ formatFileSize(item.size) }}</span>
+                    </div>
+                  </el-option>
+                </el-select>
+              </div>
+
+              <div class="form-block">
+                <div class="block-label">分享模式</div>
+                <el-radio-group v-model="shareForm.shareMode">
+                  <el-radio label="PUBLIC">公开</el-radio>
+                  <el-radio label="CONTROLLED">受控</el-radio>
+                </el-radio-group>
+                <div class="hint-small">公开模式自动禁用上传/再分享/删除移动</div>
+                <div class="block-label" style="margin-top: 10px;">权限</div>
+                <el-checkbox-group v-model="permissionSelections">
+                  <el-checkbox label="preview">预览</el-checkbox>
+                  <el-checkbox label="download">下载</el-checkbox>
+                  <el-checkbox label="upload" :disabled="shareForm.type === 'file' || shareForm.shareMode === 'PUBLIC'">上传</el-checkbox>
+                  <el-checkbox label="reshare" :disabled="true">再分享(禁用)</el-checkbox>
+                  <el-checkbox label="deleteMove" :disabled="true">删除/移动(禁用)</el-checkbox>
+                </el-checkbox-group>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-block">
+                <div class="block-label">有效期</div>
+                <el-radio-group v-model="shareForm.expireType">
+                  <el-radio label="never">永久有效</el-radio>
+                  <el-radio label="custom">自定义时间</el-radio>
+                </el-radio-group>
+                <el-date-picker
+                  v-if="shareForm.expireType === 'custom'"
+                  v-model="shareForm.expireTime"
+                  type="datetime"
+                  placeholder="选择过期时间"
+                  :disabled-date="disabledDate"
+                  style="width: 100%; margin-top: 8px;"
+                />
+              </div>
+              <div class="form-block">
+                <div class="block-label">提取码</div>
+                <el-switch
+                  v-model="shareForm.requireCode"
+                  active-text="需要提取码"
+                  inactive-text="不需要提取码"
+                />
+                <el-input
+                  v-if="shareForm.requireCode"
+                  v-model="shareForm.code"
+                  maxlength="8"
+                  show-word-limit
+                  placeholder="请输入提取码（4-8位）"
+                  style="margin-top: 8px;"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div class="share-create-acl">
+            <div class="acl-header">
+              <div class="acl-title">分享给用户</div>
+              <el-input
+                v-model="aclSearch"
+                size="small"
+                placeholder="搜索用户"
+                clearable
+                style="width: 220px"
+              >
+                <template #prefix>
+                  <el-icon><Search /></el-icon>
+                </template>
+              </el-input>
+            </div>
+
+            <div class="share-acl-list" v-if="filteredAclList.length">
+              <div
+                class="share-acl-row"
+                v-for="(row, idx) in filteredAclList"
+                :key="`${row.principalValue}-${idx}`"
+              >
+                <el-avatar size="small" class="share-acl-avatar">
+                  {{ (row.principalValue || 'U').charAt(0).toUpperCase() }}
+                </el-avatar>
+                <div class="share-acl-user">
+                  <div class="name">{{ row.principalValue || '未命名' }}</div>
+                  <div class="meta">{{ formatPrincipalType(row.principalType) }}</div>
+                </div>
+                <el-tag size="small" :type="getAclTagType(row)">{{ getAclPermissionLabel(row) }}</el-tag>
+                <el-button text type="danger" size="small" @click="removeAcl(row)">移除</el-button>
+              </div>
+            </div>
+            <div class="share-acl-empty" v-else>暂无分享用户</div>
+
+            <div class="share-acl-divider"></div>
+
+            <div class="share-acl-form">
+              <el-select v-model="newAcl.principalType" placeholder="选择类型" style="width: 140px">
+                <el-option label="用户" value="USER" />
+                <el-option label="邮箱" value="EMAIL" />
+              </el-select>
+              <el-input v-model="newAcl.principalValue" placeholder="用户ID/邮箱" style="width: 240px" />
+              <el-radio-group v-model="newAclPerm" class="share-acl-perm">
+                <el-radio-button label="read">只读</el-radio-button>
+                <el-radio-button label="readwrite">可读写</el-radio-button>
+              </el-radio-group>
+              <el-button size="small" type="primary" @click="addAcl">添加</el-button>
+            </div>
+          </div>
+        </div>
+      </div>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Share, Refresh, Search, Document, Folder, CopyDocument, Edit, Delete, View, Link, Download } from '@element-plus/icons-vue'
+import { listShares, createShare, revokeShare, updateShare, getShareAcl, replaceShareAcl } from '@/api/share'
+import { getFileList } from '@/api/file'
+import { getFolderList } from '@/api/folder'
+
+const route = useRoute()
 
 const loading = ref(false)
 const creating = ref(false)
+const updating = ref(false)
 const shares = ref([])
 const searchKeyword = ref('')
 const showShareDialog = ref(false)
+const showEditDialog = ref(false)
+const showAclDialog = ref(false)
 const availableItems = ref([])
+const pagination = reactive({
+  page: 1,
+  pageSize: 10,
+  total: 0
+})
 
 const shareForm = reactive({
   type: 'file',
   itemId: '',
   expireType: 'never',
   expireTime: null,
-  requireCode: false
+  requireCode: false,
+  code: '',
+  allowPreview: true,
+  allowDownload: true,
+  allowUpload: false,
+  allowReshare: false,
+  allowDeleteMove: false,
+  shareMode: 'PUBLIC'
 })
 
 const shareStats = ref({
@@ -275,6 +520,61 @@ const shareStats = ref({
   totalDownloads: 0,
   totalViews: 0
 })
+const editForm = reactive({
+  id: null,
+  type: 'file',
+  expireType: 'never',
+  expireTime: null,
+  requireCode: false,
+  code: '',
+  shareMode: 'PUBLIC'
+})
+const editPermissionSelections = ref(['preview', 'download'])
+const aclDialogShareId = ref(null)
+const aclList = ref([])
+const newAcl = reactive({
+  principalType: 'USER',
+  principalValue: '',
+  perms: ['preview', 'download']
+})
+const newAclPerm = ref('readwrite')
+const aclSearch = ref('')
+
+const syncNewAclPerm = () => {
+  newAcl.perms = newAclPerm.value === 'readwrite'
+    ? ['preview', 'download', 'upload']
+    : ['preview', 'download']
+}
+syncNewAclPerm()
+const permissionSelections = ref(['preview', 'download'])
+
+const filteredShares = computed(() => {
+  if (!searchKeyword.value) return shares.value
+  return shares.value.filter(s => (s.name || '').toLowerCase().includes(searchKeyword.value.toLowerCase()))
+})
+
+const filteredAclList = computed(() => {
+  if (!aclSearch.value) return aclList.value
+  const keyword = aclSearch.value.toLowerCase()
+  return aclList.value.filter(a => (a.principalValue || '').toLowerCase().includes(keyword))
+})
+
+const formatPrincipalType = (t) => {
+  if (t === 'EMAIL') return '邮箱'
+  return '用户'
+}
+
+const getAclPermissionLabel = (row) => {
+  if (row.allowUpload) return '可读写'
+  if (row.allowDownload) return '只读'
+  return '仅预览'
+}
+
+const getAclTagType = (row) => {
+  if (row.allowUpload) return 'success'
+  if (row.allowDownload) return 'info'
+  return ''
+}
 
 // 格式化文件大小
 const formatFileSize = (bytes) => {
@@ -321,40 +621,40 @@ const disabledDate = (time) => {
 const loadShares = async () => {
   loading.value = true
   try {
-    // 模拟数据，实际应该从API获取
-    shares.value = [
-      {
-        id: 1,
-        name: '项目文档.pdf',
-        type: 'file',
-        size: 2048576,
-        shareUrl: 'https://example.com/share/abc123',
-        createTime: '2024-01-15T10:30:00',
-        expireTime: '2024-02-15T10:30:00',
-        viewCount: 25,
-        downloadCount: 8,
-        active: true
-      },
-      {
-        id: 2,
-        name: '设计素材',
-        type: 'folder',
-        size: 10485760,
-        shareUrl: 'https://example.com/share/def456',
-        createTime: '2024-01-10T14:20:00',
-        expireTime: null,
-        viewCount: 15,
-        downloadCount: 3,
-        active: true
-      }
-    ]
-    
-    // 更新统计信息
-    shareStats.value = {
+    const res = await listShares({ page: pagination.page - 1, size: pagination.pageSize })
+    const rawItems = Array.isArray(res) ? res : (res?.items || [])
+    const total = Array.isArray(res) ? rawItems.length : (res?.total ?? rawItems.length)
+    shares.value = (rawItems || []).map(item => ({
+      id: item.id,
+      name: item.name || item.originalFilename || `资源#${item.resourceId}`,
+      type: (item.resourceType || 'FILE').toLowerCase() === 'folder' ? 'folder' : 'file',
+      size: item.size || 0,
+      shareUrl: `${window.location.origin}/#/s/${item.id}`,
+      createTime: item.createdAt || item.createTime,
+      expireTime: item.expireTime,
+      viewCount: item.viewCount,
+      downloadCount: item.downloadCount,
+      active: item.status === 'ACTIVE',
+      allowPreview: item.allowPreview,
+      allowDownload: item.allowDownload,
+      allowUpload: item.allowUpload,
+      allowReshare: item.allowReshare,
+      allowDeleteMove: item.allowDeleteMove,
+      shareMode: item.shareMode || 'PUBLIC'
+    }))
+    pagination.total = total
+    const statsPayload = !Array.isArray(res) ? res?.stats : null
+    const computedStats = {
       totalShares: shares.value.length,
       activeShares: shares.value.filter(s => s.active).length,
       totalDownloads: shares.value.reduce((sum, s) => sum + (s.downloadCount || 0), 0),
       totalViews: shares.value.reduce((sum, s) => sum + (s.viewCount || 0), 0)
+    }
+    shareStats.value = {
+      totalShares: statsPayload?.totalShares ?? computedStats.totalShares,
+      activeShares: statsPayload?.activeShares ?? computedStats.activeShares,
+      totalDownloads: statsPayload?.totalDownloads ?? computedStats.totalDownloads,
+      totalViews: statsPayload?.totalViews ?? computedStats.totalViews
     }
   } catch (error) {
     ElMessage.error('加载分享列表失败')
@@ -366,26 +666,54 @@ const loadShares = async () => {
 // 加载可选项目
 const loadAvailableItems = async () => {
   try {
-    // 模拟数据，实际应该从API获取
-    availableItems.value = [
-      { id: 1, name: '项目文档.pdf', type: 'file', size: 2048576 },
-      { id: 2, name: '设计素材', type: 'folder', size: 10485760 },
-      { id: 3, name: '会议记录.docx', type: 'file', size: 512000 },
-      { id: 4, name: '图片资源', type: 'folder', size: 5242880 }
-    ]
+    const res = await getFileList({ page: 0, size: 100 })
+    const list = res?.content || res || []
+    const files = list.map(f => ({
+      id: f.id,
+      name: f.originalFilename,
+      type: 'file',
+      size: f.size
+    }))
+    const foldersRes = await getFolderList({ parentId: null })
+    const folders = (foldersRes || []).map(f => ({
+      id: f.id,
+      name: f.name,
+      type: 'folder',
+      size: 0
+    }))
+    availableItems.value = [...files, ...folders]
+    applyPrefillFromRoute()
   } catch (error) {
     console.error('加载可选项目失败:', error)
   }
 }
 
+const applyPrefillFromRoute = () => {
+  const qId = route.query?.id
+  if (!qId) return
+  const typeParam = (route.query?.type || '').toString().toLowerCase()
+  const type = typeParam === 'folder' ? 'folder' : 'file'
+  shareForm.type = type
+  shareForm.itemId = Number(qId) || qId
+  shareForm.shareMode = 'PUBLIC'
+  permissionSelections.value = ['preview', 'download']
+  showShareDialog.value = true
+}
+
 // 刷新分享列表
 const refreshShares = () => {
+  pagination.page = 1
   loadShares()
+}
+
+const handlePageChange = async (p) => {
+  pagination.page = p
+  await loadShares()
 }
 
 // 搜索分享
 const searchShares = () => {
-  ElMessage.info('分享搜索功能开发中...')
+  pagination.page = 1
 }
 
 // 复制分享链接
@@ -405,7 +733,18 @@ const viewShare = (share) => {
 
 // 编辑分享
 const editShare = (share) => {
-  ElMessage.info('编辑分享功能开发中...')
+  editForm.id = share.id
+  editForm.type = share.type
+  editForm.expireType = share.expireTime ? 'custom' : 'never'
+  editForm.expireTime = share.expireTime ? new Date(share.expireTime) : null
+  editForm.shareMode = share.shareMode || 'PUBLIC'
+  editForm.requireCode = false
+  editForm.code = ''
+  editPermissionSelections.value = []
+  if (share.allowPreview) editPermissionSelections.value.push('preview')
+  if (share.allowDownload) editPermissionSelections.value.push('download')
+  if (share.allowUpload && share.type === 'folder') editPermissionSelections.value.push('upload')
+  showEditDialog.value = true
 }
 
 // 删除分享
@@ -420,9 +759,7 @@ const deleteShare = async (share) => {
         type: 'warning'
       }
     )
-    
-    // 模拟删除操作
-    share.active = false
+    await revokeShare(share.id)
     ElMessage.success('分享已取消')
     await loadShares()
   } catch (error) {
@@ -438,35 +775,39 @@ const createShareFunc = async () => {
     ElMessage.warning('请选择要分享的文件或文件夹')
     return
   }
+  if (shareForm.requireCode) {
+    if (!shareForm.code || shareForm.code.length < 4 || shareForm.code.length > 8) {
+      ElMessage.warning('提取码长度需 4-8 位')
+      return
+    }
+  }
 
   creating.value = true
   try {
-    // 模拟创建分享
     const newItem = availableItems.value.find(item => item.id === shareForm.itemId)
-    const newShare = {
-      id: shares.value.length + 1,
-      name: newItem.name,
-      type: shareForm.type,
-      size: newItem.size,
-      shareUrl: `https://example.com/share/${Math.random().toString(36).substr(2, 9)}`,
-      createTime: new Date().toISOString(),
-      expireTime: shareForm.expireType === 'custom' ? shareForm.expireTime.toISOString() : null,
-      viewCount: 0,
-      downloadCount: 0,
-      active: true
+    const payload = {
+      resourceType: shareForm.type === 'folder' ? 'FOLDER' : 'FILE',
+      resourceId: shareForm.itemId,
+      expireTime: shareForm.expireType === 'custom' ? shareForm.expireTime : null,
+      code: shareForm.requireCode ? shareForm.code : null,
+      shareMode: shareForm.shareMode,
+      allowPreview: permissionSelections.value.includes('preview'),
+      allowDownload: permissionSelections.value.includes('download'),
+      allowUpload: shareForm.type === 'folder' && shareForm.shareMode !== 'PUBLIC' && permissionSelections.value.includes('upload'),
+      allowReshare: false,
+      allowDeleteMove: false
     }
-    
-    shares.value.unshift(newShare)
-    
+    await createShare(payload)
     ElMessage.success('分享创建成功')
     showShareDialog.value = false
-    
     // 重置表单
     shareForm.itemId = ''
     shareForm.expireType = 'never'
     shareForm.expireTime = null
     shareForm.requireCode = false
-    
+    shareForm.code = ''
+    permissionSelections.value = ['preview', 'download']
+    shareForm.shareMode = 'PUBLIC'
     await loadShares()
   } catch (error) {
     ElMessage.error('创建分享失败')
@@ -479,6 +820,154 @@ onMounted(() => {
   loadShares()
   loadAvailableItems()
 })
+
+watch(() => shareForm.shareMode, (mode) => {
+  if (mode === 'PUBLIC') {
+    permissionSelections.value = permissionSelections.value.filter(p => p !== 'upload' && p !== 'reshare' && p !== 'deleteMove')
+  }
+})
+
+watch(() => shareForm.type, (type) => {
+  if (type === 'file') {
+    permissionSelections.value = permissionSelections.value.filter(p => p !== 'upload')
+  }
+})
+
+watch(() => editForm.shareMode, (mode) => {
+  if (mode === 'PUBLIC') {
+    editPermissionSelections.value = editPermissionSelections.value.filter(p => p !== 'upload' && p !== 'reshare' && p !== 'deleteMove')
+  }
+})
+
+watch(() => editForm.type, (type) => {
+  if (type === 'file') {
+    editPermissionSelections.value = editPermissionSelections.value.filter(p => p !== 'upload')
+  }
+})
+
+watch(newAclPerm, () => {
+  syncNewAclPerm()
+})
+
+const updateShareFunc = async () => {
+  if (!editForm.id) {
+    return
+  }
+  if (editForm.requireCode) {
+    if (!editForm.code || editForm.code.length < 4 || editForm.code.length > 8) {
+      ElMessage.warning('提取码长度需 4-8 位')
+      return
+    }
+  }
+  updating.value = true
+  try {
+    const payload = {
+      expireTime: editForm.expireType === 'custom' ? editForm.expireTime : null,
+      code: editForm.requireCode ? editForm.code : null,
+      shareMode: editForm.shareMode,
+      allowPreview: editPermissionSelections.value.includes('preview'),
+      allowDownload: editPermissionSelections.value.includes('download'),
+      allowUpload: editForm.type === 'folder' && editForm.shareMode !== 'PUBLIC' && editPermissionSelections.value.includes('upload'),
+      allowReshare: false,
+      allowDeleteMove: false
+    }
+    await updateShare(editForm.id, payload)
+    ElMessage.success('保存成功')
+    showEditDialog.value = false
+    await loadShares()
+  } catch (e) {
+    ElMessage.error('保存失败')
+  } finally {
+    updating.value = false
+  }
+}
+
+const openAclDialog = async (shareId) => {
+  if (!shareId) return
+  aclDialogShareId.value = shareId
+  try {
+    const res = await getShareAcl(shareId)
+    aclList.value = (res || []).map(a => ({
+      principalType: a.principalType,
+      principalValue: a.principalValue,
+      allowPreview: a.allowPreview,
+      allowDownload: a.allowDownload,
+      allowUpload: a.allowUpload
+    }))
+    showAclDialog.value = true
+  } catch (e) {
+    ElMessage.error('加载 ACL 失败')
+  }
+}
+
+const addAcl = () => {
+  syncNewAclPerm()
+  if (!newAcl.principalValue || newAcl.principalValue.trim() === '') {
+    ElMessage.warning('请输入标识')
+    return
+  }
+  if (newAcl.principalType === 'EMAIL' && !newAcl.principalValue.includes('@')) {
+    ElMessage.warning('邮箱格式不正确')
+    return
+  }
+  if (!newAcl.perms.length) {
+    ElMessage.warning('请选择权限')
+    return
+  }
+  aclList.value.push({
+    principalType: newAcl.principalType,
+    principalValue: newAcl.principalValue.trim(),
+    allowPreview: newAcl.perms.includes('preview'),
+    allowDownload: newAcl.perms.includes('download'),
+    allowUpload: newAcl.perms.includes('upload')
+  })
+  newAcl.principalValue = ''
+  newAclPerm.value = 'readwrite'
+  syncNewAclPerm()
+}
+
+const removeAcl = (entry) => {
+  const idx = aclList.value.findIndex(a => a.principalType === entry.principalType && a.principalValue === entry.principalValue)
+  if (idx >= 0) {
+    aclList.value.splice(idx, 1)
+  }
+}
+
+const saveAcl = async () => {
+  if (!aclDialogShareId.value) return
+  try {
+    const payload = aclList.value.map(a => ({
+      principalType: a.principalType,
+      principalValue: a.principalValue,
+      allowPreview: a.allowPreview,
+      allowDownload: a.allowDownload,
+      allowUpload: a.allowUpload,
+      allowReshare: false,
+      allowDeleteMove: false
+    }))
+    await replaceShareAcl(aclDialogShareId.value, payload)
+    ElMessage.success('ACL 已保存')
+    showAclDialog.value = false
+  } catch (e) {
+    ElMessage.error('保存 ACL 失败')
+  }
+}
+
+const resetCreateForm = () => {
+  shareForm.type = 'file'
+  shareForm.itemId = ''
+  shareForm.expireType = 'never'
+  shareForm.expireTime = null
+  shareForm.requireCode = false
+  shareForm.code = ''
+  shareForm.shareMode = 'PUBLIC'
+  permissionSelections.value = ['preview', 'download']
+  aclList.value = []
+  newAcl.principalType = 'USER'
+  newAcl.principalValue = ''
+  newAclPerm.value = 'readwrite'
+  syncNewAclPerm()
+}
 </script>
 
 <style scoped>
@@ -487,6 +976,117 @@ onMounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
+}
+
+.share-create-dialog :deep(.el-dialog__body) {
+  padding: 0 0 10px 0;
+}
+
+.share-create-body {
+  display: flex;
+  min-height: 520px;
+}
+
+.share-create-nav {
+  width: 180px;
+  background: #f6f7fb;
+  padding: 20px 10px;
+  border-right: 1px solid #ebeef5;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.share-create-nav .nav-item {
+  padding: 10px 14px;
+  border-radius: 8px;
+  color: #666;
+  cursor: default;
+}
+
+.share-create-nav .nav-item.active {
+  background: #fff4ec;
+  color: #f56c6c;
+  font-weight: 600;
+}
+
+.share-create-main {
+  flex: 1;
+  padding: 20px 24px 10px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.share-create-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.share-create-header .title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+}
+
+.share-create-header .desc {
+  color: #888;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.share-create-form {
+  background: #f9fafb;
+  border: 1px solid #ebeef5;
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.share-create-form .form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
+}
+
+.share-create-form .form-block {
+  background: #fff;
+  border: 1px solid #f0f2f5;
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.block-label {
+  font-weight: 600;
+  color: #444;
+  font-size: 13px;
+}
+
+.share-create-acl {
+  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.acl-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.acl-title {
+  font-weight: 600;
+  color: #333;
 }
 
 .toolbar {
@@ -612,11 +1212,166 @@ onMounted(() => {
   color: #666;
 }
 
+.hint-small {
+  font-size: 12px;
+  color: #888;
+  margin-top: 4px;
+}
+
+.acl-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
 :deep(.el-table) {
   height: 100%;
 }
 
 :deep(.el-table__body-wrapper) {
+  overflow-y: auto;
+}
+
+.pager {
+  padding: 12px 16px;
+  text-align: right;
+  border-top: 1px solid #f0f0f0;
+}
+
+.share-acl-dialog :deep(.el-dialog__body) {
+  padding: 0 0 16px 0;
+}
+
+.share-acl-layout {
+  display: flex;
+  min-height: 440px;
+}
+
+.share-acl-nav {
+  width: 160px;
+  border-right: 1px solid #f0f0f0;
+  background: #fafafa;
+  padding: 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.share-acl-nav .nav-item {
+  padding: 10px 20px;
+  color: #606266;
+  cursor: default;
+}
+
+.share-acl-nav .nav-item.active {
+  background: #f0f7ff;
+  color: #409EFF;
+  font-weight: 600;
+  border-left: 3px solid #409EFF;
+}
+
+.share-acl-main {
+  flex: 1;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.share-acl-toolbar {
+  display: flex;
+  align-items: center;
+}
+
+.share-acl-list {
+  flex: 1;
+  overflow-y: auto;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+  padding: 8px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.share-acl-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid #f5f5f5;
+  border-radius: 6px;
+}
+
+.share-acl-avatar {
+  background: #ecf5ff;
+  color: #409EFF;
+  font-weight: 600;
+}
+
+.share-acl-user .name {
+  font-weight: 600;
+  color: #303133;
+}
+
+.share-acl-user .meta {
+  font-size: 12px;
+  color: #909399;
+}
+
+.share-acl-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #909399;
+  border: 1px dashed #dcdfe6;
+  border-radius: 6px;
+  padding: 16px;
+}
+
+.share-acl-divider {
+  height: 1px;
+  background: #f0f0f0;
+  margin: 12px 0;
+}
+
+.share-acl-form {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.share-acl-perm :deep(.el-radio-button__inner) {
+  padding: 6px 14px;
+}
+
+.share-acl-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0 0 0;
+  border-top: 1px solid #f0f0f0;
+  margin-top: 8px;
+}
+
+.share-acl-footer .hint {
+  font-size: 12px;
+  color: #909399;
+}
+
+.share-acl-footer .actions {
+  display: flex;
+  gap: 10px;
+}
+
+.share-acl-list {
+  max-height: 220px;
   overflow-y: auto;
 }
 </style>

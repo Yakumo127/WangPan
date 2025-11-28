@@ -660,8 +660,9 @@ public class FileController {
         }
 
         String contentType = determinePreviewContentType(file, filePath, ext);
-        String asciiName = sanitizeAsciiFilename(name);
-        String encoded = org.springframework.web.util.UriUtils.encode(asciiName, java.nio.charset.StandardCharsets.UTF_8);
+        String safeName = (name == null || name.isBlank()) ? "file" : name.replace("\"", "");
+        String asciiName = sanitizeAsciiFilename(safeName);
+        String encoded = org.springframework.web.util.UriUtils.encode(safeName, java.nio.charset.StandardCharsets.UTF_8);
         String disposition = String.format("inline; filename=\"%s\"; filename*=UTF-8''%s", asciiName, encoded);
 
         org.springframework.core.io.Resource resource = new org.springframework.core.io.FileSystemResource(filePath.toFile());
@@ -966,6 +967,7 @@ public class FileController {
             }
             // 计数：请求总数
             downloadMetrics.incRequest();
+            final long rateLimit = downloadTokenService.getRateLimitBytesPerSecond();
             String contentType;
             try {
                 contentType = (file.getContentType() == null || file.getContentType().isBlank())
@@ -986,8 +988,11 @@ public class FileController {
             } catch (java.io.IOException ioe) {
                 throw new RuntimeException("读取文件失败", ioe);
             }
-            String asciiName = sanitizeAsciiFilename(file.getOriginalFilename());
-            String encoded = org.springframework.web.util.UriUtils.encode(asciiName, java.nio.charset.StandardCharsets.UTF_8);
+            String safeName = (file.getOriginalFilename() == null || file.getOriginalFilename().isBlank())
+                    ? "file"
+                    : file.getOriginalFilename().replace("\"", "");
+            String asciiName = sanitizeAsciiFilename(safeName);
+            String encoded = org.springframework.web.util.UriUtils.encode(safeName, java.nio.charset.StandardCharsets.UTF_8);
             String disposition = String.format("attachment; filename=\"%s\"; filename*=UTF-8''%s", asciiName, encoded);
 
             String eTag = (file.getFileHash() != null && !file.getFileHash().isBlank())
@@ -1050,14 +1055,7 @@ public class FileController {
                                 boolean ok = false;
                                 try (FileChannel fc = FileChannel.open(filePath, StandardOpenOption.READ);
                                      WritableByteChannel out = Channels.newChannel(outputStream)) {
-                                    long pos = copyStart;
-                                    long remaining = copyLen;
-                                    while (remaining > 0) {
-                                        long transferred = fc.transferTo(pos, remaining, out);
-                                        if (transferred <= 0) break;
-                                        pos += transferred;
-                                        remaining -= transferred;
-                                    }
+                                    transferWithRateLimit(fc, out, copyStart, copyLen, rateLimit);
                                     ok = true;
                                 } catch (Exception ex) {
                                     try {
@@ -1117,6 +1115,7 @@ public class FileController {
                                 boolean ok = false;
                                 try (FileChannel fc = FileChannel.open(filePath, StandardOpenOption.READ)) {
                                     java.nio.charset.Charset ascii = java.nio.charset.StandardCharsets.US_ASCII;
+                                    WritableByteChannel out = Channels.newChannel(outputStream);
                                     for (org.springframework.http.HttpRange r : ranges) {
                                         long start = r.getRangeStart(total);
                                         long end = r.getRangeEnd(total);
@@ -1125,15 +1124,7 @@ public class FileController {
                                                 + "Content-Type: " + contentTypeFinal + "\r\n"
                                                 + String.format("Content-Range: bytes %d-%d/%d\r\n\r\n", start, end, total);
                                         outputStream.write(partHeader.getBytes(ascii));
-                                        long pos = start;
-                                        long remaining = (end - start + 1);
-                                        WritableByteChannel out = Channels.newChannel(outputStream);
-                                        while (remaining > 0) {
-                                            long transferred = fc.transferTo(pos, remaining, out);
-                                            if (transferred <= 0) break;
-                                            pos += transferred;
-                                            remaining -= transferred;
-                                        }
+                                        transferWithRateLimit(fc, out, start, (end - start + 1), rateLimit);
                                         outputStream.write("\r\n".getBytes(ascii));
                                     }
                                     String endBoundary = "--" + boundary + "--\r\n";
@@ -1189,14 +1180,7 @@ public class FileController {
                 boolean ok = false;
                 try (FileChannel fc = FileChannel.open(filePath, StandardOpenOption.READ);
                      WritableByteChannel out = Channels.newChannel(outputStream)) {
-                    long pos = 0L;
-                    long remaining = total;
-                    while (remaining > 0) {
-                        long transferred = fc.transferTo(pos, remaining, out);
-                        if (transferred <= 0) break;
-                        pos += transferred;
-                        remaining -= transferred;
-                    }
+                    transferWithRateLimit(fc, out, 0L, total, rateLimit);
                     ok = true;
                 } catch (Exception ex) {
                     try {
@@ -1278,8 +1262,11 @@ public class FileController {
             catch (java.nio.file.NoSuchFileException nsf) { throw new com.filemanager.exception.NotFoundException("文件不存在"); }
             catch (java.nio.file.AccessDeniedException ade) { throw new com.filemanager.exception.ForbiddenException("无权读取文件"); }
             catch (java.io.IOException ioe) { throw new RuntimeException("读取文件失败", ioe); }
-            String asciiName = sanitizeAsciiFilename(file.getOriginalFilename());
-            String encoded = org.springframework.web.util.UriUtils.encode(asciiName, java.nio.charset.StandardCharsets.UTF_8);
+            String safeName = (file.getOriginalFilename() == null || file.getOriginalFilename().isBlank())
+                    ? "file"
+                    : file.getOriginalFilename().replace("\"", "");
+            String asciiName = sanitizeAsciiFilename(safeName);
+            String encoded = org.springframework.web.util.UriUtils.encode(safeName, java.nio.charset.StandardCharsets.UTF_8);
             String disposition = String.format("attachment; filename=\"%s\"; filename*=UTF-8''%s", asciiName, encoded);
             String eTag = (file.getFileHash() != null && !file.getFileHash().isBlank())
                     ? "W/\"" + file.getFileHash() + "\""
@@ -1316,6 +1303,56 @@ public class FileController {
                     .build();
         } catch (Exception e) {
             throw new RuntimeException("下载探测失败", e);
+        }
+    }
+
+    private void transferWithRateLimit(java.nio.channels.FileChannel fc,
+                                       java.nio.channels.WritableByteChannel out,
+                                       long position,
+                                       long length,
+                                       long rateLimitBytesPerSecond) throws java.io.IOException {
+        long pos = position;
+        long remaining = length;
+        if (rateLimitBytesPerSecond <= 0) {
+            while (remaining > 0) {
+                long transferred = fc.transferTo(pos, remaining, out);
+                if (transferred <= 0) break;
+                pos += transferred;
+                remaining -= transferred;
+            }
+            return;
+        }
+        java.nio.ByteBuffer buffer = java.nio.ByteBuffer.allocate(64 * 1024);
+        long bytesThisSecond = 0;
+        long windowStart = System.nanoTime();
+        while (remaining > 0) {
+            buffer.clear();
+            int chunk = (int) Math.min(buffer.capacity(), remaining);
+            buffer.limit(chunk);
+            int read = fc.read(buffer, pos);
+            if (read <= 0) break;
+            buffer.flip();
+            while (buffer.hasRemaining()) {
+                out.write(buffer);
+            }
+            pos += read;
+            remaining -= read;
+            bytesThisSecond += read;
+            long elapsedNanos = System.nanoTime() - windowStart;
+            if (bytesThisSecond >= rateLimitBytesPerSecond) {
+                long targetNanos = 1_000_000_000L;
+                if (elapsedNanos < targetNanos) {
+                    long sleepNanos = targetNanos - elapsedNanos;
+                    try {
+                        Thread.sleep(sleepNanos / 1_000_000L, (int) (sleepNanos % 1_000_000L));
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new java.io.IOException("下载限速被中断", ie);
+                    }
+                }
+                bytesThisSecond = 0;
+                windowStart = System.nanoTime();
+            }
         }
     }
 
