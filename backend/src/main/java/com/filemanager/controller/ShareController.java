@@ -239,7 +239,12 @@ public class ShareController {
                             if (elapsedNanos < targetNanos) {
                                 long sleepMs = (targetNanos - elapsedNanos) / 1_000_000L;
                                 if (sleepMs > 0) {
-                                    Thread.sleep(sleepMs);
+                                    try {
+                                        Thread.sleep(sleepMs);
+                                    } catch (InterruptedException ie) {
+                                        Thread.currentThread().interrupt();
+                                        throw new RuntimeException("下载被中断", ie);
+                                    }
                                 }
                             }
                             bytesThisSecond = 0;
@@ -249,8 +254,9 @@ public class ShareController {
                 }
             };
             String name = file.getOriginalFilename();
-            String asciiName = sanitizeAsciiFilename(name);
-            String encoded = org.springframework.web.util.UriUtils.encode(asciiName, java.nio.charset.StandardCharsets.UTF_8);
+            String safeName = (name == null || name.isBlank()) ? "file" : name.replace("\"", "");
+            String asciiName = sanitizeAsciiFilename(safeName);
+            String encoded = org.springframework.web.util.UriUtils.encode(safeName, java.nio.charset.StandardCharsets.UTF_8);
             String disposition = String.format("attachment; filename=\"%s\"; filename*=UTF-8''%s", asciiName, encoded);
             auditLogService.logSystemSuccess("SHARE_DOWNLOAD", "SHARE", payload.share.getId(), name, "公开下载成功", System.currentTimeMillis() - start);
             return ResponseEntity.ok()

@@ -660,8 +660,9 @@ public class FileController {
         }
 
         String contentType = determinePreviewContentType(file, filePath, ext);
-        String asciiName = sanitizeAsciiFilename(name);
-        String encoded = org.springframework.web.util.UriUtils.encode(asciiName, java.nio.charset.StandardCharsets.UTF_8);
+        String safeName = (name == null || name.isBlank()) ? "file" : name.replace("\"", "");
+        String asciiName = sanitizeAsciiFilename(safeName);
+        String encoded = org.springframework.web.util.UriUtils.encode(safeName, java.nio.charset.StandardCharsets.UTF_8);
         String disposition = String.format("inline; filename=\"%s\"; filename*=UTF-8''%s", asciiName, encoded);
 
         org.springframework.core.io.Resource resource = new org.springframework.core.io.FileSystemResource(filePath.toFile());
@@ -987,8 +988,11 @@ public class FileController {
             } catch (java.io.IOException ioe) {
                 throw new RuntimeException("读取文件失败", ioe);
             }
-            String asciiName = sanitizeAsciiFilename(file.getOriginalFilename());
-            String encoded = org.springframework.web.util.UriUtils.encode(asciiName, java.nio.charset.StandardCharsets.UTF_8);
+            String safeName = (file.getOriginalFilename() == null || file.getOriginalFilename().isBlank())
+                    ? "file"
+                    : file.getOriginalFilename().replace("\"", "");
+            String asciiName = sanitizeAsciiFilename(safeName);
+            String encoded = org.springframework.web.util.UriUtils.encode(safeName, java.nio.charset.StandardCharsets.UTF_8);
             String disposition = String.format("attachment; filename=\"%s\"; filename*=UTF-8''%s", asciiName, encoded);
 
             String eTag = (file.getFileHash() != null && !file.getFileHash().isBlank())
@@ -1258,8 +1262,11 @@ public class FileController {
             catch (java.nio.file.NoSuchFileException nsf) { throw new com.filemanager.exception.NotFoundException("文件不存在"); }
             catch (java.nio.file.AccessDeniedException ade) { throw new com.filemanager.exception.ForbiddenException("无权读取文件"); }
             catch (java.io.IOException ioe) { throw new RuntimeException("读取文件失败", ioe); }
-            String asciiName = sanitizeAsciiFilename(file.getOriginalFilename());
-            String encoded = org.springframework.web.util.UriUtils.encode(asciiName, java.nio.charset.StandardCharsets.UTF_8);
+            String safeName = (file.getOriginalFilename() == null || file.getOriginalFilename().isBlank())
+                    ? "file"
+                    : file.getOriginalFilename().replace("\"", "");
+            String asciiName = sanitizeAsciiFilename(safeName);
+            String encoded = org.springframework.web.util.UriUtils.encode(safeName, java.nio.charset.StandardCharsets.UTF_8);
             String disposition = String.format("attachment; filename=\"%s\"; filename*=UTF-8''%s", asciiName, encoded);
             String eTag = (file.getFileHash() != null && !file.getFileHash().isBlank())
                     ? "W/\"" + file.getFileHash() + "\""
