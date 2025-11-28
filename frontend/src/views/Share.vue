@@ -241,41 +241,72 @@
     </el-dialog>
 
     <!-- ACL 对话框 -->
-    <el-dialog v-model="showAclDialog" title="受邀人权限" width="600px">
-      <el-table :data="aclList" size="small" style="width: 100%; margin-bottom: 12px;">
-        <el-table-column prop="principalType" label="类型" width="100" />
-        <el-table-column prop="principalValue" label="标识" />
-        <el-table-column label="权限" width="200">
-          <template #default="{ row }">
-            <el-tag size="small" v-if="row.allowPreview">预览</el-tag>
-            <el-tag size="small" v-if="row.allowDownload" type="success">下载</el-tag>
-            <el-tag size="small" v-if="row.allowUpload" type="info">上传</el-tag>
+    <el-dialog v-model="showAclDialog" title="分享权限" width="780px" class="share-acl-dialog">
+      <div class="share-acl-layout">
+        <aside class="share-acl-nav">
+          <div class="nav-item">分享链接</div>
+          <div class="nav-item">上传链接</div>
+          <div class="nav-item active">分享给用户</div>
+        </aside>
+        <div class="share-acl-main">
+          <div class="share-acl-toolbar">
+            <el-input
+              v-model="aclSearch"
+              size="small"
+              placeholder="搜索用户"
+              clearable
+            >
+              <template #prefix>
+                <el-icon><Search /></el-icon>
+              </template>
+            </el-input>
+          </div>
+
+          <div class="share-acl-list" v-if="filteredAclList.length">
+            <div
+              class="share-acl-row"
+              v-for="(row, idx) in filteredAclList"
+              :key="`${row.principalValue}-${idx}`"
+            >
+              <el-avatar size="small" class="share-acl-avatar">
+                {{ (row.principalValue || 'U').charAt(0).toUpperCase() }}
+              </el-avatar>
+              <div class="share-acl-user">
+                <div class="name">{{ row.principalValue || '未命名' }}</div>
+                <div class="meta">{{ formatPrincipalType(row.principalType) }}</div>
+              </div>
+              <el-tag size="small" :type="getAclTagType(row)">{{ getAclPermissionLabel(row) }}</el-tag>
+              <el-button text type="danger" size="small" @click="removeAcl(row)">移除</el-button>
+            </div>
+          </div>
+          <div class="share-acl-empty" v-else>暂无分享用户</div>
+
+          <div class="share-acl-divider"></div>
+
+          <div class="share-acl-form">
+            <el-select v-model="newAcl.principalType" placeholder="选择类型" style="width: 140px">
+              <el-option label="用户" value="USER" />
+              <el-option label="邮箱" value="EMAIL" />
+            </el-select>
+            <el-input v-model="newAcl.principalValue" placeholder="用户ID/邮箱" style="width: 240px" />
+            <el-radio-group v-model="newAclPerm" class="share-acl-perm">
+              <el-radio-button label="read">只读</el-radio-button>
+              <el-radio-button label="readwrite">可读写</el-radio-button>
+            </el-radio-group>
+            <el-button size="small" type="primary" @click="addAcl">添加</el-button>
+          </div>
+
+          <template #footer>
+            <div class="share-acl-footer">
+              <div class="hint">公开分享仍遵循权限兜底；受控分享按上方列表授权。</div>
+              <div class="actions">
+                <el-button @click="showAclDialog = false">取消</el-button>
+                <el-button type="primary" @click="saveAcl">保存</el-button>
+              </div>
+            </div>
           </template>
-        </el-table-column>
-        <el-table-column label="操作" width="100">
-          <template #default="{ $index }">
-            <el-button size="small" type="danger" @click="removeAcl($index)">移除</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-      <div class="acl-form">
-        <el-select v-model="newAcl.principalType" placeholder="类型" style="width: 120px">
-          <el-option label="用户" value="USER" />
-          <el-option label="邮箱" value="EMAIL" />
-          <el-option label="组" value="GROUP" />
-        </el-select>
-        <el-input v-model="newAcl.principalValue" placeholder="用户ID/邮箱/组" style="width: 200px; margin-left: 8px" />
-        <el-checkbox-group v-model="newAcl.perms" style="margin-left: 8px">
-          <el-checkbox label="preview">预览</el-checkbox>
-          <el-checkbox label="download">下载</el-checkbox>
-          <el-checkbox label="upload">上传</el-checkbox>
-        </el-checkbox-group>
-        <el-button size="small" type="primary" style="margin-left: 8px" @click="addAcl">添加</el-button>
+        </div>
       </div>
-      <template #footer>
-        <el-button @click="showAclDialog = false">取消</el-button>
-        <el-button type="primary" @click="saveAcl">保存</el-button>
-      </template>
     </el-dialog>
 
     <!-- 创建分享对话框 -->
@@ -286,13 +317,6 @@
             <el-radio label="file">文件</el-radio>
             <el-radio label="folder">文件夹</el-radio>
           </el-radio-group>
-        </el-form-item>
-        <el-form-item label="分享模式">
-          <el-radio-group v-model="shareForm.shareMode">
-            <el-radio label="PUBLIC">公开</el-radio>
-            <el-radio label="CONTROLLED">受控</el-radio>
-          </el-radio-group>
-          <div class="hint-small">公开模式自动禁用上传/再分享/删除移动</div>
         </el-form-item>
         <el-form-item label="分享模式">
           <el-radio-group v-model="shareForm.shareMode">
@@ -439,12 +463,44 @@ const newAcl = reactive({
   principalValue: '',
   perms: ['preview', 'download']
 })
+const newAclPerm = ref('readwrite')
+const aclSearch = ref('')
+
+const syncNewAclPerm = () => {
+  newAcl.perms = newAclPerm.value === 'readwrite'
+    ? ['preview', 'download', 'upload']
+    : ['preview', 'download']
+}
+syncNewAclPerm()
 const permissionSelections = ref(['preview', 'download'])
 
 const filteredShares = computed(() => {
   if (!searchKeyword.value) return shares.value
   return shares.value.filter(s => (s.name || '').toLowerCase().includes(searchKeyword.value.toLowerCase()))
 })
+
+const filteredAclList = computed(() => {
+  if (!aclSearch.value) return aclList.value
+  const keyword = aclSearch.value.toLowerCase()
+  return aclList.value.filter(a => (a.principalValue || '').toLowerCase().includes(keyword))
+})
+
+const formatPrincipalType = (t) => {
+  if (t === 'EMAIL') return '邮箱'
+  return '用户'
+}
+
+const getAclPermissionLabel = (row) => {
+  if (row.allowUpload) return '可读写'
+  if (row.allowDownload) return '只读'
+  return '仅预览'
+}
+
+const getAclTagType = (row) => {
+  if (row.allowUpload) return 'success'
+  if (row.allowDownload) return 'info'
+  return ''
+}
 
 // 格式化文件大小
 const formatFileSize = (bytes) => {
@@ -703,6 +759,10 @@ watch(() => editForm.shareMode, (mode) => {
   }
 })
 
+watch(newAclPerm, () => {
+  syncNewAclPerm()
+})
+
 const updateShareFunc = async () => {
   if (!editForm.id) {
     return
@@ -755,6 +815,7 @@ const openAclDialog = async (shareId) => {
 }
 
 const addAcl = () => {
+  syncNewAclPerm()
   if (!newAcl.principalValue || newAcl.principalValue.trim() === '') {
     ElMessage.warning('请输入标识')
     return
@@ -775,11 +836,15 @@ const addAcl = () => {
     allowUpload: newAcl.perms.includes('upload')
   })
   newAcl.principalValue = ''
-  newAcl.perms = ['preview', 'download']
+  newAclPerm.value = 'readwrite'
+  syncNewAclPerm()
 }
 
-const removeAcl = (idx) => {
-  aclList.value.splice(idx, 1)
+const removeAcl = (entry) => {
+  const idx = aclList.value.findIndex(a => a.principalType === entry.principalType && a.principalValue === entry.principalValue)
+  if (idx >= 0) {
+    aclList.value.splice(idx, 1)
+  }
 }
 
 const saveAcl = async () => {
@@ -960,5 +1025,134 @@ const saveAcl = async () => {
   padding: 12px 16px;
   text-align: right;
   border-top: 1px solid #f0f0f0;
+}
+
+.share-acl-dialog :deep(.el-dialog__body) {
+  padding: 0 0 16px 0;
+}
+
+.share-acl-layout {
+  display: flex;
+  min-height: 440px;
+}
+
+.share-acl-nav {
+  width: 160px;
+  border-right: 1px solid #f0f0f0;
+  background: #fafafa;
+  padding: 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.share-acl-nav .nav-item {
+  padding: 10px 20px;
+  color: #606266;
+  cursor: default;
+}
+
+.share-acl-nav .nav-item.active {
+  background: #f0f7ff;
+  color: #409EFF;
+  font-weight: 600;
+  border-left: 3px solid #409EFF;
+}
+
+.share-acl-main {
+  flex: 1;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.share-acl-toolbar {
+  display: flex;
+  align-items: center;
+}
+
+.share-acl-list {
+  flex: 1;
+  overflow-y: auto;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+  padding: 8px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.share-acl-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid #f5f5f5;
+  border-radius: 6px;
+}
+
+.share-acl-avatar {
+  background: #ecf5ff;
+  color: #409EFF;
+  font-weight: 600;
+}
+
+.share-acl-user .name {
+  font-weight: 600;
+  color: #303133;
+}
+
+.share-acl-user .meta {
+  font-size: 12px;
+  color: #909399;
+}
+
+.share-acl-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #909399;
+  border: 1px dashed #dcdfe6;
+  border-radius: 6px;
+  padding: 16px;
+}
+
+.share-acl-divider {
+  height: 1px;
+  background: #f0f0f0;
+}
+
+.share-acl-form {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.share-acl-perm :deep(.el-radio-button__inner) {
+  padding: 6px 14px;
+}
+
+.share-acl-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0 0 0;
+  border-top: 1px solid #f0f0f0;
+  margin-top: 8px;
+}
+
+.share-acl-footer .hint {
+  font-size: 12px;
+  color: #909399;
+}
+
+.share-acl-footer .actions {
+  display: flex;
+  gap: 10px;
 }
 </style>
