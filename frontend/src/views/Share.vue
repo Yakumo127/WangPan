@@ -309,92 +309,166 @@
       </template>
     </el-dialog>
 
-    <!-- 创建分享对话框 -->
-    <el-dialog v-model="showShareDialog" title="创建分享" width="600px">
-      <el-form :model="shareForm" label-width="100px">
-        <el-form-item label="选择类型">
-          <el-radio-group v-model="shareForm.type">
-            <el-radio label="file">文件</el-radio>
-            <el-radio label="folder">文件夹</el-radio>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item label="分享模式">
-          <el-radio-group v-model="shareForm.shareMode">
-            <el-radio label="PUBLIC">公开</el-radio>
-            <el-radio label="CONTROLLED">受控</el-radio>
-          </el-radio-group>
-          <div class="hint-small">公开模式自动禁用上传/再分享/删除移动</div>
-        </el-form-item>
-        
-        <el-form-item :label="shareForm.type === 'file' ? '选择文件' : '选择文件夹'">
-          <el-select
-            v-model="shareForm.itemId"
-            :placeholder="`请选择${shareForm.type === 'file' ? '文件' : '文件夹'}`"
-            style="width: 100%"
-            filterable
-          >
-            <el-option
-              v-for="item in availableItems.filter(i => i.type === shareForm.type)"
-              :key="item.id"
-              :label="item.name"
-              :value="item.id"
-            >
-              <div class="option-item">
-                <el-icon>
-                  <Document v-if="item.type === 'file'" />
-                  <Folder v-else />
-                </el-icon>
-                <span>{{ item.name }}</span>
-                <span class="item-size">{{ formatFileSize(item.size) }}</span>
+    <!-- 创建分享对话框（新版布局） -->
+    <el-dialog
+      v-model="showShareDialog"
+      title="创建分享"
+      width="860px"
+      class="share-create-dialog"
+      @open="resetCreateForm"
+    >
+      <div class="share-create-body">
+        <aside class="share-create-nav">
+          <div class="nav-item">分享链接</div>
+          <div class="nav-item">上传链接</div>
+          <div class="nav-item active">分享给用户</div>
+        </aside>
+        <div class="share-create-main">
+          <div class="share-create-header">
+            <div>
+              <div class="title">创建分享</div>
+              <div class="desc">选择资源、权限与受邀人，提交后生成分享链接</div>
+            </div>
+            <el-button type="primary" @click="createShareFunc" :loading="creating">提交</el-button>
+          </div>
+
+          <div class="share-create-form">
+            <div class="form-row">
+              <div class="form-block">
+                <div class="block-label">分享资源</div>
+                <el-radio-group v-model="shareForm.type">
+                  <el-radio label="file">文件</el-radio>
+                  <el-radio label="folder">文件夹</el-radio>
+                </el-radio-group>
+                <el-select
+                  v-model="shareForm.itemId"
+                  :placeholder="`请选择${shareForm.type === 'file' ? '文件' : '文件夹'}`"
+                  style="width: 100%; margin-top: 8px;"
+                  filterable
+                >
+                  <el-option
+                    v-for="item in availableItems.filter(i => i.type === shareForm.type)"
+                    :key="item.id"
+                    :label="item.name"
+                    :value="item.id"
+                  >
+                    <div class="option-item">
+                      <el-icon>
+                        <Document v-if="item.type === 'file'" />
+                        <Folder v-else />
+                      </el-icon>
+                      <span>{{ item.name }}</span>
+                      <span class="item-size">{{ formatFileSize(item.size) }}</span>
+                    </div>
+                  </el-option>
+                </el-select>
               </div>
-            </el-option>
-          </el-select>
-        </el-form-item>
-        
-        <el-form-item label="过期时间">
-          <el-radio-group v-model="shareForm.expireType">
-            <el-radio label="never">永久有效</el-radio>
-            <el-radio label="custom">自定义时间</el-radio>
-          </el-radio-group>
-        </el-form-item>
-        
-        <el-form-item v-if="shareForm.expireType === 'custom'" label="选择时间">
-          <el-date-picker
-            v-model="shareForm.expireTime"
-            type="datetime"
-            placeholder="选择过期时间"
-            :disabled-date="disabledDate"
-            style="width: 100%"
-          />
-        </el-form-item>
-        
-        <el-form-item label="提取码">
-          <el-switch
-            v-model="shareForm.requireCode"
-            active-text="需要提取码"
-            inactive-text="不需要提取码"
-          />
-        </el-form-item>
-        <el-form-item v-if="shareForm.requireCode" label="提取码内容">
-          <el-input v-model="shareForm.code" maxlength="8" show-word-limit placeholder="请输入提取码（4-8位）" />
-        </el-form-item>
-        <el-form-item label="权限">
-          <el-checkbox-group v-model="permissionSelections">
-            <el-checkbox label="preview">预览</el-checkbox>
-            <el-checkbox label="download">下载</el-checkbox>
-            <el-checkbox label="upload" :disabled="shareForm.type === 'file' || shareForm.shareMode === 'PUBLIC'">上传</el-checkbox>
-            <el-checkbox label="reshare" :disabled="true">再分享(禁用)</el-checkbox>
-            <el-checkbox label="deleteMove" :disabled="true">删除/移动(禁用)</el-checkbox>
-          </el-checkbox-group>
-        </el-form-item>
-      </el-form>
-      
-      <template #footer>
-        <el-button @click="showShareDialog = false">取消</el-button>
-        <el-button type="primary" @click="createShareFunc" :loading="creating">
-          创建分享
-        </el-button>
-      </template>
+
+              <div class="form-block">
+                <div class="block-label">分享模式</div>
+                <el-radio-group v-model="shareForm.shareMode">
+                  <el-radio label="PUBLIC">公开</el-radio>
+                  <el-radio label="CONTROLLED">受控</el-radio>
+                </el-radio-group>
+                <div class="hint-small">公开模式自动禁用上传/再分享/删除移动</div>
+                <div class="block-label" style="margin-top: 10px;">权限</div>
+                <el-checkbox-group v-model="permissionSelections">
+                  <el-checkbox label="preview">预览</el-checkbox>
+                  <el-checkbox label="download">下载</el-checkbox>
+                  <el-checkbox label="upload" :disabled="shareForm.type === 'file' || shareForm.shareMode === 'PUBLIC'">上传</el-checkbox>
+                  <el-checkbox label="reshare" :disabled="true">再分享(禁用)</el-checkbox>
+                  <el-checkbox label="deleteMove" :disabled="true">删除/移动(禁用)</el-checkbox>
+                </el-checkbox-group>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-block">
+                <div class="block-label">有效期</div>
+                <el-radio-group v-model="shareForm.expireType">
+                  <el-radio label="never">永久有效</el-radio>
+                  <el-radio label="custom">自定义时间</el-radio>
+                </el-radio-group>
+                <el-date-picker
+                  v-if="shareForm.expireType === 'custom'"
+                  v-model="shareForm.expireTime"
+                  type="datetime"
+                  placeholder="选择过期时间"
+                  :disabled-date="disabledDate"
+                  style="width: 100%; margin-top: 8px;"
+                />
+              </div>
+              <div class="form-block">
+                <div class="block-label">提取码</div>
+                <el-switch
+                  v-model="shareForm.requireCode"
+                  active-text="需要提取码"
+                  inactive-text="不需要提取码"
+                />
+                <el-input
+                  v-if="shareForm.requireCode"
+                  v-model="shareForm.code"
+                  maxlength="8"
+                  show-word-limit
+                  placeholder="请输入提取码（4-8位）"
+                  style="margin-top: 8px;"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div class="share-create-acl">
+            <div class="acl-header">
+              <div class="acl-title">分享给用户</div>
+              <el-input
+                v-model="aclSearch"
+                size="small"
+                placeholder="搜索用户"
+                clearable
+                style="width: 220px"
+              >
+                <template #prefix>
+                  <el-icon><Search /></el-icon>
+                </template>
+              </el-input>
+            </div>
+
+            <div class="share-acl-list" v-if="filteredAclList.length">
+              <div
+                class="share-acl-row"
+                v-for="(row, idx) in filteredAclList"
+                :key="`${row.principalValue}-${idx}`"
+              >
+                <el-avatar size="small" class="share-acl-avatar">
+                  {{ (row.principalValue || 'U').charAt(0).toUpperCase() }}
+                </el-avatar>
+                <div class="share-acl-user">
+                  <div class="name">{{ row.principalValue || '未命名' }}</div>
+                  <div class="meta">{{ formatPrincipalType(row.principalType) }}</div>
+                </div>
+                <el-tag size="small" :type="getAclTagType(row)">{{ getAclPermissionLabel(row) }}</el-tag>
+                <el-button text type="danger" size="small" @click="removeAcl(row)">移除</el-button>
+              </div>
+            </div>
+            <div class="share-acl-empty" v-else>暂无分享用户</div>
+
+            <div class="share-acl-divider"></div>
+
+            <div class="share-acl-form">
+              <el-select v-model="newAcl.principalType" placeholder="选择类型" style="width: 140px">
+                <el-option label="用户" value="USER" />
+                <el-option label="邮箱" value="EMAIL" />
+              </el-select>
+              <el-input v-model="newAcl.principalValue" placeholder="用户ID/邮箱" style="width: 240px" />
+              <el-radio-group v-model="newAclPerm" class="share-acl-perm">
+                <el-radio-button label="read">只读</el-radio-button>
+                <el-radio-button label="readwrite">可读写</el-radio-button>
+              </el-radio-group>
+              <el-button size="small" type="primary" @click="addAcl">添加</el-button>
+            </div>
+          </div>
+        </div>
+      </div>
     </el-dialog>
   </div>
 </template>
@@ -878,6 +952,22 @@ const saveAcl = async () => {
     ElMessage.error('保存 ACL 失败')
   }
 }
+
+const resetCreateForm = () => {
+  shareForm.type = 'file'
+  shareForm.itemId = ''
+  shareForm.expireType = 'never'
+  shareForm.expireTime = null
+  shareForm.requireCode = false
+  shareForm.code = ''
+  shareForm.shareMode = 'PUBLIC'
+  permissionSelections.value = ['preview', 'download']
+  aclList.value = []
+  newAcl.principalType = 'USER'
+  newAcl.principalValue = ''
+  newAclPerm.value = 'readwrite'
+  syncNewAclPerm()
+}
 </script>
 
 <style scoped>
@@ -886,6 +976,117 @@ const saveAcl = async () => {
   height: 100%;
   display: flex;
   flex-direction: column;
+}
+
+.share-create-dialog :deep(.el-dialog__body) {
+  padding: 0 0 10px 0;
+}
+
+.share-create-body {
+  display: flex;
+  min-height: 520px;
+}
+
+.share-create-nav {
+  width: 180px;
+  background: #f6f7fb;
+  padding: 20px 10px;
+  border-right: 1px solid #ebeef5;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.share-create-nav .nav-item {
+  padding: 10px 14px;
+  border-radius: 8px;
+  color: #666;
+  cursor: default;
+}
+
+.share-create-nav .nav-item.active {
+  background: #fff4ec;
+  color: #f56c6c;
+  font-weight: 600;
+}
+
+.share-create-main {
+  flex: 1;
+  padding: 20px 24px 10px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.share-create-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.share-create-header .title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+}
+
+.share-create-header .desc {
+  color: #888;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.share-create-form {
+  background: #f9fafb;
+  border: 1px solid #ebeef5;
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.share-create-form .form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
+}
+
+.share-create-form .form-block {
+  background: #fff;
+  border: 1px solid #f0f2f5;
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.block-label {
+  font-weight: 600;
+  color: #444;
+  font-size: 13px;
+}
+
+.share-create-acl {
+  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.acl-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.acl-title {
+  font-weight: 600;
+  color: #333;
 }
 
 .toolbar {
@@ -1136,6 +1337,7 @@ const saveAcl = async () => {
 .share-acl-divider {
   height: 1px;
   background: #f0f0f0;
+  margin: 12px 0;
 }
 
 .share-acl-form {
@@ -1166,5 +1368,10 @@ const saveAcl = async () => {
 .share-acl-footer .actions {
   display: flex;
   gap: 10px;
+}
+
+.share-acl-list {
+  max-height: 220px;
+  overflow-y: auto;
 }
 </style>
